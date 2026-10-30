@@ -13,5 +13,6 @@ This repo is a deployment layer on top of career-ops (`../career-ops`, pinned). 
 ## How we work
 - One GitHub issue + branch + PR per roadmap phase or fix. Small commits, conventional messages (`feat(engine): …`, `fix(extractor): …`, `docs: …`, `test: …`).
 - Update `CHANGELOG.md` with each PR. Add a `docs/DECISIONS.md` entry for any meaningful design choice.
+- Run career-ops scripts through `scripts/co.sh <script.mjs> [args]` so they read and write `../private/`, never `../career-ops/`.
 - Run tests before committing. The gitleaks pre-commit hook must stay installed (`scripts/setup-hooks.sh`).
 - When something we build or decide would make a good interview story, say so explicitly at the end of your reply under a heading **Interview story**.
