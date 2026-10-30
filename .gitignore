@@ -1,0 +1,34 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*token*.json
+
+# --- Personal data: lives in ../private, never here ---
+private/
+cv*.md
+*.pdf
+*.docx
+data/
+reports/
+jds/
+output/
+documents/
+config/profile.yml
+config/cv-facts.json
+portals.yml
+modes/_profile.md
+modes/_custom.md
+modes/_brief.md
+
+# --- Eval raw text (labels are committed; JD snapshots are not) ---
+evals/snapshots/
+
+# --- Tooling ---
+node_modules/
+.DS_Store
+*.log
+.claude/settings.local.json

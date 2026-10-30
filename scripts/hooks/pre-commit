@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Block commits that contain secrets. Installed by scripts/setup-hooks.sh.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed (brew install gitleaks). Commit blocked." >&2
+  exit 1
+fi
+gitleaks git --staged --redact --no-banner || {
+  echo "pre-commit: possible secret detected. Commit blocked." >&2
+  exit 1
+}
