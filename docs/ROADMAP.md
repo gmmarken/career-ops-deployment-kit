@@ -5,7 +5,7 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 ## Phase 0 — Scaffold
 - [x] Repo initialized, scaffold committed, pushed to private GitHub repo
 - [x] gitleaks installed; pre-commit hook active; GitHub Action green
-- [ ] `../private/` created with `.env` (empty) and README
+- [x] `../private/` created with `.env` (empty) and README
 - [x] career-ops installed (`npm install`), `CAREER_OPS_DATA_DIR` pointed at `../private/`, `node doctor.mjs` green (via `scripts/co.sh doctor.mjs`; only onboarding files missing, handled in Phase 1)
 - [x] GitHub issues created for Phases 1–9
 
