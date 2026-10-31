@@ -10,10 +10,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] GitHub issues created for Phases 1–9
 
 ## Phase 1 — Onboard
-- [ ] `cv.md` in `private/` (verified facts only)
-- [ ] `config/profile.yml`, `modes/_profile.md` (target-role definition), `modes/_custom.md` (house rules)
-- [ ] `rules/` templates in this repo (placeholders, no personal thresholds)
-- [ ] One job evaluated end-to-end by hand
+- [x] `cv.md` in `private/` (verified facts only)
+- [x] `config/profile.yml`, `modes/_profile.md` (target-role definition), `modes/_custom.md` (house rules)
+- [x] `rules/` templates in this repo (placeholders, no personal thresholds)
+- [x] One job evaluated end-to-end by hand
 
 ## Phase 2 — Extractor + tier engine
 - [ ] JSON schema for extracted facts (with evidence quotes)
