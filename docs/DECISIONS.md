@@ -42,3 +42,41 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Decision:** Errors surface clearly with what failed and how to fix it. No backup providers, mock data, or defaults that mask missing information; unknown facts stay unknown. In unattended runs, failures are reported to me. A failed source can be skipped so the others still run, but the skip is reported and nothing is substituted.
 **Why:** A job search tool that quietly returns stale or invented data is worse than one that stops. I'd rather know a source is down than trust results that look complete.
 **Trade-off:** More runs end in visible errors that need a fix, and there's no automatic recovery.
+
+## D8 — One master CV; role framing lives in the profile (2026-10-30)
+**Context:** I had two AI-drafted resumes, one for deployment roles and one for operator roles, sharing most of the same facts.
+**Options:** (A) one `cv.md` with every confirmed fact, plus per-archetype framing in `_profile.md`; (B) two CV files swapped in before each run.
+**Decision:** A.
+**Why:** career-ops reads one `cv.md` and tailors per job; one source of truth means facts can't drift between versions, and the fact checker sees everything.
+**Trade-off:** The master file is longer than either resume.
+
+## D9 — Every resume fact confirmed once, with a rounding rule for employer metrics (2026-10-30)
+**Context:** The resumes were AI-drafted from conversations, which is where inflated or unsourced numbers hide. Some metrics from my current employer shouldn't appear at full precision.
+**Options:** (A) keep numbers as written; (B) generalize all employer specifics; (C) tag each item keep / generalize / cut.
+**Decision:** C, with a fixed rule: dollar amounts and counts are rounded to a clean figure ("+" or "nearly"), percentages are rounded up to the next 5 with "~", and small decimals become "over X". Internal program names and sensitive work are generalized.
+**Why:** One explicit rule applies the same way every time and is easy to defend. The review also caught a percentage with no measurement behind it, which was cut.
+**Trade-off:** Some metrics read less precisely.
+
+## D10 — Strict fact gate on generated CVs (2026-10-30)
+**Decision:** `config/cv-facts.json` blocks every cut or corrected claim (`forbidden_phrases`) and warns on inflated verbs (`warn_phrases`); career-ops' checker already blocks any number absent from `cv.md`. Tested: the real CV passes; a planted inflated CV is blocked.
+**Why:** Phase 8 generates CVs without me watching each one.
+**Trade-off / known gap:** career-ops' number matching ignores "~", so "~40" becoming "40" isn't caught. A kit-side check is planned for Phase 8.
+
+## D11 — Target role defined as "is / is not", with trap signals (2026-10-30)
+**Options:** (A) the requirements wording as written; (B) the same definition plus JD phrases that reveal each of the four traps.
+**Decision:** B.
+**Why:** Title-based precision is the core problem; spelling out trap signals helps the model now and becomes test material for Phases 2–3.
+
+## D12 — Walk-away pay is a tier rule, not `compensation.minimum` (2026-10-30)
+**Finding:** career-ops treats `profile.yml` → `compensation.minimum` as a dealbreaker that stops before scoring and writes no evaluation.
+**Decision:** Keep the walk-away number out of that field. A range topping out at or below it is tiered "Walk-away" (recorded, not considered), except a borderline range with substantial equity, which is scored and capped at B. No posted pay is never a walk-away and never a miss; it's flagged for verification.
+**Why:** Every role should be recorded (the Notion DB doubles as market data), and missing pay isn't bad pay.
+
+## D13 — Exclusions follow ownership, not investment; some signals are flag-only (2026-10-30)
+**Decision:** An excluded company's subsidiaries are excluded; companies it merely invested in are not (e.g. an Amazon-backed AI lab is fine). "Built to grow into a quota" and postings older than 60 days are flags, not tier changes.
+**Why:** Surfaced by the first end-to-end evaluation, where the reference role hit all three edge cases.
+
+## D14 — Add poppler for PDF text extraction (2026-10-30)
+**Decision:** Install poppler (`pdftotext`) via Homebrew. Free, local, open source.
+**Why:** career-ops' intake script and its ATS checks on generated CV PDFs both need it.
+**Trade-off:** One more system dependency to list in `install.sh` (Phase 9).
