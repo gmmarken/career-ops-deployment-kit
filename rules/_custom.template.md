@@ -14,6 +14,8 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 - {Excluded company or category}
 - {Excluded company or category}
 
+**Step 1a — Ownership vs investment.** For every exclusion, the test is who owns and runs the company, not who invested in it: an excluded company's subsidiaries are excluded, companies it merely invested in are not. Name the parent when excluding a subsidiary.
+
 **Step 1b — Walk-away pay.** If the top of the posted base range is **{walk-away amount} or less**, the tier is **Walk-away**: same handling as Excluded.
 - Exception: {when a borderline range is still worth scoring, and its cap}
 - No posted pay is never a walk-away (see Step 3, criterion 4).
@@ -47,6 +49,8 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 - {Tags you want, e.g. career-path tags}
 - Within a tier, {priority family} sorts first.
 - {Tiebreakers}
+- **Flag only (no tier change):** `Watch: quota path` when the JD says the role will grow into carrying a quota.
+- **Flag only:** `Old posting: posted <date>, <N> days` when the posting is more than {N} days old. Read the date from the ATS data when the page doesn't show it.
 
 **Step 8 — Explain.** Every tier comes with "why this tier": criteria met and missed, caps and drops applied, flags and traps by name, each backed by a short JD quote.
 
@@ -64,7 +68,8 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 
 - Reports open with `**Tier:** <S/A/B/C/Excluded/Walk-away>` and a one-line why, above career-ops' 1-5 score.
 - List flags, traps, caps, and drops by name, each with the JD quote.
-- Pay: quote the posted range exactly, or write "not posted".
+- Pay: quote the posted range exactly, or write "not posted". Before writing "not posted", check the ATS's structured pay fields (e.g. Ashby `compensation`), not just the JD text; career-ops' text fetch can miss them.
+- Keyword coverage: in evaluation reports, show missing keywords as a tailoring checklist labelled "base CV, before tailoring"; report the % for tailored CVs.
 - Cover letters, outreach, and profile text: show the candidate drafts first.
 
 ## Off-Limits
