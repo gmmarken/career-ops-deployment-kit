@@ -36,3 +36,9 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Finding:** `weekly-digest.mjs` summarizes interview sessions, not new roles, and the Notion plugin writes to a fixed "Applications" schema.
 **Decision:** Build a weekly email plugin and a Notion export mapped to my own databases.
 **Why:** Verifying the platform's actual behavior before building avoided designing around features that didn't exist.
+
+## D7 — Fail loudly; no silent fallbacks (2026-10-30)
+**Context:** AI coding agents tend to add fallbacks (backup data sources, hard-coded defaults, swallowed errors) that keep a pipeline "working" while hiding that it's broken.
+**Decision:** Errors surface clearly with what failed and how to fix it. No backup providers, mock data, or defaults that mask missing information; unknown facts stay unknown. In unattended runs, failures are reported to me. A failed source can be skipped so the others still run, but the skip is reported and nothing is substituted.
+**Why:** A job search tool that quietly returns stale or invented data is worse than one that stops. I'd rather know a source is down than trust results that look complete.
+**Trade-off:** More runs end in visible errors that need a fix, and there's no automatic recovery.
