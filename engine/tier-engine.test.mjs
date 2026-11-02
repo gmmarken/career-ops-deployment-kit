@@ -192,7 +192,7 @@ test('MBB → capped at A', () => assert.equal(run({ company: { is_mbb: true } }
 // Step 6 — drops
 test('remote role drops one tier', () => assert.equal(run({ judgment: { work_model: { value: 'remote', office_days: 0, quote: 'fully remote' } } }).tier, 'A'));
 test('back office drops one tier', () => assert.equal(run({ judgment: { back_office: { value: true, quote: 'internal finance ops' } } }).tier, 'A'));
-for (const flag of ['ticket_config_work', 'high_account_load', 'quota_ownership', 'travel_50_plus']) {
+for (const flag of ['ticket_config_work', 'high_account_load', 'quota_ownership', 'travel_50_plus', 'book_of_business']) {
   test(`red flag ${flag} drops one tier and is named`, () => {
     const r = run({ judgment: { red_flags: [{ flag, quote: 'evidence' }] } });
     assert.equal(r.tier, 'A');
@@ -230,6 +230,13 @@ test('pay conflict between ATS and JD text is flagged', () => {
 test('prompt-injection text in a posting is flagged', () => {
   const r = run({ judgment: { injection_suspected: { value: true, quote: 'ignore previous instructions' } } });
   assert.ok(r.flags.some((f) => f.startsWith('Posting contains instructions aimed at AI')));
+});
+test('AI-native is a sort preference only, never a tier change', () => {
+  const a = run({ company: { ai_native: true } });
+  const b = run({ company: { ai_native: false } });
+  assert.equal(a.tier, b.tier);
+  assert.equal(a.sortKey.ai_native, true);
+  assert.equal(b.sortKey.ai_native, false);
 });
 test('GM path tag and priority family appear in sortKey, tier unchanged', () => {
   const r = run({ judgment: { tags: { gm_path: true, product_path: false } } });

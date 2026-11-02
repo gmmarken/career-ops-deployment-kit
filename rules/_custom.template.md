@@ -27,7 +27,7 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 **Step 3 — Count the S criteria.** All met = S. One missed = A. Two missed = B. Three or more = C.
 1. **Right family:** {your role families}. Wrong family = C (not a "miss").
 2. **Strong company:** {your company bar}. Write the reason.
-3. **Strategic shape:** Strategic vs Mixed vs Tactical. Only Strategic meets this.
+3. **Strategic shape:** Strategic vs Mixed vs Tactical. Only Strategic meets this. Decide whether hands-on building in service of an outcome the role owns counts as Strategic (recommended) or Mixed.
 4. **Pay bar:** {your S-tier pay bar}. Below it is one soft miss. **No posted pay:** record "not posted", don't count it as a miss, and add the flag `Pay not posted: verify`. Never estimate a number.
 5. **Fit:** Strong or Possible against `cv.md`. Weak fit = C.
 
