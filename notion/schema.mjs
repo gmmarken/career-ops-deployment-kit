@@ -28,6 +28,8 @@ export function radarProperties() {
     Sources: { rich_text: {} },
     Origin: { select: opts(['research', 'watchlist', 'you']) },
     'First seen': { date: {} },
+    'Open postings': { number: {} },
+    'Open deployment postings': { number: {} },
   };
 }
 

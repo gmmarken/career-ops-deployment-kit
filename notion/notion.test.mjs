@@ -89,3 +89,45 @@ test('text values are trimmed under Notion\'s 2000-char limit; readProp reads th
   assert.equal(readProp({ type: 'rich_text', rich_text: [{ plain_text: 'a' }, { plain_text: 'b' }] }), 'ab');
   assert.equal(readProp({ type: 'checkbox', checkbox: true }), true);
 });
+
+// --- three-way reconciliation of your company columns
+import { reconcile, OWNED_DEFAULTS, companyCounts } from './sync.mjs';
+const D = OWNED_DEFAULTS;
+test('your edit in Notion wins (Notion differs from what the kit last wrote)', () => {
+  const r = reconcile({ ...D, ai_native: true }, D, D);
+  assert.deepEqual(r.yourEdits, { ai_native: true });
+  assert.deepEqual(r.kitUpdates, {});
+  assert.ok(!('ai_native' in r.agreed));
+});
+test('research after the page existed updates untouched columns (the bug from review)', () => {
+  const r = reconcile(D, D, { ...D, status: 'strong', ai_native: true });
+  assert.deepEqual(r.kitUpdates, { status: 'strong', ai_native: true });
+  assert.deepEqual(r.yourEdits, {});
+});
+test('your edit and newer kit info on the same column: your edit wins', () => {
+  const r = reconcile({ ...D, status: 'not_strong' }, D, { ...D, status: 'strong' });
+  assert.deepEqual(r.yourEdits, { status: 'not_strong' });
+  assert.deepEqual(r.kitUpdates, {});
+});
+test('values already in agreement are recorded as last written', () => {
+  const r = reconcile({ ...D, status: 'strong' }, D, { ...D, status: 'strong' });
+  assert.deepEqual([r.yourEdits, r.kitUpdates, r.agreed.status], [{}, {}, 'strong']);
+});
+test('company counts: open postings, and deployment family by AI label then title', () => {
+  const ps = [
+    { company_id: 1, closed_at: null, ai_family: 'deployment_ai_strategist', title_family: 'other' },
+    { company_id: 1, closed_at: null, ai_family: null, title_family: 'deployment_ai_strategist' },
+    { company_id: 1, closed_at: null, ai_family: null, title_family: 'other' },
+    { company_id: 1, closed_at: '2026-01-01', ai_family: null, title_family: 'deployment_ai_strategist' },
+  ];
+  assert.deepEqual(companyCounts(ps).get(1), { open: 3, deployment: 2 });
+});
+test('a pull that applies nothing must not record kit updates as written (the ping-pong bug)', () => {
+  // Pull sees an update the kit still has to write; it records only agreed fields.
+  const pushed = { ...D };
+  const { agreed, yourEdits } = reconcile(D, pushed, { ...D, status: 'strong' });
+  const afterPull = { ...D, ...pushed, ...agreed, ...yourEdits };
+  assert.equal(afterPull.status, 'unknown');
+  // So the next sync still sees Notion = last written and pushes the update.
+  assert.deepEqual(reconcile(D, afterPull, { ...D, status: 'strong' }).kitUpdates, { status: 'strong' });
+});
