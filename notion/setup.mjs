@@ -51,15 +51,11 @@ export async function setup(dataDir, parentUrl) {
   const jobs = await createDatabase(client, parentId, JOBS_TITLE,
     'Every scored role. Tier and facts are written by the kit; Status, Favorite and Notes are yours and never overwritten.', jobsProperties(radar.dataSourceId));
 
-  // Name the synced relation on the Radar side, then add role counts.
+  // Name the synced relation on the Radar side. (Role counts are numbers the kit writes.)
   const rds = await client.api(`data_sources/${radar.dataSourceId}`);
   const synced = Object.entries(rds.properties).find(([, v]) => v.type === 'relation' && v.relation?.data_source_id === jobs.dataSourceId);
   if (!synced) throw new Error('Notion did not create the synced relation on Company Radar.');
   await client.api(`data_sources/${radar.dataSourceId}`, 'PATCH', { properties: { [synced[0]]: { name: 'Job Postings' } } });
-  await client.api(`data_sources/${radar.dataSourceId}`, 'PATCH', { properties: {
-    'Live roles': { rollup: { relation_property_name: 'Job Postings', rollup_property_name: 'Live', function: 'checked' } },
-    'All roles': { rollup: { relation_property_name: 'Job Postings', rollup_property_name: 'Role', function: 'count' } },
-  } });
 
   const config = {
     parent_page_id: parentId,

@@ -64,7 +64,7 @@ export function postingProps(p, decision, companyPageId, { create }) {
 }
 
 /** Company Radar properties from a watchlist entry (or a bare name). */
-export function companyProps(name, entry, firstSeen, { create }) {
+export function companyProps(name, entry, firstSeen, { create, counts = null }) {
   const e = entry ?? {};
   const raise = e.last_raise ? [e.last_raise.round, e.last_raise.amount_usd ? `$${Math.round(e.last_raise.amount_usd / 1e6)}M` : null, e.last_raise.date].filter(Boolean).join(' · ') : '';
   const props = {
@@ -79,6 +79,7 @@ export function companyProps(name, entry, firstSeen, { create }) {
     Sources: text((e.sources ?? []).map((s) => s.url).join('\n')),
     Origin: select(entry ? (e.origin === 'research' ? 'research' : 'watchlist') : null),
     'First seen': date(firstSeen),
+    ...(counts ? { 'Open postings': num(counts.open), 'Open deployment postings': num(counts.deployment) } : {}),
   };
   if (create) Object.assign(props, {
     Status: select(e.status ?? 'unknown'),
@@ -88,6 +89,36 @@ export function companyProps(name, entry, firstSeen, { create }) {
   });
   return props;
 }
+
+// --- Your company columns: three-way reconciliation (D36) ---------------------------
+// The kit remembers the value it last wrote to each of your columns (entry.notion_pushed).
+//   Notion ≠ last written  → you edited it: your value wins (pull).
+//   Notion = last written  → untouched: newer kit info may update it (push).
+// A page created before the company was on the watchlist was written with the defaults.
+export const OWNED_FIELDS = { status: 'Status', verified: 'Verified', watch: 'Watch', ai_native: 'AI-native' };
+export const OWNED_DEFAULTS = { status: 'unknown', verified: false, watch: false, ai_native: false };
+export const ownedFromEntry = (e) => ({ status: e.status ?? 'unknown', verified: e.verified !== false, watch: Boolean(e.watch), ai_native: Boolean(e.ai_native) });
+export const ownedFromPage = (pg) => Object.fromEntries(Object.entries(OWNED_FIELDS).map(([k, prop]) => {
+  const v = readProp(pg.properties[prop]);
+  return [k, k === 'status' ? (v || 'unknown') : Boolean(v)];
+}));
+
+/**
+ * Decide, per field, whether Notion holds your edit or the kit should update it.
+ * Returns the edits, the updates, and the fields already in agreement. Callers update
+ * entry.notion_pushed only for what they actually do (pull applies edits; sync writes updates).
+ */
+export function reconcile(notion, pushed, current) {
+  const yourEdits = {}, kitUpdates = {}, agreed = {};
+  for (const k of Object.keys(OWNED_FIELDS)) {
+    if (notion[k] === current[k]) agreed[k] = notion[k];
+    else if (notion[k] !== pushed[k]) yourEdits[k] = notion[k];
+    else kitUpdates[k] = current[k];
+  }
+  return { yourEdits, kitUpdates, agreed };
+}
+
+const ownedProps = (vals) => Object.fromEntries(Object.entries(vals).map(([k, v]) => [OWNED_FIELDS[k], k === 'status' ? select(v) : check(v)]));
 
 const ownedRemoved = (props, owned) => Object.fromEntries(Object.entries(props).filter(([k]) => !owned.includes(k)));
 
@@ -99,24 +130,36 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
   const wl = loadWatchlist(watchlistPath(dataDir));
   try {
     // Companies.
+    await ensureRadarColumns(client, cfg);
     const radarPages = await client.queryAll(cfg.radar_data_source_id);
-    const radarByKey = new Map(radarPages.map((pg) => [companyKey(readProp(pg.properties.Name)), pg.id]));
-    let cNew = 0, cUpd = 0;
+    const radarByKey = new Map(radarPages.map((pg) => [companyKey(readProp(pg.properties.Name)), pg]));
+    const counts = companyCounts(store.postings());
+    let cNew = 0, cUpd = 0, wlChanged = false;
     const onlyPostings = postingIds ? store.postings().filter((p) => postingIds.includes(p.id)) : null;
     const companies = onlyPostings ? store.companies().filter((c) => onlyPostings.some((p) => p.company_id === c.id)) : store.companies();
     for (const c of companies) {
       const entry = findCompany(wl, c.name);
       const key = companyKey(entry?.name ?? c.name);
       const existing = radarByKey.get(key);
+      const n = counts.get(c.id) ?? { open: 0, deployment: 0 };
       if (existing) {
-        await client.api(`pages/${existing}`, 'PATCH', { properties: ownedRemoved(companyProps(c.name, entry, c.first_seen, { create: false }), OWNED_BY_YOU.radar) });
+        const props = ownedRemoved(companyProps(c.name, entry, c.first_seen, { create: false, counts: n }), OWNED_BY_YOU.radar);
+        if (entry) {
+          const { kitUpdates, agreed } = reconcile(ownedFromPage(existing), entry.notion_pushed ?? OWNED_DEFAULTS, ownedFromEntry(entry));
+          Object.assign(props, ownedProps(kitUpdates));
+          const nowPushed = { ...OWNED_DEFAULTS, ...entry.notion_pushed, ...agreed, ...kitUpdates };
+          if (JSON.stringify(entry.notion_pushed) !== JSON.stringify(nowPushed)) { entry.notion_pushed = nowPushed; wlChanged = true; }
+        }
+        await client.api(`pages/${existing.id}`, 'PATCH', { properties: props });
         cUpd++;
       } else {
-        const pg = await client.api('pages', 'POST', { parent: { type: 'data_source_id', data_source_id: cfg.radar_data_source_id }, properties: companyProps(c.name, entry, c.first_seen, { create: true }) });
-        radarByKey.set(key, pg.id);
+        const pg = await client.api('pages', 'POST', { parent: { type: 'data_source_id', data_source_id: cfg.radar_data_source_id }, properties: companyProps(c.name, entry, c.first_seen, { create: true, counts: n }) });
+        if (entry) { entry.notion_pushed = ownedFromEntry(entry); wlChanged = true; }
+        radarByKey.set(key, pg);
         cNew++;
       }
     }
+    if (wlChanged) writeFileSync(watchlistPath(dataDir), `${JSON.stringify(wl, null, 2)}\n`);
     // Postings.
     const postings = onlyPostings ?? store.postings();
     const jobPages = onlyPostings
@@ -127,7 +170,7 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
     for (const p of postings) {
       const decision = store.latestDecision(p.id);
       const entry = findCompany(wl, p.company);
-      const companyPage = radarByKey.get(companyKey(entry?.name ?? p.company)) ?? null;
+      const companyPage = radarByKey.get(companyKey(entry?.name ?? p.company))?.id ?? null;
       const existing = jobsByKey.get(p.url_key);
       if (existing) {
         await client.api(`pages/${existing}`, 'PATCH', { properties: ownedRemoved(postingProps(p, decision, companyPage, { create: false }), OWNED_BY_YOU.jobs) });
@@ -152,29 +195,48 @@ export async function pullCompanyEdits(dataDir, { verbose = false, log = console
   const wl = loadWatchlist(path);
   const pages = await client.queryAll(cfg.radar_data_source_id);
   const changes = [];
+  let changed = false;
   for (const pg of pages) {
     const name = readProp(pg.properties.Name);
     if (!name) continue;
-    const edit = {
-      status: readProp(pg.properties.Status) || 'unknown',
-      verified: readProp(pg.properties.Verified),
-      watch: readProp(pg.properties.Watch),
-      ai_native: readProp(pg.properties['AI-native']),
-    };
+    const notion = ownedFromPage(pg);
     let entry = findCompany(wl, name);
     if (!entry) {
-      if (edit.status === 'unknown' && !edit.watch) continue; // nothing decided yet
-      entry = { name, aliases: [], status: edit.status, stage: 'unknown', owner_categories: [], parent: null, is_mbb: false, origin: 'you', reason: 'Set in Notion', sources: [] };
+      // Not on the watchlist: the page was written with the defaults, so any difference is your edit.
+      const { yourEdits } = reconcile(notion, OWNED_DEFAULTS, OWNED_DEFAULTS);
+      if (!Object.keys(yourEdits).length) continue;
+      entry = { name, aliases: [], ...OWNED_DEFAULTS, stage: 'unknown', owner_categories: [], parent: null, is_mbb: false, origin: 'you', reason: 'Set in Notion', sources: [], notion_pushed: { ...OWNED_DEFAULTS } };
       wl.companies.push(entry);
-      changes.push(`${name}: added (${edit.status})`);
+      changes.push(`${name}: added from Notion`);
     }
-    // Compare on the meaning the engine uses: missing "verified" = verified; missing booleans = false.
-    const current = { status: entry.status ?? 'unknown', verified: entry.verified !== false, watch: Boolean(entry.watch), ai_native: Boolean(entry.ai_native) };
-    for (const [k, v] of Object.entries(edit)) {
-      if (current[k] !== v) { changes.push(`${name}: ${k} ${JSON.stringify(current[k])} → ${JSON.stringify(v)}`); entry[k] = v; }
-    }
+    const { yourEdits, agreed } = reconcile(notion, entry.notion_pushed ?? OWNED_DEFAULTS, ownedFromEntry(entry));
+    for (const [k, v] of Object.entries(yourEdits)) { changes.push(`${name}: ${k} ${JSON.stringify(ownedFromEntry(entry)[k])} → ${JSON.stringify(v)}`); entry[k] = v; }
+    const nowPushed = { ...OWNED_DEFAULTS, ...entry.notion_pushed, ...agreed, ...yourEdits };
+    if (JSON.stringify(entry.notion_pushed) !== JSON.stringify(nowPushed)) { entry.notion_pushed = nowPushed; changed = true; }
   }
-  if (changes.length) writeFileSync(path, `${JSON.stringify(wl, null, 2)}\n`);
+  if (changes.length || changed) writeFileSync(path, `${JSON.stringify(wl, null, 2)}\n`);
   if (verbose || changes.length) log(changes.length ? `Company edits from Notion:\n  ${changes.join('\n  ')}` : 'No company edits in Notion.');
   return changes;
+}
+
+/** Open postings per company: all families, and the deployment family (best label: AI's, else title). */
+export function companyCounts(postings) {
+  const by = new Map();
+  for (const p of postings) {
+    if (p.closed_at) continue;
+    const c = by.get(p.company_id) ?? { open: 0, deployment: 0 };
+    c.open++;
+    if ((p.ai_family ?? p.title_family) === 'deployment_ai_strategist') c.deployment++;
+    by.set(p.company_id, c);
+  }
+  return by;
+}
+
+/** Bring an existing Company Radar up to the current layout (idempotent). */
+export async function ensureRadarColumns(client, cfg) {
+  const ds = await client.api(`data_sources/${cfg.radar_data_source_id}`);
+  const patch = {};
+  for (const name of ['Open postings', 'Open deployment postings']) if (!ds.properties[name]) patch[name] = { number: {} };
+  for (const name of ['Live roles', 'All roles']) if (ds.properties[name]) patch[name] = null;
+  if (Object.keys(patch).length) await client.api(`data_sources/${cfg.radar_data_source_id}`, 'PATCH', { properties: patch });
 }
