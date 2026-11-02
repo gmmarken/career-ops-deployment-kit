@@ -110,6 +110,14 @@ test('outside home metro and not remote → configured tier', () => {
   const r = run({ posting: { locations: ['Other City Office'] }, judgment: { work_model: { value: 'onsite', office_days: 5, quote: null } } });
   assert.equal(r.tier, rules.location.outside_home_metro);
 });
+test('outside home metro can be set to Excluded', () => {
+  const r = decideTier(sFacts({ posting: { locations: ['Other City Office'] } }), { ...rules, location: { outside_home_metro: 'Excluded' } }, { today: TODAY });
+  assert.equal(r.tier, 'Excluded');
+  assert.ok(r.flags.includes('Outside Example City'));
+});
+test('remote role outside home metro is still eligible (drops one tier)', () => {
+  assert.equal(run({ posting: { locations: ['Other City'] }, judgment: { work_model: { value: 'remote', office_days: 0, quote: 'remote' } } }).tier, 'A');
+});
 test('multi-office posting including home metro is eligible', () => {
   assert.equal(run({ posting: { locations: ['Other City Office', 'Example City Office'] } }).tier, 'S');
 });
