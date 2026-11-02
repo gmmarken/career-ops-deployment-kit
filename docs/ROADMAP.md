@@ -16,10 +16,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] One job evaluated end-to-end by hand
 
 ## Phase 2 — Extractor + tier engine
-- [ ] JSON schema for extracted facts (with evidence quotes)
-- [ ] Extraction prompt; runs via `claude -p` with no tools
-- [ ] `engine/tier-engine.mjs`: S/A/B/C, caps, drops, exclusions, "why this tier"
-- [ ] Unit tests for every rule
+- [x] JSON schema for extracted facts (with evidence quotes)
+- [x] Extraction prompt; runs via `claude -p` with no tools
+- [x] `engine/tier-engine.mjs`: S/A/B/C, caps, drops, exclusions, "why this tier"
+- [x] Unit tests for every rule
 
 ## Phase 3 — Calibration
 - [ ] 8–10 roles pulled from the old Job Postings DB; facts + expected tier confirmed by me

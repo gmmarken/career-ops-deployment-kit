@@ -80,3 +80,37 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Decision:** Install poppler (`pdftotext`) via Homebrew. Free, local, open source.
 **Why:** career-ops' intake script and its ATS checks on generated CV PDFs both need it.
 **Trade-off:** One more system dependency to list in `install.sh` (Phase 9).
+
+## D15 — Extraction runs on the Claude Code CLI with the subscription, locked down by flags (2026-11-02)
+**Options:** (A) `claude -p` on my subscription; (B) Anthropic API key, pay per use.
+**Decision:** A. Every call runs from an empty temp dir with an explicit tool list (`--tools ""` for extraction), `--permission-mode dontAsk`, `--strict-mcp-config`, and no session persistence; never `--dangerously-skip-permissions`. Our own code re-checks every answer against the schema.
+**Why:** Matches the requirements and adds no bill. The strictest `--bare` mode needs an API key, so isolation comes from the flags instead.
+**Trade-off:** Daily volume counts against plan usage limits; switching to B is one setting.
+
+## D16 — Rule numbers live in a private settings file, with a drift check (2026-11-02)
+**Options:** (A) private `config/tier-rules.json` plus a public example; (B) parse the numbers out of `_custom.md`.
+**Decision:** A. `engine/check-rules-drift.mjs` fails if the settings and `_custom.md` disagree on a number.
+**Why:** No personal values in the repo, and no fragile prose parsing.
+
+## D17 — Code reads exact facts; the model reads judgment, with quotes (2026-11-02)
+**Decision:** Pay, posting date, locations and title come from the ATS's structured API (Ashby, Greenhouse, Lever). The model returns only judgment fields, each with a verbatim JD quote. If JD-text pay disagrees with the ATS, both are shown and flagged.
+**Why:** The Phase 1 run showed a text fetch can miss a posted salary.
+
+## D18 — Company bar: watchlist, then a separate web-research step (2026-11-02)
+**Context:** The extraction model has no web access by design (D5), but recently funded companies are where model memory is weakest.
+**Decision:** A private watchlist is checked first. Otherwise a separate `claude -p` call that receives only the company name, may only search and read the web, and must cite sources. It runs only when the role could otherwise reach S or A. Results are saved to the watchlist as unverified.
+**Why:** Keeps untrusted posting text away from the step that can browse, and spends research only where it can change the decision.
+
+## D19 — Unclear judgment blocks S but isn't a miss (2026-11-02)
+**Decision:** If family, shape, fit or company is unclear, the tier is capped at A and flagged "Verify before S". Missing pay keeps its own rule (not a miss, flagged).
+**Why:** S triggers alerts and prep packs, so it should rest on evidence.
+
+## D20 — Sonnet for extraction, measured (2026-11-02)
+**Decision:** Sonnet by default (`KIT_EXTRACT_MODEL` overrides).
+**Measured on the first runs:** a new company takes 2 calls (extraction + research, about 30 s); a known company takes 1 call, about $0.01–0.05 API-equivalent. Everything else (pay, dates, rules, tiering) is plain code.
+**Why:** Traps are the core precision problem, so the model shouldn't be the cheapest; Phase 3 calibration will show whether a bigger model is ever needed.
+
+## D21 — Rule interpretations encoded in Phase 2 (2026-11-02)
+- "Mixed shape → S only at exceptional companies": Mixed shape counts as met only at an `exceptional` company; elsewhere it's a miss.
+- Roles outside the home metro and not remote: tiered by the `location.outside_home_metro` setting (C by default), flagged, still recorded. Multi-office postings that include the home metro are eligible.
+- Years of experience roll forward automatically from a start date.
