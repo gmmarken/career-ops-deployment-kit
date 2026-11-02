@@ -112,5 +112,5 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 
 ## D21 — Rule interpretations encoded in Phase 2 (2026-11-02)
 - "Mixed shape → S only at exceptional companies": Mixed shape counts as met only at an `exceptional` company; elsewhere it's a miss.
-- Roles outside the home metro and not remote: tiered by the `location.outside_home_metro` setting (C by default), flagged, still recorded. Multi-office postings that include the home metro are eligible.
+- Roles outside the home metro and not remote: tiered by the `location.outside_home_metro` setting; I chose **Excluded** (recorded with the reason, not considered). Multi-office postings that include the home metro are eligible.
 - Years of experience roll forward automatically from a start date.

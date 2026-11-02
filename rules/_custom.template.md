@@ -20,6 +20,8 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 - Exception: {when a borderline range is still worth scoring, and its cap}
 - No posted pay is never a walk-away (see Step 3, criterion 4).
 
+**Step 1d — Location.** On-site or hybrid roles with no office in {home metro} → **{Excluded or a tier}**, flagged and recorded. Remote roles and multi-office roles that include {home metro} stay eligible.
+
 **Step 2 — Traps.** If the role is one of the traps defined in `_profile.md`, the tier is **C** with `Trap: <name>` and the JD quote that shows it.
 
 **Step 3 — Count the S criteria.** All met = S. One missed = A. Two missed = B. Three or more = C.
