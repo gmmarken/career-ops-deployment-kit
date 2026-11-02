@@ -39,6 +39,7 @@ export function validateRules(r, where = 'tier settings') {
   str(r.candidate?.experience_start, 'candidate.experience_start');
   if (r.candidate?.experience_start && Number.isNaN(Date.parse(r.candidate.experience_start))) problems.push('candidate.experience_start must be a date (YYYY-MM-DD)');
   str(r.candidate?.home_metro, 'candidate.home_metro');
+  list(r.candidate?.home_metro_aliases, 'candidate.home_metro_aliases');
   list(r.families, 'families');
   str(r.priority_family, 'priority_family');
   str(r.pay?.currency, 'pay.currency');

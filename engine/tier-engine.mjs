@@ -92,7 +92,11 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   // Location eligibility (home metro or remote). Outside → configured tier.
   const locs = posting.locations || [];
   const workModel = j.work_model?.value ?? posting.workplace ?? 'unclear';
-  const inMetro = locs.some((l) => l.toLowerCase().includes(rules.candidate.home_metro.toLowerCase()));
+  const names = [rules.candidate.home_metro, ...(rules.candidate.home_metro_aliases || [])];
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const metroRe = new RegExp(`\\b(${names.map(esc).join('|')})\\b`, 'i');
+  // In "City, State" only the city counts, so "Albany, New York" is not New York City.
+  const inMetro = locs.some((l) => metroRe.test(l.split(',')[0]));
   if (locs.length && !inMetro && workModel !== 'remote') {
     step('Location', rules.location.outside_home_metro, `locations: ${locs.join('; ')} — not ${rules.candidate.home_metro}, not remote`);
     flags.push(`Outside ${rules.candidate.home_metro}`);
