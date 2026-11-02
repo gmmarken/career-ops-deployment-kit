@@ -195,4 +195,11 @@ class Store {
       .map((r) => ({ ...r, locations: JSON.parse(r.locations), in_home_metro: r.in_home_metro == null ? null : Boolean(r.in_home_metro) }));
   }
   scans() { return this.db.prepare('SELECT * FROM scans ORDER BY started_at').all(); }
+
+  /** Latest tier decision for a posting, parsed, or null. */
+  latestDecision(postingId) {
+    const r = this.db.prepare('SELECT * FROM tier_decisions WHERE posting_id = ? ORDER BY decided_at DESC, id DESC LIMIT 1').get(postingId);
+    return r ? { ...r, flags: JSON.parse(r.flags), steps: JSON.parse(r.steps), facts: JSON.parse(r.facts) } : null;
+  }
+  companies() { return this.db.prepare('SELECT * FROM companies ORDER BY name').all(); }
 }

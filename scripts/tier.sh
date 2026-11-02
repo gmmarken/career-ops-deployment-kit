@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tier one job: hard facts (code) → judgment facts (claude, no tools) → company bar → tier (code).
-# Usage: scripts/tier.sh <job URL> [--model sonnet] [--no-research]
+# Usage: scripts/tier.sh <job URL> [--model sonnet] [--no-research] [--no-notion]
 #        scripts/tier.sh --jd-file <file> --company "<name>" [--title "<role>"] [--location "<city>" ...] [--pay 135000-180000]
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
