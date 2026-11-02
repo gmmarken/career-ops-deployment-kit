@@ -218,3 +218,11 @@ test('GM path tag and priority family appear in sortKey, tier unchanged', () => 
 test('same input → same output (deterministic)', () => {
   assert.deepEqual(run(), run());
 });
+
+// Drift check between settings and prose rules
+import { findDrift } from './check-rules-drift.mjs';
+test('drift check passes when prose mentions every number, fails naming the field otherwise', () => {
+  const prose = 'top $170K, early $140K, walk-away $120K, borderline $110K, older than 60 days';
+  assert.deepEqual(findDrift(rules, prose), []);
+  assert.match(findDrift(rules, prose.replace('$120K', '$125K')).join(), /pay\.walkaway_top = \$120K/);
+});
