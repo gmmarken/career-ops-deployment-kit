@@ -132,3 +132,40 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Result:** 12 live roles (13 labeled; one posting was removed). First run 9/12; after fixing an engine bug (a red flag quoted twice dropped two tiers) and recording the candidate's company call for one company, 10/12; after two label decisions (one relabel, one new rule), 12/12.
 **Limit:** These 12 roles shaped the rules, so 12/12 overstates accuracy on new roles. New postings should be added to the set as they're labeled, and the match rate tracked on roles the rules never saw.
 **Also found:** two boards (Built In, Rippling) carry pay only in page data that text extraction drops; aggregator boards (a16z, Scale, Thrive) link to Ashby postings the reader supports. Both are Phase 5 inputs.
+
+## D25 — Notion via a page-scoped integration key (2026-11-02)
+**Options:** (A) internal integration key, shared with one parent page; (B) the Notion connector in Claude chats.
+**Decision:** A. The key lives in `private/.env`.
+**Why:** Only A works for the unattended daily run, and page scoping limits what a leaked key could see.
+
+## D26 — Job postings sync one way; companies are edited in Notion (2026-11-02)
+**Decision:** Postings flow from the kit to Notion and are never read back; columns the candidate owns (Status, Notes) are never overwritten. Company calls (status, verified, watch) are edited in Notion and read back before tiering; if Notion can't be read, the run stops with a clear error.
+**Why:** Tiers come from rules, not cells; verifying companies is the one recurring edit and belongs where the candidate works.
+
+## D27 — Job Postings fields, with Company as a link to the Radar (2026-11-02)
+**Decision:** Pipeline-owned fields (role, company link, tier, why, flags, family, shape, pay, locations, work model, years asked, posted, date added, last seen, live, board, URL) plus candidate-owned Status and Notes.
+
+## D28 — Archive the old Job Postings database without migrating (2026-11-02)
+**Why:** Its tiers used old rules and many links are dead; the useful roles are already in the calibration set.
+
+## D29 — Phase 4 split into 4a (market database) and 4b (Notion) (2026-11-02)
+**Why:** The market data model had to be settled first and needs no key; smaller PRs.
+
+## D30 — A local database is the source of truth for market data (2026-11-02)
+**Context:** The candidate wants month-by-month hiring data (e.g. NYC deployment-strategy roles per company) for a newsletter.
+**Options:** (A) SQLite file in the private data dir, Notion as the working view; (B) Notion only.
+**Decision:** A, using Node's built-in `node:sqlite` (no dependency).
+**Why:** Time series, rankings and CSV exports are easy in a database and awkward in Notion; history isn't locked to one vendor.
+**Trade-off:** One more file to back up.
+
+## D31 — Record every posting; spend AI only on target roles (2026-11-02)
+**Decision:** Every posting from every scanned source is stored and classified by code (title family, home metro). AI extraction and tiering run only on home-metro target-family roles.
+**Why:** Full market counts and context at no AI cost.
+
+## D32 — Coverage: broad sources plus a hand-collected recall check (2026-11-02)
+**Decision:** Breadth comes from Phase 5 sources, including search-engine discovery of ATS postings. A monthly recall check compares a list the candidate collects by hand (e.g. a LinkedIn search; no scraping or automation) against the database and reports the share already captured.
+**Why:** Makes coverage measurable and honest in the newsletter.
+
+## D33 — Market definitions are frozen and versioned (2026-11-02)
+**Decision:** Each posting stores the classifier version that labelled it; changing a definition is a recorded decision; scans are logged so gaps aren't read as zero hiring; a posting closes only after two complete scans miss it.
+**Why:** Month 1 and month 12 must be measured the same way, or the charts mislead.
