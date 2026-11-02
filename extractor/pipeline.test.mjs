@@ -17,6 +17,10 @@ test('extraction runs with no tools and no MCP servers, never skipping permissio
   assert.ok(!args.includes('--allowedTools'));
   assert.ok(!args.some((a) => /dangerously/.test(a)));
 });
+test('the $schema version key is not sent to claude', () => {
+  const args = claudeArgs({ systemPrompt: 'p', schema: { $schema: 'x', type: 'object' } });
+  assert.deepEqual(JSON.parse(argAfter(args, '--json-schema')), { type: 'object' });
+});
 test('research may only search and read the web', () => {
   const args = claudeArgs({ systemPrompt: 'p', schema: {}, tools: ['WebSearch', 'WebFetch'] });
   assert.equal(argAfter(args, '--tools'), 'WebSearch,WebFetch');

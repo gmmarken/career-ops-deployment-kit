@@ -10,6 +10,8 @@ import { join } from 'node:path';
 export const DEFAULT_MODEL = process.env.KIT_EXTRACT_MODEL || 'sonnet';
 const TIMEOUT_MS = 5 * 60_000;
 
+const stripMeta = ({ $schema, ...rest }) => rest;
+
 /** Build the argument list. Exported for tests. */
 export function claudeArgs({ systemPrompt, schema, tools = [], model = DEFAULT_MODEL }) {
   const args = [
@@ -17,7 +19,8 @@ export function claudeArgs({ systemPrompt, schema, tools = [], model = DEFAULT_M
     '--output-format', 'json',
     '--model', model,
     '--system-prompt', systemPrompt,
-    '--json-schema', JSON.stringify(schema),
+    // claude's validator rejects the draft-2020-12 $schema key; the shape itself is unchanged.
+    '--json-schema', JSON.stringify(stripMeta(schema)),
     '--tools', tools.join(','),
     '--permission-mode', 'dontAsk',
     '--strict-mcp-config',
@@ -53,6 +56,7 @@ export function parseClaudeOutput(stdout) {
       input_tokens: envelope.usage?.input_tokens ?? null,
       output_tokens: envelope.usage?.output_tokens ?? null,
       cache_read_tokens: envelope.usage?.cache_read_input_tokens ?? null,
+      cache_write_tokens: envelope.usage?.cache_creation_input_tokens ?? null,
       cost_usd_equivalent: envelope.total_cost_usd ?? null,
       duration_ms: envelope.duration_ms ?? null,
       turns: envelope.num_turns ?? null,
