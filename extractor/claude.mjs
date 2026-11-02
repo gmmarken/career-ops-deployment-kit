@@ -19,6 +19,7 @@ export function claudeArgs({ systemPrompt, schema, tools = [], model = DEFAULT_M
     '--system-prompt', systemPrompt,
     '--json-schema', JSON.stringify(schema),
     '--tools', tools.join(','),
+    '--permission-mode', 'dontAsk',
     '--strict-mcp-config',
     '--no-session-persistence',
   ];
