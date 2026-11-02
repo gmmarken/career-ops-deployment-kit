@@ -169,3 +169,10 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 ## D33 — Market definitions are frozen and versioned (2026-11-02)
 **Decision:** Each posting stores the classifier version that labelled it; changing a definition is a recorded decision; scans are logged so gaps aren't read as zero hiring; a posting closes only after two complete scans miss it.
 **Why:** Month 1 and month 12 must be measured the same way, or the charts mislead.
+
+## D34 — Notion client: paced, no retries (2026-11-02)
+**Decision:** Requests are spaced under Notion's ~3/second limit; any error (including rate limiting) stops the run with Notion's message. Database ids live in `<data dir>/config/notion.json`; only the integration secret is in `.env`.
+**Why:** The fail-loudly rule (D7) requires a decision before adding retries; pacing should make rate limits rare. If unattended runs hit them in practice, a bounded retry is a candidate decision for Phase 7.
+
+## D35 — Single-role sync from tier.sh; company calls pulled first (2026-11-02)
+**Decision:** `tier.sh` pulls company calls from Notion before tiering (stopping if Notion can't be read) and syncs only the role it tiered (about 4 Notion calls). `--no-notion` skips both with a printed warning. The old Job Postings database was renamed "(archived 2026-11)", with nothing deleted. Its Status options, Favorite, Fit and GM/Product path ideas carried into the new layout.
