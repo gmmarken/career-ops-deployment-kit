@@ -1,0 +1,32 @@
+{
+  "_about": "EXAMPLE values for tests and new users. Real values live in <data dir>/config/tier-rules.json (never committed). See engine/README.md for every field.",
+  "candidate": {
+    "experience_start": "2020-01-01",
+    "home_metro": "Example City"
+  },
+  "families": ["deployment_ai_strategist", "forward_deployed_pm", "bizops_so", "chief_of_staff"],
+  "priority_family": "deployment_ai_strategist",
+  "pay": {
+    "currency": "USD",
+    "s_bar_top": 170000,
+    "early_stage_bar_top": 140000,
+    "early_stages": ["seed", "series_a", "series_b", "series_c"],
+    "walkaway_top": 120000,
+    "borderline_floor_top": 110000
+  },
+  "seniority": {
+    "reach_max_extra_years": 2
+  },
+  "caps": {
+    "reach": "B",
+    "tactical": "B",
+    "mbb": "A",
+    "borderline_equity": "B",
+    "unclear_judgment": "A"
+  },
+  "location": {
+    "outside_home_metro": "C"
+  },
+  "old_posting_days": 60,
+  "excluded_categories": ["example_excluded_parent", "crypto_first", "staffing_outsourcing", "big4"]
+}
