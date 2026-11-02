@@ -1,0 +1,14 @@
+{
+  "name": "career-ops-deployment-kit",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Deployment layer on top of career-ops: extractor, deterministic tier engine, sources, delivery.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
