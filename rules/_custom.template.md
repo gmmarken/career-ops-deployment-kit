@@ -34,6 +34,7 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 **Step 4 — Seniority.** Candidate has {N} years.
 - Asks for +{x}-{y} years = **Reach**.
 - Asks for more, or a hard gate they can't meet = **Reference only** → tier C.
+- Asks for {N}+ years *less* than the candidate has = **Below level** → at most **{tier}** (a cap, not a drop).
 
 **Step 5 — Caps** (the highest the tier can be):
 - Reach → at most **{tier}**

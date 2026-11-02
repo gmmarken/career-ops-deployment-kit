@@ -182,6 +182,18 @@ for (const [label, over] of [
 test('asks for same years → fits → S', () => assert.equal(run({ judgment: { years_required: { min: 6, hard_gate: false, hard_gate_met: null, quote: '6+ years' } } }).tier, 'S'));
 test('asks +2 years → Reach → capped at B', () => assert.equal(run({ judgment: { years_required: { min: 8, hard_gate: false, hard_gate_met: null, quote: '8+ years' } } }).tier, 'B'));
 test('asks +3 years → Reference only → C', () => assert.equal(run({ judgment: { years_required: { min: 9, hard_gate: false, hard_gate_met: null, quote: '9+ years' } } }).tier, 'C'));
+test('asks 3+ years below the candidate → Below level, capped at A, flagged', () => {
+  const r = run({ judgment: { years_required: { min: 3, hard_gate: false, hard_gate_met: null, quote: '1-3 years' } } });
+  assert.equal(r.tier, 'A');
+  assert.ok(r.flags.includes('Below level: asks 3 years, has 6'));
+});
+test('asks 2 years below → not below level → S', () => {
+  assert.equal(run({ judgment: { years_required: { min: 4, hard_gate: false, hard_gate_met: null, quote: '4+ years' } } }).tier, 'S');
+});
+test('below level is a cap, not a drop: a B role stays B', () => {
+  assert.equal(run({ company: { status: 'not_strong' }, posting: { pay: { min: 100000, max: 150000, currency: 'USD', interval: 'year', kind: 'base', source: 'ats' } },
+    judgment: { years_required: { min: 1, hard_gate: false, hard_gate_met: null, quote: '1+ year' } } }).tier, 'B');
+});
 test('unmet hard gate → C', () => assert.equal(run({ judgment: { years_required: { min: null, hard_gate: true, hard_gate_met: false, quote: 'must have managed 10 people' } } }).tier, 'C'));
 test('years not stated → no Reach', () => assert.equal(run().steps.find((s) => s.step.startsWith('4.')).result, 'not stated'));
 
