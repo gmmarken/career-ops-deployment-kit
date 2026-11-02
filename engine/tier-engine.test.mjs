@@ -199,6 +199,11 @@ for (const flag of ['ticket_config_work', 'high_account_load', 'quota_ownership'
     assert.ok(r.flags.includes(`Red flag: ${flag} — "evidence"`));
   });
 }
+test('the same red flag quoted twice drops only one tier', () => {
+  const r = run({ judgment: { red_flags: [{ flag: 'book_of_business', quote: 'a' }, { flag: 'book_of_business', quote: 'b' }] } });
+  assert.equal(r.tier, 'A');
+  assert.ok(r.flags.includes('Red flag: book_of_business — "a" — "b"'));
+});
 test('drops stack and never go below C', () => {
   const r = run({ judgment: { red_flags: [
     { flag: 'ticket_config_work', quote: 'a' }, { flag: 'high_account_load', quote: 'b' },

@@ -188,7 +188,10 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   const drops = [];
   if (workModel === 'remote') drops.push('Remote role');
   if (j.back_office?.value) drops.push(`Back office${q(j.back_office.quote)}`);
-  for (const rf of j.red_flags || []) drops.push(`Red flag: ${rf.flag}${q(rf.quote)}`);
+  // One drop per red-flag TYPE, however many quotes back it up.
+  const byFlag = new Map();
+  for (const rf of j.red_flags || []) byFlag.set(rf.flag, [...(byFlag.get(rf.flag) || []), rf.quote]);
+  for (const [flag, quotes] of byFlag) drops.push(`Red flag: ${flag}${quotes.filter(Boolean).map((x) => ` — "${x}"`).join('')}`);
   if (drops.length) {
     const before = tier;
     tier = lower(tier, drops.length);
