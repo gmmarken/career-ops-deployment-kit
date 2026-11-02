@@ -2,7 +2,7 @@
 // Tier one job: hard facts (code) → judgment facts (model, no tools) → company bar → tier (code).
 //
 // Usage (via scripts/tier.sh, which sets CAREER_OPS_DATA_DIR):
-//   scripts/tier.sh <ashby|greenhouse|lever job URL> [--model sonnet] [--no-research]
+//   scripts/tier.sh <ashby|greenhouse|lever job URL> [--model sonnet] [--no-research] [--no-notion]
 //   scripts/tier.sh --jd-file <file> --company "<name>" [--title "<role>"] [--location "<city>" ...] [--pay 135000-180000]
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,9 +11,10 @@ import { decideTier, explain } from '../engine/tier-engine.mjs';
 import { gatherFacts, checkSource, describeCalls } from './pipeline.mjs';
 import { openStore } from '../market/store.mjs';
 import { recordTiered } from '../market/record.mjs';
+import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
 
 function parseArgs(argv) {
-  const opts = { research: true, src: { locations: [] } };
+  const opts = { research: true, notion: true, src: { locations: [] } };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--jd-file') opts.src.jdFile = argv[++i];
@@ -23,6 +24,7 @@ function parseArgs(argv) {
     else if (a === '--pay') opts.src.pay = argv[++i];
     else if (a === '--model') opts.model = argv[++i];
     else if (a === '--no-research') opts.research = false;
+    else if (a === '--no-notion') opts.notion = false;
     else if (a.startsWith('--')) throw new Error(`Unknown option ${a}`);
     else opts.src.url = a;
   }
@@ -37,11 +39,14 @@ async function main() {
   const dataDir = process.env.CAREER_OPS_DATA_DIR;
   if (!dataDir) throw new Error('CAREER_OPS_DATA_DIR is not set. Run through scripts/tier.sh.');
   const rules = loadRules();
+  // Your company calls in Notion drive the company bar; if Notion can't be read, stop (D26).
+  if (opts.notion) await pullCompanyEdits(dataDir);
+  else console.log('⚠️ --no-notion: company calls from Notion were NOT read, and this role will not be synced to Notion.');
   const { facts, calls, companyNote } = await gatherFacts(opts.src, { dataDir, rules, model: opts.model, research: opts.research });
   const result = decideTier(facts, rules);
 
   const store = openStore();
-  const { isNew } = recordTiered(store, facts, result, rules);
+  const { id: postingId, isNew } = recordTiered(store, facts, result, rules);
   store.close();
 
   const outDir = join(dataDir, 'tiers');
@@ -55,6 +60,7 @@ async function main() {
   console.log(`AI calls: ${describeCalls(calls)}`);
   console.log(`Saved: ${outFile}`);
   console.log(`Market database: ${isNew ? 'new posting recorded' : 'existing posting updated (last seen today)'}`);
+  if (opts.notion) await syncAll(dataDir, { postingIds: [postingId] });
 }
 
 main().catch((err) => {
