@@ -38,3 +38,11 @@ export function inHomeMetro(locations, { home_metro, home_metro_aliases = [] }) 
   const re = new RegExp(`\\b(${names.map(esc).join('|')})\\b`, 'i');
   return (locations || []).some((l) => re.test(String(l).split(',')[0]));
 }
+
+// Company-name matching for hand-collected lists: ignore case, punctuation, and common
+// endings ("Distyl AI" = "Distyl", "Acme, Inc." = "Acme"). Exact normalized match only.
+const COMPANY_SUFFIXES = /\b(inc|llc|ltd|corp|corporation|co|company|ai|labs?|hq|technologies|technology|tech|group)\b/g;
+export function companyKey(name) {
+  const k = String(name ?? '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(COMPANY_SUFFIXES, ' ').replace(/\s+/g, '');
+  return k || String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
+import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey } from './classify.mjs';
 import { openStore, urlKey, CLOSE_AFTER_MISSES } from './store.mjs';
 import { monthRange, openInMonth, monthlyByCompany, ranking, toCsv } from './metrics.mjs';
 
@@ -110,3 +110,11 @@ test('ranking orders companies by postings in window', () => {
   assert.deepEqual(ranking(ps, { from: '2026-01', to: '2026-03' }).map((r) => [r.rank, r.company, r.postings]), [[1, 'Acme', 2], [2, 'Beta', 1]]);
 });
 test('CSV quotes commas and quotes', () => assert.equal(toCsv([{ a: 'x, y', b: 'say "hi"' }]), 'a,b\n"x, y","say ""hi"""\n'));
+
+test('companyKey ignores common endings but not real name differences', () => {
+  assert.equal(companyKey('Distyl AI'), companyKey('Distyl'));
+  assert.equal(companyKey('Acme, Inc.'), companyKey('acme'));
+  assert.equal(companyKey('Thread AI'), companyKey('Thread'));
+  assert.notEqual(companyKey('Ramp'), companyKey('Rampart'));
+  assert.equal(companyKey('AI'), 'ai');
+});

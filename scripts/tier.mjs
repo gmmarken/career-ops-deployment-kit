@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier, explain } from '../engine/tier-engine.mjs';
 import { gatherFacts, checkSource, describeCalls } from './pipeline.mjs';
+import { openStore } from '../market/store.mjs';
+import { recordTiered } from '../market/record.mjs';
 
 function parseArgs(argv) {
   const opts = { research: true, src: { locations: [] } };
@@ -38,6 +40,10 @@ async function main() {
   const { facts, calls, companyNote } = await gatherFacts(opts.src, { dataDir, rules, model: opts.model, research: opts.research });
   const result = decideTier(facts, rules);
 
+  const store = openStore();
+  const { isNew } = recordTiered(store, facts, result, rules);
+  store.close();
+
   const outDir = join(dataDir, 'tiers');
   mkdirSync(outDir, { recursive: true });
   const outFile = join(outDir, `${new Date().toISOString().slice(0, 10)}-${slug(facts.company.name)}-${slug(facts.posting.title)}.json`);
@@ -48,6 +54,7 @@ async function main() {
   console.log(`\nCompany bar source: ${companyNote}`);
   console.log(`AI calls: ${describeCalls(calls)}`);
   console.log(`Saved: ${outFile}`);
+  console.log(`Market database: ${isNew ? 'new posting recorded' : 'existing posting updated (last seen today)'}`);
 }
 
 main().catch((err) => {

@@ -6,7 +6,7 @@
 // Run via scripts/evals.sh, which sets CAREER_OPS_DATA_DIR.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
-import { createHash } from 'node:crypto';
+import { promptHash } from '../market/record.mjs';
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
 import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts } from '../extractor/research.mjs';
@@ -20,10 +20,7 @@ const casesPath = join(evalDir, 'cases.json');
 const snapDir = join(evalDir, 'snapshots');
 
 /** Fingerprint of the extraction instructions; a snapshot from older instructions is stale. */
-const promptHash = () => createHash('sha256')
-  .update(readFileSync(new URL('../extractor/prompt.md', import.meta.url)))
-  .update(readFileSync(new URL('../extractor/judgment.schema.json', import.meta.url)))
-  .digest('hex').slice(0, 12);
+
 
 function loadCases() {
   if (!existsSync(casesPath)) throw new Error(`No cases at ${casesPath}. See evals/README.md for the format.`);
