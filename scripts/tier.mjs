@@ -95,7 +95,7 @@ async function main() {
   console.log(`${name} — ${posting.title}`);
   console.log(explain(result));
   console.log(`\nCompany bar source: ${companyNote}`);
-  console.log(`AI calls: ${calls.length} (${calls.map((c) => `${c.step}: ${c.input_tokens ?? '?'} in / ${c.output_tokens ?? '?'} out tokens${c.cost_usd_equivalent != null ? `, ~$${c.cost_usd_equivalent.toFixed(4)} API-equivalent` : ''}`).join('; ')})`);
+  console.log(`AI calls: ${calls.length} (${calls.map((c) => `${c.step}: ${(c.input_tokens ?? 0) + (c.cache_read_tokens ?? 0) + (c.cache_write_tokens ?? 0)} in (incl. cache) / ${c.output_tokens ?? '?'} out tokens${c.cost_usd_equivalent != null ? `, ~$${c.cost_usd_equivalent.toFixed(4)} API-equivalent` : ''}`).join('; ')})`);
   console.log(`Saved: ${outFile}`);
 }
 
