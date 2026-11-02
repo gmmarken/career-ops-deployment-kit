@@ -10,6 +10,7 @@ Built on [career-ops](https://github.com/santifer/career-ops) (MIT, pinned at v1
 | Kit (this repo) | rules pack, plugins, scripts, evals, docs | `career-ops-deployment-kit/` | this repo |
 | Private data | `cv.md`, real profile, tracker, reports, JDs | `private/` (`CAREER_OPS_DATA_DIR`) | never |
 | Keys | `.env` (Notion, Resend, Serper…) | `private/.env` + password manager | never |
+| Market data | Every posting seen (first/last seen, closed), companies, scans, tier history; source of truth for monthly hiring metrics. Notion is a working view synced from it (D30) | `private/data/market.db` | never |
 
 ## 2. Design principle: the model extracts, code decides the tier
 

@@ -19,6 +19,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Calibration (`evals/`, `scripts/evals.sh`): private labeled set, frozen extraction snapshots, AI-misread vs rule-miss classification; 12/12 on the first set (see D24 for the limit).
 - `tier.sh` options for boards without a supported API: `--jd-file`, `--pay`, repeatable `--location`, `--title`.
 - Rules: book-of-business red flag, travel ranges, below-level cap, AI-native sort preference (D23).
+- Market database (`market/`, `scripts/market.sh`): every tiered role recorded with first/last seen dates and tier history; backfill, monthly metrics CSV with scan coverage, and a hand-collected recall check (D30–D33).
 
 ### Changed
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).

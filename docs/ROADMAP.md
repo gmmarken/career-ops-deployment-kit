@@ -26,12 +26,16 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Eval runner; report shows extraction vs rule misses
 - [x] ≥ 8/10 tiers match; misses explained and fixed or documented
 
-## Phase 4 — Notion
+## Phase 4 — Market database + Notion
+- [x] 4a: market database (postings with first/last seen, companies, scans, tier history), versioned classifiers, monthly metrics CSV, recall check
+- [ ] 4b: Notion integration key (by hand)
 - [ ] New Job Postings DB schema (market-tracking fields, date added)
 - [ ] Export plugin: every scored role upserted; old DB archived
 - [ ] Company Radar DB schema
 
 ## Phase 5 — Sources
+- [ ] Minimal daily scan of known company boards (starts the market history; alerts stay in Phase 7)
+- [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
 - [ ] Companies to Watch boards → generated `portals.yml`
 - [ ] startup-boards plugin enabled
 - [ ] Serper discovery + NYC tech funding sites
