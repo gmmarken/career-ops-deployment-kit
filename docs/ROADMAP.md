@@ -28,10 +28,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 
 ## Phase 4 — Market database + Notion
 - [x] 4a: market database (postings with first/last seen, companies, scans, tier history), versioned classifiers, monthly metrics CSV, recall check
-- [ ] 4b: Notion integration key (by hand)
-- [ ] New Job Postings DB schema (market-tracking fields, date added)
-- [ ] Export plugin: every scored role upserted; old DB archived
-- [ ] Company Radar DB schema
+- [x] 4b: Notion integration key (by hand)
+- [x] New Job Postings DB schema (market-tracking fields, date added)
+- [x] Export plugin: every scored role upserted; old DB archived
+- [x] Company Radar DB schema
 
 ## Phase 5 — Sources
 - [ ] Minimal daily scan of known company boards (starts the market history; alerts stay in Phase 7)

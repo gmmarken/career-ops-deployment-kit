@@ -20,6 +20,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `tier.sh` options for boards without a supported API: `--jd-file`, `--pay`, repeatable `--location`, `--title`.
 - Rules: book-of-business red flag, travel ranges, below-level cap, AI-native sort preference (D23).
 - Market database (`market/`, `scripts/market.sh`): every tiered role recorded with first/last seen dates and tier history; backfill, monthly metrics CSV with scan coverage, and a hand-collected recall check (D30–D33).
+- Notion (`notion/`, `scripts/notion.sh`): Job Postings and Company Radar created from code; postings and companies synced; your company calls read back before tiering; old database archived (D34–D35).
 
 ### Changed
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
