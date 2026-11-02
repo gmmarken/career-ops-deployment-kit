@@ -18,7 +18,14 @@ Notion is the **working view** of the market database (D26, D30): you browse, tr
 | Database | Written by the kit (overwritten every sync) | Yours (set once on create, never overwritten) |
 |---|---|---|
 | Job Postings | Role, Company (link), Tier, Why, Flags, Family, Shape, Fit, GM/Product path, Back office, Pay, Locations, NYC, Work model, Office days, Years asked, Posted, Date added, Last seen, Live, Board, URL, Key | Status, Favorite, Notes |
-| Company Radar | Stage, Last raise, Investors, What they do, Parent, Excluded as, Reason, Sources, Origin, First seen (+ role counts) | **Status, Verified, Watch, AI-native**, read back into the watchlist before every tiering run |
+| Company Radar | Stage, Last raise, Investors, What they do, Parent, Excluded as, Reason, Sources, Origin, First seen, **Open postings**, **Open deployment postings** | **Status, Verified, Watch, AI-native**, read back into the watchlist before every tiering run |
+
+## How your company columns stay yours
+The kit remembers the value it last wrote to each of your four company columns:
+- **Notion differs from what the kit last wrote:** you edited it, and your value wins. It's copied into the watchlist on the next pull.
+- **Notion still matches what the kit last wrote:** you haven't touched it, so newer kit information (e.g. fresh research) updates it.
+
+**Open postings** counts all open postings the kit has recorded for the company. **Open deployment postings** counts those in the deployment family, using the AI's label where a role was tiered and the title classifier otherwise. Both fill out as Phase 5 scans whole job boards.
 
 ## Commands
 ```bash

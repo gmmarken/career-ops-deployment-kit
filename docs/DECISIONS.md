@@ -176,3 +176,8 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 
 ## D35 — Single-role sync from tier.sh; company calls pulled first (2026-11-02)
 **Decision:** `tier.sh` pulls company calls from Notion before tiering (stopping if Notion can't be read) and syncs only the role it tiered (about 4 Notion calls). `--no-notion` skips both with a printed warning. The old Job Postings database was renamed "(archived 2026-11)", with nothing deleted. Its Status options, Favorite, Fit and GM/Product path ideas carried into the new layout.
+
+## D36 — Your Notion company columns: last-written tracking (2026-11-02)
+**Context:** Review found two bugs: company calls made in Notion for companies not yet on the watchlist were skipped, and research arriving after a Radar page existed was overwritten by the page's default "unknown".
+**Decision:** The kit records the value it last wrote to each candidate-owned company column. Notion differing from it means the candidate edited it (their value wins); Notion matching it lets newer kit information through. Pull and sync each record only what they actually did. Company Radar shows kit-written "Open postings" and "Open deployment postings" instead of rollups of tiered roles.
+**Why:** The candidate's company calls must never be lost or silently reverted, and the Radar needs counts of the whole job board, not just tiered roles.
