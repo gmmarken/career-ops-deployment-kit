@@ -80,16 +80,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
     step('1b. Walk-away pay', 'clear', top === null ? 'no comparable posted pay' : `top of range ${top}`);
   }
 
-  // Step 2 — traps.
-  if (j.traps?.length) {
-    const t = j.traps[0];
-    for (const trap of j.traps) flags.push(`Trap: ${trap.trap}${q(trap.quote)}`);
-    step('2. Traps', 'C', `${t.trap}${q(t.quote)}`);
-    return done('C');
-  }
-  step('2. Traps', 'none', '');
-
-  // Location eligibility (home metro or remote). Outside → configured tier.
+  // Step 1d — location eligibility (home metro or remote). Outside → configured tier.
   const locs = posting.locations || [];
   const workModel = j.work_model?.value ?? posting.workplace ?? 'unclear';
   const names = [rules.candidate.home_metro, ...(rules.candidate.home_metro_aliases || [])];
@@ -102,6 +93,15 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
     flags.push(`Outside ${rules.candidate.home_metro}`);
     return done(rules.location.outside_home_metro);
   }
+
+  // Step 2 — traps.
+  if (j.traps?.length) {
+    const t = j.traps[0];
+    for (const trap of j.traps) flags.push(`Trap: ${trap.trap}${q(trap.quote)}`);
+    step('2. Traps', 'C', `${t.trap}${q(t.quote)}`);
+    return done('C');
+  }
+  step('2. Traps', 'none', '');
 
   // Step 3 — count the S criteria.
   const misses = [];

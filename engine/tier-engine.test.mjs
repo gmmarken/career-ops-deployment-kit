@@ -129,6 +129,10 @@ test('in "City, State" only the city counts', () => {
 test('aliases match whole words only', () => {
   assert.equal(run({ posting: { locations: ['Texclusive Town'] } }).tier, rules.location.outside_home_metro);
 });
+test('location is checked before traps (outside + trap → outside rule wins)', () => {
+  const r = run({ posting: { locations: ['Other City Office'] }, judgment: { traps: [{ trap: 'quota_sales', quote: 'x' }] } });
+  assert.equal(r.tier, rules.location.outside_home_metro);
+});
 test('multi-office posting including home metro is eligible', () => {
   assert.equal(run({ posting: { locations: ['Other City Office', 'Example City Office'] } }).tier, 'S');
 });
