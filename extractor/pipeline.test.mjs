@@ -12,6 +12,7 @@ test('extraction runs with no tools and no MCP servers, never skipping permissio
   const args = claudeArgs({ systemPrompt: 'p', schema: { type: 'object' }, tools: [] });
   assert.equal(argAfter(args, '--tools'), '');
   assert.ok(args.includes('--strict-mcp-config'));
+  assert.equal(argAfter(args, '--permission-mode'), 'dontAsk');
   assert.ok(args.includes('--no-session-persistence'));
   assert.ok(!args.includes('--allowedTools'));
   assert.ok(!args.some((a) => /dangerously/.test(a)));
