@@ -29,14 +29,16 @@
     "borderline_floor_top": 110000
   },
   "seniority": {
-    "reach_max_extra_years": 2
+    "reach_max_extra_years": 2,
+    "below_level_years": 3
   },
   "caps": {
     "reach": "B",
     "tactical": "B",
     "mbb": "A",
     "borderline_equity": "B",
-    "unclear_judgment": "A"
+    "unclear_judgment": "A",
+    "below_level": "A"
   },
   "location": {
     "outside_home_metro": "C"

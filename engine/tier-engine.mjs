@@ -155,6 +155,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   const yrs = yearsOfExperience(rules.candidate.experience_start, today);
   const ask = j.years_required?.min;
   let reach = false;
+  let belowLevel = false;
   if (j.years_required?.hard_gate && j.years_required.hard_gate_met === false) {
     step('4. Seniority', 'Reference only → C', `hard gate${q(j.years_required.quote)}`);
     return done('C');
@@ -166,7 +167,8 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
       return done('C');
     }
     reach = extra >= 1;
-    step('4. Seniority', reach ? 'Reach' : 'fits', `asks ${ask}, has ${yrs}`);
+    belowLevel = yrs - ask >= rules.seniority.below_level_years;
+    step('4. Seniority', reach ? 'Reach' : belowLevel ? 'Below level' : 'fits', `asks ${ask}, has ${yrs}`);
   } else {
     step('4. Seniority', 'not stated', `has ${yrs}`);
   }
@@ -175,6 +177,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   const caps = [];
   const applyCap = (cap, why) => { const before = tier; tier = capAt(tier, cap); caps.push(`${why} → max ${cap}${before !== tier ? ` (${before}→${tier})` : ''}`); };
   if (reach) applyCap(rules.caps.reach, 'Reach');
+  if (belowLevel) { applyCap(rules.caps.below_level, 'Below level'); flags.push(`Below level: asks ${ask} years, has ${yrs}`); }
   if (shape === 'tactical') applyCap(rules.caps.tactical, 'Tactical shape');
   if (company.is_mbb) applyCap(rules.caps.mbb, 'MBB');
   if (borderlineCap) applyCap(rules.caps.borderline_equity, 'Borderline walk-away with equity');
