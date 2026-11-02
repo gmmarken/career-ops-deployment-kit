@@ -5,6 +5,7 @@
 // The facts shape is defined in extractor/facts.schema.json. The rules follow
 // modes/_custom.md steps 1-8 (see engine/README.md for the mapping).
 import { TIERS } from './rules.mjs';
+import { inHomeMetro } from '../market/classify.mjs';
 
 const lower = (tier, n = 1) => TIERS[Math.min(TIERS.indexOf(tier) + n, TIERS.length - 1)];
 const capAt = (tier, cap) => (TIERS.indexOf(tier) < TIERS.indexOf(cap) ? cap : tier);
@@ -84,11 +85,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   // Step 1d — location eligibility (home metro or remote). Outside → configured tier.
   const locs = posting.locations || [];
   const workModel = j.work_model?.value ?? posting.workplace ?? 'unclear';
-  const names = [rules.candidate.home_metro, ...(rules.candidate.home_metro_aliases || [])];
-  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const metroRe = new RegExp(`\\b(${names.map(esc).join('|')})\\b`, 'i');
-  // In "City, State" only the city counts, so "Albany, New York" is not New York City.
-  const inMetro = locs.some((l) => metroRe.test(l.split(',')[0]));
+  const inMetro = inHomeMetro(locs, rules.candidate);
   if (locs.length && !inMetro && workModel !== 'remote') {
     step('Location', rules.location.outside_home_metro, `locations: ${locs.join('; ')} — not ${rules.candidate.home_metro}, not remote`);
     flags.push(`Outside ${rules.candidate.home_metro}`);
