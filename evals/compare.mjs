@@ -14,6 +14,7 @@ export function keyFactsOf(facts) {
     red_flags: [...new Set((j.red_flags || []).map((r) => r.flag))].sort(),
     years_min: j.years_required?.min ?? null,
     work_model: j.work_model?.value ?? null,
+    back_office: Boolean(j.back_office?.value),
   };
 }
 
