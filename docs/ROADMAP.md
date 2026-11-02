@@ -22,9 +22,9 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Unit tests for every rule
 
 ## Phase 3 — Calibration
-- [ ] 8–10 roles pulled from the old Job Postings DB; facts + expected tier confirmed by me
-- [ ] Eval runner; report shows extraction vs rule misses
-- [ ] ≥ 8/10 tiers match; misses explained and fixed or documented
+- [x] 8–10 roles pulled from the old Job Postings DB; facts + expected tier confirmed by me
+- [x] Eval runner; report shows extraction vs rule misses
+- [x] ≥ 8/10 tiers match; misses explained and fixed or documented
 
 ## Phase 4 — Notion
 - [ ] New Job Postings DB schema (market-tracking fields, date added)

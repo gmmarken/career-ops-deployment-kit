@@ -114,3 +114,21 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 - "Mixed shape → S only at exceptional companies": Mixed shape counts as met only at an `exceptional` company; elsewhere it's a miss.
 - Roles outside the home metro and not remote: tiered by the `location.outside_home_metro` setting; I chose **Excluded** (recorded with the reason, not considered). Multi-office postings that include the home metro are eligible.
 - Years of experience roll forward automatically from a start date.
+
+## D22 — Calibration set is private, with frozen facts (2026-11-02)
+**Decision:** Labeled roles, frozen extraction snapshots and reports live in the private data dir; the repo holds the runner and comparison logic. Re-tiering from snapshots costs zero AI calls; `--refresh` re-extracts only when the instructions change. Each miss is classified as an AI misread (a confirmed key fact differs) or a rule miss.
+**Why:** Labels reflect personal judgment and thresholds; frozen facts make rule changes testable in under a second. Whether labels go public is a Phase 9 decision.
+
+## D23 — Rule clarifications from calibration (2026-11-02)
+- Hands-on building in service of a customer outcome the role owns stays **Strategic**; Mixed means splitting time between strategy and executing plans or configuration others define.
+- Travel: a flat 50%, or a range whose top is above 50%, is a red flag; a range topping out at 50% is fine.
+- A required **book of business** (measured on retention, renewals or expansion) is a red flag; an optional path into account ownership isn't.
+- Post-sale AI deployment / adoption roles count as the deployment family.
+- Top non-AI companies can be strong; an AI-native marker breaks ties within a tier and never changes it.
+- **Below level:** a role asking 3+ years less than the candidate has is capped at A (a cap, not a drop).
+**Why:** Each came from a disagreement between old labels and the new pipeline on real postings.
+
+## D24 — Calibration result, and its limit (2026-11-02)
+**Result:** 12 live roles (13 labeled; one posting was removed). First run 9/12; after fixing an engine bug (a red flag quoted twice dropped two tiers) and recording the candidate's company call for one company, 10/12; after two label decisions (one relabel, one new rule), 12/12.
+**Limit:** These 12 roles shaped the rules, so 12/12 overstates accuracy on new roles. New postings should be added to the set as they're labeled, and the match rate tracked on roles the rules never saw.
+**Also found:** two boards (Built In, Rippling) carry pay only in page data that text extraction drops; aggregator boards (a16z, Scale, Thrive) link to Ashby postings the reader supports. Both are Phase 5 inputs.
