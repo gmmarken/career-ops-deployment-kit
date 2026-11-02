@@ -118,6 +118,17 @@ test('outside home metro can be set to Excluded', () => {
 test('remote role outside home metro is still eligible (drops one tier)', () => {
   assert.equal(run({ posting: { locations: ['Other City'] }, judgment: { work_model: { value: 'remote', office_days: 0, quote: 'remote' } } }).tier, 'A');
 });
+test('home-metro aliases count as in the metro (e.g. a borough name)', () => {
+  assert.equal(run({ posting: { locations: ['Example Borough, EX'] } }).tier, 'S');
+  assert.equal(run({ posting: { locations: ['EXC'] } }).tier, 'S');
+});
+test('in "City, State" only the city counts', () => {
+  assert.equal(run({ posting: { locations: ['Example City, EX'] } }).tier, 'S');
+  assert.equal(run({ posting: { locations: ['Othertown, Example City'] } }).tier, rules.location.outside_home_metro);
+});
+test('aliases match whole words only', () => {
+  assert.equal(run({ posting: { locations: ['Texclusive Town'] } }).tier, rules.location.outside_home_metro);
+});
 test('multi-office posting including home metro is eligible', () => {
   assert.equal(run({ posting: { locations: ['Other City Office', 'Example City Office'] } }).tier, 'S');
 });
