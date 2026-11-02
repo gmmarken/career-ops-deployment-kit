@@ -4,34 +4,140 @@
   "description": "Filled by the company-research step from the company name only (web search allowed, no posting text). Every factual claim needs a source URL; unknown stays null.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "status", "reason", "stage", "last_raise", "investors", "what_they_do", "owner_categories", "parent", "is_mbb", "nyc_presence", "sources"],
+  "required": [
+    "name",
+    "status",
+    "reason",
+    "stage",
+    "last_raise",
+    "investors",
+    "what_they_do",
+    "ai_native",
+    "owner_categories",
+    "parent",
+    "is_mbb",
+    "nyc_presence",
+    "sources"
+  ],
   "properties": {
-    "name": { "type": "string" },
-    "status": { "enum": ["strong", "exceptional", "not_strong", "unknown"] },
-    "reason": { "type": "string" },
-    "stage": { "enum": ["pre_seed", "seed", "series_a", "series_b", "series_c", "series_d_plus", "public", "subsidiary", "private_equity_backed", "bootstrapped", "unknown"] },
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "strong",
+        "exceptional",
+        "not_strong",
+        "unknown"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "stage": {
+      "enum": [
+        "pre_seed",
+        "seed",
+        "series_a",
+        "series_b",
+        "series_c",
+        "series_d_plus",
+        "public",
+        "subsidiary",
+        "private_equity_backed",
+        "bootstrapped",
+        "unknown"
+      ]
+    },
     "last_raise": {
-      "type": ["object", "null"], "additionalProperties": false, "required": ["amount_usd", "date", "round"],
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "amount_usd",
+        "date",
+        "round"
+      ],
       "properties": {
-        "amount_usd": { "type": ["number", "null"] },
-        "date": { "type": ["string", "null"] },
-        "round": { "type": ["string", "null"] }
+        "amount_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "round": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
-    "investors": { "type": "array", "items": { "type": "string" } },
-    "what_they_do": { "type": "string" },
+    "investors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "what_they_do": {
+      "type": "string"
+    },
+    "ai_native": {
+      "type": "boolean"
+    },
     "owner_categories": {
       "type": "array",
-      "items": { "enum": ["amazon", "crypto_first", "staffing_outsourcing", "big4", "example_excluded_parent"] }
-    },
-    "parent": { "type": ["string", "null"] },
-    "is_mbb": { "type": "boolean" },
-    "nyc_presence": { "type": ["boolean", "null"] },
-    "sources": {
-      "type": "array", "minItems": 1,
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["url", "supports"],
-        "properties": { "url": { "type": "string" }, "supports": { "type": "string" } }
+        "enum": [
+          "amazon",
+          "crypto_first",
+          "staffing_outsourcing",
+          "big4",
+          "example_excluded_parent"
+        ]
+      }
+    },
+    "parent": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_mbb": {
+      "type": "boolean"
+    },
+    "nyc_presence": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "supports"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "supports": {
+            "type": "string"
+          }
+        }
       }
     }
   }

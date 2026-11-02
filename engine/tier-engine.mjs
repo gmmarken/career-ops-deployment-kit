@@ -38,6 +38,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
     steps,
     sortKey: {
       priority_family: j.role_family?.value === rules.priority_family,
+      ai_native: company.ai_native ?? null,
       gm_path: Boolean(j.tags?.gm_path),
       product_path: Boolean(j.tags?.product_path),
       office_days: j.work_model?.office_days ?? null,

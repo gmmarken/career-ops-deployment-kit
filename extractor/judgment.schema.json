@@ -4,99 +4,365 @@
   "description": "Filled by the extraction model from JD text only (no tools). Every judgment carries a short verbatim quote from the JD, or null when the JD says nothing. Hard facts (pay, dates, locations) come from code, not from this form.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["company_name", "role_family", "role_shape", "traps", "red_flags", "quota_path", "years_required", "work_model", "back_office", "fit", "tags", "equity_substantial", "pay_in_text", "injection_suspected"],
+  "required": [
+    "company_name",
+    "role_family",
+    "role_shape",
+    "traps",
+    "red_flags",
+    "quota_path",
+    "years_required",
+    "work_model",
+    "back_office",
+    "fit",
+    "tags",
+    "equity_substantial",
+    "pay_in_text",
+    "injection_suspected"
+  ],
   "properties": {
     "company_name": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
-      "properties": { "value": { "type": ["string", "null"] }, "quote": { "type": ["string", "null"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "role_family": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
       "properties": {
-        "value": { "enum": ["deployment_ai_strategist", "forward_deployed_pm", "bizops_so", "chief_of_staff", "other", "unclear"] },
-        "quote": { "type": ["string", "null"] }
+        "value": {
+          "enum": [
+            "deployment_ai_strategist",
+            "forward_deployed_pm",
+            "bizops_so",
+            "chief_of_staff",
+            "other",
+            "unclear"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "role_shape": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
       "properties": {
-        "value": { "enum": ["strategic", "mixed", "tactical", "unclear"] },
-        "quote": { "type": ["string", "null"] }
+        "value": {
+          "enum": [
+            "strategic",
+            "mixed",
+            "tactical",
+            "unclear"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "traps": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["trap", "quote"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "trap",
+          "quote"
+        ],
         "properties": {
-          "trap": { "enum": ["engineer_in_disguise", "internal_deployment_infra", "workflow_builder_only", "quota_sales"] },
-          "quote": { "type": "string" }
+          "trap": {
+            "enum": [
+              "engineer_in_disguise",
+              "internal_deployment_infra",
+              "workflow_builder_only",
+              "quota_sales"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          }
         }
       }
     },
     "red_flags": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["flag", "quote"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "flag",
+          "quote"
+        ],
         "properties": {
-          "flag": { "enum": ["ticket_config_work", "high_account_load", "quota_ownership", "travel_50_plus"] },
-          "quote": { "type": "string" }
+          "flag": {
+            "enum": [
+              "ticket_config_work",
+              "high_account_load",
+              "quota_ownership",
+              "travel_50_plus",
+              "book_of_business"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          }
         }
       }
     },
     "quota_path": {
-      "type": "object", "additionalProperties": false, "required": ["present", "quote"],
-      "properties": { "present": { "type": "boolean" }, "quote": { "type": ["string", "null"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "present",
+        "quote"
+      ],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "years_required": {
-      "type": "object", "additionalProperties": false, "required": ["min", "hard_gate", "hard_gate_met", "quote"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min",
+        "hard_gate",
+        "hard_gate_met",
+        "quote"
+      ],
       "properties": {
-        "min": { "type": ["number", "null"] },
-        "hard_gate": { "type": "boolean" },
-        "hard_gate_met": { "type": ["boolean", "null"] },
-        "quote": { "type": ["string", "null"] }
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hard_gate": {
+          "type": "boolean"
+        },
+        "hard_gate_met": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "work_model": {
-      "type": "object", "additionalProperties": false, "required": ["value", "office_days", "quote"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "office_days",
+        "quote"
+      ],
       "properties": {
-        "value": { "enum": ["onsite", "hybrid", "remote", "unclear"] },
-        "office_days": { "type": ["number", "null"] },
-        "quote": { "type": ["string", "null"] }
+        "value": {
+          "enum": [
+            "onsite",
+            "hybrid",
+            "remote",
+            "unclear"
+          ]
+        },
+        "office_days": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "back_office": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
-      "properties": { "value": { "type": "boolean" }, "quote": { "type": ["string", "null"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "fit": {
-      "type": "object", "additionalProperties": false, "required": ["value", "reason"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "reason"
+      ],
       "properties": {
-        "value": { "enum": ["strong", "possible", "weak", "unclear"] },
-        "reason": { "type": "string" }
+        "value": {
+          "enum": [
+            "strong",
+            "possible",
+            "weak",
+            "unclear"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "tags": {
-      "type": "object", "additionalProperties": false, "required": ["gm_path", "product_path"],
-      "properties": { "gm_path": { "type": "boolean" }, "product_path": { "type": "boolean" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gm_path",
+        "product_path"
+      ],
+      "properties": {
+        "gm_path": {
+          "type": "boolean"
+        },
+        "product_path": {
+          "type": "boolean"
+        }
+      }
     },
     "equity_substantial": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
-      "properties": { "value": { "type": "boolean" }, "quote": { "type": ["string", "null"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "pay_in_text": {
-      "type": ["object", "null"], "additionalProperties": false, "required": ["min", "max", "currency", "interval", "quote"],
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "min",
+        "max",
+        "currency",
+        "interval",
+        "quote"
+      ],
       "properties": {
-        "min": { "type": ["number", "null"] },
-        "max": { "type": ["number", "null"] },
-        "currency": { "type": ["string", "null"] },
-        "interval": { "enum": ["year", "month", "hour", "unknown"] },
-        "quote": { "type": "string" }
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "currency": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interval": {
+          "enum": [
+            "year",
+            "month",
+            "hour",
+            "unknown"
+          ]
+        },
+        "quote": {
+          "type": "string"
+        }
       }
     },
     "injection_suspected": {
-      "type": "object", "additionalProperties": false, "required": ["value", "quote"],
-      "properties": { "value": { "type": "boolean" }, "quote": { "type": ["string", "null"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

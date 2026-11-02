@@ -107,7 +107,7 @@ test('assertValid throws a readable error', () => {
 });
 test('company result needs at least one source', () => {
   const c = { name: 'Acme', status: 'strong', reason: 'x', stage: 'series_b', last_raise: null, investors: [], what_they_do: 'x',
-    owner_categories: [], parent: null, is_mbb: false, nyc_presence: true, sources: [] };
+    ai_native: true, owner_categories: [], parent: null, is_mbb: false, nyc_presence: true, sources: [] };
   assert.match(validate(c, schema('company.schema.json')).join(), /at least 1/);
 });
 

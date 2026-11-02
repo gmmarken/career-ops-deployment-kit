@@ -21,4 +21,6 @@ Real settings live in `<data dir>/config/tier-rules.json` and are never committe
 6. **Seniority**: years from `experience_start`; +1 to `reach_max_extra_years` over = Reach; more, or an unmet hard gate → C
 7. **Caps**: Reach, Tactical, MBB, borderline equity, and anything `unclear` (family/shape/fit/company) → `caps.unclear_judgment`
 8. **Drops**: remote, back office, each red flag; one tier each, never below C
+Red flags (each one drop): `ticket_config_work`, `high_account_load`, `quota_ownership`, `travel_50_plus`, `book_of_business`. `sortKey.ai_native` breaks ties within a tier; it never changes the tier.
+
 9. **Flags only**: quota path, old posting (> `old_posting_days`), pay not posted, pay conflict, unverified company research, suspected prompt injection
