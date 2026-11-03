@@ -335,3 +335,11 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Trade-off:** the "not AI-native" part rests on one company's two roles. What would change it: a no-pay role at a non-AI-native company the candidate rates A or S.
 **Also fixed:** the rules fingerprint stored with each decision only covered top-level setting names, so it never changed when a value inside (like a cap) changed. It now covers every value. New command `market.sh retier [--dry-run]` re-decides open roles after a rules change, recording only tier changes and syncing them to Notion.
 
+## D63 — A text every morning: a calm summary when the run worked, a loud notice when it didn't (2026-11-03)
+**Context:** D53 sent an iMessage only on failure. The candidate asked for a text on success too, as a daily reminder to check in and apply, with failures impossible to mistake for the normal text.
+**Decision:** Every daily run sends exactly one text.
+- **Worked:** "✅ Job search: morning run done (Tue, Nov 3)", boards checked and new postings, new NYC roles graded by tier, up to six S/A roles by name (⭐ for S), and "Time to review in Notion and apply." (or "Check Notion when you have a minute." on a day with no S/A).
+- **Failed:** "🚨🚨 JOB SEARCH RUN FAILED 🚨🚨", the date, "N problems. Action needed.", each problem marked ❌, and the log path. Any failed step, even one, sends this instead of the summary.
+**Fail loudly:** counts are read from the steps' own output; if a line can't be read, the text says "couldn't read the count (see log)", never a made-up zero. `scripts/daily.sh --sample-messages` sends one example of each, marked SAMPLE.
+**Trade-off:** one more text a day. The summary only covers what the run did; it does not track which roles were already applied to.
+

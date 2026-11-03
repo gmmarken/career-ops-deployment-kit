@@ -37,7 +37,7 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 ## Phase 5 — Sources
 - [x] Whole-board scan of known company boards (`market.sh scan`, run by hand; first scan 2026-11-02)
 - [x] Batch-tier new NYC target-family roles (`tier-new.sh`)
-- [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), iMessage on any failure (D47, D53)
+- [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), an iMessage every morning: a summary when it worked, a loud failure notice when it didn't (D47, D53, D63)
 - [x] Daily dated `market.db` backup, keep 30, reaching iCloud through the synced workspace folder (D48, D54, D59)
 - [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
 - [x] Title classifier v2: more title patterns, plus a no-AI text check for borderline titles (D49, D56)

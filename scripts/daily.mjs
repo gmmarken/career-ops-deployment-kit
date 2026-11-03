@@ -50,11 +50,59 @@ export function failureDetail(out) {
   return text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL)}…` : text;
 }
 
-/** Build the iMessage text for a run with problems. */
+/** "Tue Nov 3" from "2026-11-03" (local date, no time zone shifts). */
+export function shortDate(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/**
+ * The failure text (D63): loud on purpose, so it can't be mistaken for the morning summary.
+ */
 export function summarize(date, problems, logPath) {
-  const head = `career-ops daily run ${date}: ${problems.length} problem(s).`;
-  const body = problems.map((p) => `• ${p.step}: ${p.detail}`).join('\n');
+  const head = `🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\n${shortDate(date)}: ${problems.length} problem${problems.length === 1 ? '' : 's'}. Action needed.`;
+  const body = problems.map((p) => `❌ ${p.step}: ${p.detail}`).join('\n');
   return `${head}\n${body}\nFull log: ${logPath}`;
+}
+
+/**
+ * What the morning run found, read from the steps' own output lines. Missing lines stay
+ * missing (null): the message then says it couldn't read that count, never a made-up 0.
+ */
+export function runFacts(outputs) {
+  const scan = String(outputs.scan ?? '');
+  const tier = String(outputs['tier-new'] ?? '');
+  const boardsM = scan.match(/^Scanning (\d+) board/m);
+  const boardLines = [...scan.matchAll(/^\s*✓ \S+ \(.*\): \d+ open, (\d+) new, \d+ closed$/gm)];
+  const queued = tier.match(/^(\d+) untiered NYC role/m);
+  const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
+  return {
+    boards: boardsM ? Number(boardsM[1]) : null,
+    newPostings: boardLines.length ? boardLines.reduce((n, m) => n + Number(m[1]), 0) : (boardsM ? 0 : null),
+    queued: queued ? Number(queued[1]) : null,
+    graded,
+  };
+}
+
+const TIER_ORDER = ['S', 'A', 'B', 'C', 'Walk-away', 'Excluded'];
+const MAX_LISTED = 6;
+
+/** The success text (D63): a calm morning summary and a nudge to go apply. */
+export function successSummary(date, outputs) {
+  const f = runFacts(outputs);
+  const lines = [`✅ Job search: morning run done (${shortDate(date)})`];
+  lines.push(f.boards == null ? 'Boards: couldn\'t read the count (see log)' : `${f.boards} boards checked · ${f.newPostings} new postings`);
+  if (f.queued == null) lines.push('New roles: couldn\'t read the count (see log)');
+  else if (!f.graded.length) lines.push('No new NYC roles to grade today.');
+  else {
+    const counts = TIER_ORDER.map((t) => [t, f.graded.filter((g) => g.tier === t).length]).filter(([, n]) => n);
+    lines.push(`${f.graded.length} new NYC role${f.graded.length === 1 ? '' : 's'} graded: ${counts.map(([t, n]) => `${n} ${t}`).join(' · ')}`);
+    const top = f.graded.filter((g) => g.tier === 'S' || g.tier === 'A');
+    for (const g of top.slice(0, MAX_LISTED)) lines.push(`${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`);
+    if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S/A in Notion`);
+  }
+  lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
+  return lines.join('\n');
 }
 
 /** Send an iMessage through Messages.app. The text and handle go in as arguments, never pasted into the script. */
@@ -97,21 +145,26 @@ export function defaultSteps({ dataDir, date, run = runCommand, icloud = iCloudR
  */
 export async function runDaily({ date, steps, log, notify, logPath }) {
   const problems = [];
+  const outputs = {};
   log(`\n===== daily run ${date} started ${new Date().toISOString()} =====\n`);
   for (const step of steps) {
     log(`\n--- ${step.name} ---\n`);
     let res;
     try { res = await step.go(); } catch (err) { res = { ok: false, out: `${step.name}: ${err.message}\n` }; }
+    outputs[step.name] = res.out;
     log(res.out.endsWith('\n') ? res.out : `${res.out}\n`);
     if (!res.ok) problems.push({ step: step.name, detail: failureDetail(res.out) });
     log(`--- ${step.name}: ${res.ok ? 'ok' : 'FAILED'} ---\n`);
   }
-  let notified = false;
+  // Every run sends one text (D63): the loud failure notice, or the morning summary.
   if (problems.length) {
     await notify(summarize(date, problems, logPath));
-    notified = true;
-    log(`\nNotice sent (${problems.length} problem(s)).\n`);
+    log(`\nFailure notice sent (${problems.length} problem(s)).\n`);
+  } else {
+    await notify(successSummary(date, outputs));
+    log('\nMorning summary sent.\n');
   }
+  const notified = true;
   log(`===== daily run ${date} finished ${new Date().toISOString()}: ${problems.length ? 'FAILED' : 'ok'} =====\n`);
   return { problems, notified };
 }
@@ -128,8 +181,19 @@ async function main() {
   const notify = (text) => sendIMessage(cfg.imessage_to, text);
 
   if (process.argv.includes('--test-message')) {
-    await notify(`career-ops daily run: test message (${date}). If you see this, failure notices will reach you.`);
+    await notify(`career-ops daily run: test message (${date}). If you see this, the daily texts will reach you.`);
     console.log('Test message sent.');
+    return 0;
+  }
+  if (process.argv.includes('--sample-messages')) {
+    // Send one example of each daily text, so you can see how they look side by side.
+    const sample = {
+      scan: 'Scanning 52 board(s)…\n  ✓ rippling:pace (Pace): 13 open, 1 new, 0 closed\n  ✓ ashby:sierra (Sierra): 219 open, 3 new, 0 closed\n',
+      'tier-new': '4 untiered NYC role(s) to tier; tiering 4.\n  [1/4] S         Pace — Deployment Strategist\n  [2/4] A         Stripe — GTM Strategy & Operations Analyst\n  [3/4] C         Notion — Commercial Solutions Consultant\n  [4/4] B         Plaid — Business Operations\n',
+    };
+    await notify(`(SAMPLE, not a real run)\n${successSummary(date, sample)}`);
+    await notify(`(SAMPLE, not a real run)\n${summarize(date, [{ step: 'scan', detail: 'ashby:example: Could not reach https://api.ashbyhq.com/…: fetch failed' }], '/…/private/logs/daily-' + date + '.log')}`);
+    console.log('Two sample messages sent.');
     return 0;
   }
   const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date }), log, notify, logPath });
