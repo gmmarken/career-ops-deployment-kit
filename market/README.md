@@ -5,10 +5,12 @@ The long-term market dataset: every posting the kit sees, when it was open, and 
 | File | What |
 |---|---|
 | `store.mjs` | SQLite database (`<data dir>/data/market.db`, Node's built-in `node:sqlite`): companies, postings, scans, tier history, recall checks |
-| `classify.mjs` | Versioned, no-AI classifiers run on every posting: title family (`title-v1`), home metro, company-name matching |
+| `classify.mjs` | Versioned, no-AI classifiers run on every posting: title family (`title-v2`, incl. a `borderline` label), the text check for borderline titles (`text-v1`), home metro, company-name matching |
+| `boards.mjs` | Which job boards the scan reads: boards seen on recorded postings, plus boards found on investor job boards or added by hand; watched companies with no board |
 | `record.mjs` | Records one tiered posting plus fingerprints of the settings and extraction instructions |
 | `metrics.mjs` | Monthly open/new counts per company and family, rankings, CSV |
-| `cli.mjs` | `scripts/market.sh backfill · scan · metrics · stats · recall · enrich` |
+| `cli.mjs` | `scripts/market.sh backfill · scan · relabel · add-board · metrics · stats · recall · enrich` |
+| `sources.example.json` | Template for `private/config/sources.json`: the investor job boards (Getro) the scan reads |
 
 ## How time works
 - A posting is **open** from its start (the earlier of the board's posted date and the day we first saw it) until it **closes**.
@@ -52,5 +54,20 @@ scripts/market.sh metrics --from 2026-11 --to 2027-10   # NYC + target families;
 scripts/market.sh recall linkedin-2026-11.txt
 scripts/market.sh enrich --limit 10                     # research companies with no researched info
 scripts/market.sh stats                                 # refresh provisional months, freeze finished ones
-scripts/market.sh scan                                  # read every open posting on known boards (no AI)
+scripts/market.sh scan                                  # investor boards → known boards → text check (all no AI)
+scripts/market.sh relabel --dry-run                     # show what the current title classifier would change
+scripts/market.sh add-board <job link> --company NAME   # read this company's board from now on
 ```
+
+## What a scan does (D41, D49–D51)
+1. **Investor job boards (Getro).** For each board in `private/config/sources.json`, read its public sitemap: every job link, with the title in the link. For each company with a target or borderline title that hasn't been traced yet, open **one** of its job pages to see where the company really posts jobs. Ashby, Greenhouse and Lever boards are added to the scan; anything else is listed as "posts somewhere we can't read yet". Postings themselves always come from the company's own board.
+2. **Every known board** is read in full (as before).
+3. **Companies you Watch** with no readable board are reported as a problem, with the fix (`add-board`).
+4. **Text check.** Open NYC postings labelled `borderline` by title are read from their board and checked for three things: AI work, putting it into use (deploy, implement, roll out, forward-deployed), and customers. Only hits are tiered by `tier-new.sh`, so AI is spent only on promising roles. The words found are stored with the result.
+
+Any failed step is reported, the others still run, and the scan exits non-zero; a failed board never closes postings.
+
+## Title classifier versions
+- `title-v1`: deployment / AI strategist, forward-deployed PM, BizOps / S&O, chief of staff, forward-deployed engineer (context), other.
+- `title-v2` (D49, D56): adds Solutions Strategist, Deployment Lead and non-engineer forward-deployed titles; Strategy & Planning counts as BizOps; adds the `borderline` label for titles that need the text check. `market.sh relabel` moves **open** postings to the current version (each change logged in `posting_changes`); closed postings keep their old label.
+

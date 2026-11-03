@@ -1,0 +1,7 @@
+{
+  "_note": "Copy to private/config/sources.json. Investor job boards hosted on Getro; the scan reads their public sitemap and job pages only (D50-D51). Boards that need a sign-in are not supported.",
+  "getro_boards": [
+    { "name": "Thrive Capital", "url": "https://jobs.thrivecap.com" },
+    { "name": "Scale Venture Partners", "url": "https://jobs.scalevp.com" }
+  ]
+}

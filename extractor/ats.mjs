@@ -91,6 +91,25 @@ export function fromLever(board, id, job, url) {
   };
 }
 
+/**
+ * The job board a link belongs to, as "ats:board" (e.g. "ashby:acme"), for a job link or a
+ * board's own page. Returns null for links that aren't on a board we can read; the caller
+ * decides how to report that.
+ */
+export function boardFromUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { return null; }
+  const parts = u.pathname.split('/').filter(Boolean);
+  const host = u.hostname.toLowerCase();
+  if (host === 'jobs.ashbyhq.com' && parts[0]) return `ashby:${parts[0].toLowerCase()}`;
+  if (host === 'jobs.lever.co' && parts[0]) return `lever:${parts[0]}`;
+  if (host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') {
+    if (parts[0] === 'embed') { const f = u.searchParams.get('for'); return f ? `greenhouse:${f}` : null; }
+    if (parts[0]) return `greenhouse:${parts[0]}`;
+  }
+  return null;
+}
+
 async function getJson(apiUrl, timeoutMs = TIMEOUT_MS) {
   let res;
   try {
@@ -128,7 +147,9 @@ export function ashbyBoard(board, payload) {
 export function greenhouseBoard(board, payload) {
   if (!Array.isArray(payload?.jobs)) throw new Error(`Greenhouse board "${board}" returned no job list.`);
   return payload.jobs.map((j) => ({
-    url: j.absolute_url, source: 'greenhouse', title: j.title, company: j.company_name ?? board,
+    // Always Greenhouse's own job link: some boards point absolute_url at the company site
+    // (…/careers?gh_jid=…), which the posting reader and tier step can't open.
+    url: `https://job-boards.greenhouse.io/${board}/jobs/${j.id}`, source: 'greenhouse', title: j.title, company: j.company_name ?? board,
     locations: splitLocations(j.location?.name), workplace: /remote/i.test(j.location?.name ?? '') ? 'remote' : 'unclear',
     posted_at: j.first_published ?? null, pay: null, equity_offered: null, pay_conflict: null,
   }));
