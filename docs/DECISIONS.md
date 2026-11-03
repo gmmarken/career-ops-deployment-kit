@@ -326,3 +326,12 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Decision:** A, the candidate's call. Each company page is rechecked about once a week (at most 150 pages per run, 1.5 s apart), so the first full pass takes about five daily runs and later postings are still caught.
 **Trade-off:** big companies list only their first 25 titles on the page, so a company whose relevant roles sit past the first 25 is missed until they surface. Companies whose jobs link to their own website (not a readable board) are listed as unreadable.
 
+## D62 — A missing pay range sets a ceiling: A, or B at a company that isn't AI-native (2026-11-03)
+**Context:** The 11:05 PM batch produced 14 S roles. The candidate labelled the five BizOps S roles: Forus S, Garner Health S, Fora A, Nourish (Sr) Lead S&O B, Nourish Retention S&O B, naming as reasons "not AI-native", "industry", "pay not posted" and "role content". Across all 24 labelled roles, every S had a posted pay range; the two B's were the only roles with no pay at a non-AI-native company. Not being AI-native alone never lowered a label (Garner, Rippling: S with posted pay).
+**Options:** (A) no posted pay → at most A, and at most B if the company is also not AI-native; (B) only the "at most A" part; (C) no change, collect more labels.
+**Decision:** A, the candidate's call.
+**How it applies:** a ceiling applied after drops (step 6b), not an extra drop. Applying it before drops broke two of the candidate's A labels (Cursor roles with no pay and one drop came out B). Unknown AI-native status counts as unknown, not "no".
+**Result:** calibration 22/24 (holdout 11/12). The one rule miss left is Fora (A for industry and role content, a judgment call). Re-deciding the 98 open tiered roles from their saved facts (no AI) changed 5: Nourish ×2 S→B, SpaceX/Cursor CS Strategy & Ops S→A, and two EliseAI roles that had never been re-decided after D46's graded Reach cap (C→B, B→A).
+**Trade-off:** the "not AI-native" part rests on one company's two roles. What would change it: a no-pay role at a non-AI-native company the candidate rates A or S.
+**Also fixed:** the rules fingerprint stored with each decision only covered top-level setting names, so it never changed when a value inside (like a cap) changed. It now covers every value. New command `market.sh retier [--dry-run]` re-decides open roles after a rules change, recording only tier changes and syncing them to Notion.
+

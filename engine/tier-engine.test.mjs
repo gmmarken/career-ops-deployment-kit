@@ -86,10 +86,25 @@ test('below borderline floor + equity → still Walk-away', () => {
   });
   assert.equal(r.tier, 'Walk-away');
 });
-test('no posted pay → not a miss, flagged, can still be S', () => {
+test('no posted pay → not a miss, flagged, capped at caps.pay_not_posted (A) (D62)', () => {
   const r = run({ posting: { pay: null } });
-  assert.equal(r.tier, 'S');
+  assert.equal(r.tier, 'A');
   assert.ok(r.flags.includes('Pay not posted: verify'));
+  assert.ok(r.steps.some((s) => s.step === '6b. Pay ceiling' && /Pay not posted → max A \(S→A\)/.test(s.detail)));
+});
+test('the pay ceiling comes after drops: S with one drop and no pay is A, not B (D62)', () => {
+  assert.equal(run({ posting: { pay: null }, judgment: { back_office: { value: true, quote: 'internal ops' } } }).tier, 'A');
+});
+test('no posted pay at a company that is not AI-native → capped at caps.pay_not_posted_not_ai_native (B) (D62)', () => {
+  assert.equal(run({ posting: { pay: null }, company: { ai_native: false } }).tier, 'B');
+  assert.equal(run({ posting: { pay: null }, company: { ai_native: true } }).tier, 'A');
+  assert.equal(run({ company: { ai_native: false } }).tier, 'S'); // posted pay: not AI-native alone changes nothing
+});
+test('settings without the pay-not-posted caps are rejected', () => {
+  for (const k of ['pay_not_posted', 'pay_not_posted_not_ai_native']) {
+    const bad = structuredClone(rules); delete bad.caps[k];
+    assert.throws(() => validateRules(bad), new RegExp(`caps\\.${k}`));
+  }
 });
 test('hourly pay is not compared, flagged', () => {
   const r = run({ posting: { pay: { min: 80, max: 100, currency: 'USD', interval: 'hour', kind: 'base', source: 'ats' } } });

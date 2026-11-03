@@ -39,7 +39,9 @@
     "mbb": "A",
     "borderline_equity": "B",
     "unclear_judgment": "A",
-    "below_level": "A"
+    "below_level": "A",
+    "pay_not_posted": "A",
+    "pay_not_posted_not_ai_native": "B"
   },
   "location": {
     "outside_home_metro": "C"
