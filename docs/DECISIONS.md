@@ -211,3 +211,50 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 ## D42 — Notion's Job Postings view holds tiered roles only (2026-11-02)
 **Decision:** Every scanned posting lives in the market database and counts toward Company Radar's numbers, but only tiered roles appear in the Job Postings view.
 **Why:** A single scan adds hundreds of engineering and sales roles that would bury the working view.
+
+## D43 — First holdout test: 4/7, and the calibration runner fixed (2026-11-02)
+**Context:** D24 warned that 12/12 overstated accuracy. Seven roles from the first fresh batch, never seen when the rules were written, were labeled and added as `holdout` cases.
+**Result:** 4/7 matched. The three misses were two AI misreads and one rule question (D44–D46). Review also found the runner had never classified a miss (it read confirmed facts from the wrong place); fixed with a test, and the report now scores holdout cases on their own.
+**Why it matters:** The honest accuracy number comes from roles the rules never saw; it's tracked separately from now on.
+
+## D44 — "A book of deployments" is not a book of business (2026-11-02)
+**Options:** (A) add a "does not count" example to the prompt; (B) require a second quote showing how the book is measured, checked in code.
+**Decision:** A. Escalate to B the first time a new role repeats the misread.
+**Why:** The definition was already right; the model needed the counter-example. Two EliseAI roles each lost a tier to "Hold a full book of concurrent deployments."
+
+## D45 — Back office includes ops for a customer-facing team (2026-11-02)
+**Options:** (A) widen the definition: the role's main customers are internal teams, even teams that face customers; (B) keep it and record the disagreement.
+**Decision:** A, with every strategy-and-operations case re-extracted to check nothing the candidate rated S or A drops.
+**Why:** A CS Strategy & Operations role building capacity models, comp plans and dashboards for the CS org reached S; the candidate rates it A ("internal consultant" work is what they're moving away from). Roles owning company-level growth or pricing calls stay out.
+
+## D46 — Reach cap graded by the gap (2026-11-02)
+**Options:** (A) 1 year short → max A, 2 years → max B; (B) keep max B; (C) cap only hard asks, not "you likely have."
+**Decision:** A (`caps.reach_1_year` in the settings).
+**Why:** The candidate rated a strong role asking one more year than they have as A. Evidence is thin (one labeled case), so the holdout score is watched for over-promotion.
+
+## D47 — Daily runs start in Phase 5, as the first piece of the Phase 7 runner (2026-11-02)
+**Decision:** launchd on the Mac runs the scan and batch tiering daily; any failure, including a single skipped board, reaches the candidate by iMessage plus the run log. New-S alerts and the weekly email stay in Phase 7.
+**Why:** Missed days are gaps in market data that can't be recovered. **Trade-off:** runs only while the Mac is awake (a missed run fires on wake).
+
+## D48 — Daily database backup with an iCloud copy (2026-11-02)
+**Options:** (A) 30 dated local copies + iCloud Drive copy; (B) local only; (C) encrypted copy to a new cloud service.
+**Decision:** A, starting with the daily run. A failed backup is reported like any failure.
+**Why:** `market.db` holds history nothing else has (D40); iCloud is already private to the candidate and costs nothing new.
+
+## D49 — Title classifier v2: patterns plus a no-AI text check (2026-11-02)
+**Options:** (A) more title patterns; (B) patterns plus a keyword scan of borderline postings' text, with only hits going to AI; (C) AI triage of every home-metro "other" title.
+**Decision:** B, as `title-v2`. Postings keep the classifier version that labelled them (D33).
+**Why:** The candidate's definition is "not just titles with deployment strategy in them"; B widens the net while spending AI only on promising roles. Revisit C if the monthly recall check shows misses.
+
+## D50 — Board reader order (2026-11-02)
+**Decision:** Investor job boards (a16z, Scale, Thrive Getro boards → resolved to their Ashby postings) first, then Rippling, then Built In NYC only after the candidate reviews Built In's terms of use.
+**Why:** Least risk and least work first; Built In is a third-party site, not an employer's own board.
+
+## D51 — Companies to Watch = the Radar's Watch checkbox; startup boards via Getro (2026-11-02)
+**Decision:** Companies ticked *Watch* in Company Radar have their boards added to the scan automatically. career-ops v1.38.0 has no startup-boards plugin, so the kit reads public Getro boards itself; boards that need a sign-in (e.g. YC) are skipped.
+**Why:** One place for company calls (D26); Getro overlaps the investor-board reader.
+
+## D52 — Search-engine discovery via Serper (2026-11-02)
+**Options:** (A) Serper (Google results by API, small pay-as-you-go cost); (B) Brave Search API; (C) no key.
+**Decision:** A. Price is confirmed at sign-up before the key is created; the key lives in `private/.env`. A failed search is reported, never replaced by another provider.
+**Why:** The cheapest way to find NYC companies we don't know about yet, which is the main coverage gap.
