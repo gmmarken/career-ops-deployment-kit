@@ -260,3 +260,10 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Options:** (A) Serper (Google results by API, small pay-as-you-go cost); (B) Brave Search API; (C) no key.
 **Decision:** A. Price is confirmed at sign-up before the key is created; the key lives in `private/.env`. A failed search is reported, never replaced by another provider.
 **Why:** The cheapest way to find NYC companies we don't know about yet, which is the main coverage gap.
+
+## D55 — Travel given as trips is converted to a percentage (2026-11-02)
+**Context:** One run flagged EliseAI Lead Deployment Strategist as 50%+ travel for "~2x per month for ~2-3 days", which is 4–6 of about 21 working days (20–30%). The candidate does not count that as 50%.
+**Options:** (A) tell the model to convert trip counts against ~21 working days a month and flag only at 50%+; (B) flag only explicit percentages; (C) leave it and rely on the noise check.
+**Decision:** A, with the twice-a-month line as the worked example of what does not count.
+**Why:** B would miss postings that describe heavy travel as weekly on-site days. The engine still decides the tier; only the flag definition changed.
+**Result:** all 19 re-extracted (19 AI calls). EliseAI Lead no longer gets the flag; the two roles with real 50%+ travel (Distyl "50%", Palantir "25–75%") still do. 18/19, holdout 7/7. The one miss moved to Decagon BizOps Growth (read as "other", not BizOps), a role that came out right in the two runs before: more run-to-run noise, not the travel change.

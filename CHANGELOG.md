@@ -31,6 +31,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
+- Extraction: travel stated as trips ("~2x per month for 2-3 days") is converted to a share of working days before the 50%+ travel flag is set (D55).
 - Calibration: misses are now classified as AI misread or rule miss (the runner read confirmed key facts from the wrong place, so every miss showed as "unclassified"). The report adds a second score for holdout cases, roles the rules never saw.
 - A red flag quoted twice no longer drops a role two tiers.
 - Home-metro matching handles aliases (e.g. Brooklyn) and "City, State" (Albany, New York is not New York City).
