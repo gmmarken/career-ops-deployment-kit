@@ -37,7 +37,8 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 ## Phase 5 — Sources
 - [x] Whole-board scan of known company boards (`market.sh scan`, run by hand; first scan 2026-11-02)
 - [x] Batch-tier new NYC target-family roles (`tier-new.sh`)
-- [ ] Run the scan daily (scheduled)
+- [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), iMessage on any failure (D53)
+- [x] Daily dated `market.db` backup, keep 30, plus an iCloud Drive copy (D54)
 - [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
 - [ ] Companies to Watch boards → generated `portals.yml`
 - [ ] startup-boards plugin enabled
@@ -50,7 +51,7 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 ## Phase 7 — Delivery
 - [ ] iMessage alert on new S-tier role
 - [ ] Weekly email: newly funded NYC companies + roles roundup
-- [ ] Daily runner via launchd
+- [x] Daily runner via launchd (minimal form built early in Phase 5, D53; this phase adds the S-tier alert and weekly email to it)
 
 ## Phase 8 — Prep packs
 - [ ] Auto pack for S roles: tailored CV, cover letter, interview prep, outreach draft

@@ -211,3 +211,17 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 ## D42 — Notion's Job Postings view holds tiered roles only (2026-11-02)
 **Decision:** Every scanned posting lives in the market database and counts toward Company Radar's numbers, but only tiered roles appear in the Job Postings view.
 **Why:** A single scan adds hundreds of engineering and sales roles that would bury the working view.
+
+## D53 — Daily unattended run now, in minimal form (2026-11-02)
+**Context:** Market tracking began 2026-11 and the monthly numbers depend on a scan every day; a missed day leaves a gap (D33, D41). The roadmap put the daily runner in Phase 7.
+**Options:** (A) build a minimal runner now (scan → tier new roles → backup, failure notice only) and grow it in Phase 7; (B) keep scanning by hand until Phase 7; (C) build the full Phase 7 runner now, alerts and email included.
+**Decision:** A (Gabriel). A launchd job (the Mac's built-in scheduler) runs `scripts/daily.sh` once a day. Every step runs even if an earlier one failed. Everything goes to `private/logs/daily-YYYY-MM-DD.log`, and any failure, including one board failing, sends one iMessage listing every problem. A failed board is skipped with no substitute data (D41's isolation, not a fallback). A step that hangs past 2 hours is stopped and reported. The iMessage handle and iCloud folder live in `private/config/daily.json`; the plist in the repo is a template with placeholders, and loading it waits for Gabriel's OK.
+**Why:** Closes the data-gap risk now at small cost; the S-tier alert and weekly email stay in Phase 7.
+**Trade-off / limits:** If the Mac is off at run time that day is missed (launchd runs a missed job on wake from sleep, not after power-off). If the iMessage itself can't be sent, the error lands in the run log and `launchd.err.log` only; there is no second notice channel (that would be a fallback needing its own decision). Runs from whichever branch the main kit checkout has checked out.
+
+## D54 — market.db backups: daily dated copy + one offsite (2026-11-02)
+**Context:** Since D40 the market database is the source of truth for postings, companies and history.
+**Options:** (A) daily dated copy, keep 30, plus one offsite copy in iCloud Drive; (B) local copies only; (C) rely on Time Machine.
+**Decision:** A (Gabriel). The daily run's last step writes `private/backups/market-YYYY-MM-DD.db` with SQLite's `VACUUM INTO` (a consistent copy even while the database is open; a raw file copy could catch it mid-write), checks the copy's integrity, keeps the newest 30, and overwrites `market-latest.db` in the iCloud Drive folder named in `private/config/daily.json`. A backup failure is reported like any other failure.
+**Why:** 30 days covers noticing a bad run; the iCloud copy survives losing the Mac.
+**Trade-off:** About 1 MB per copy today. The offsite copy is only the latest, so a bad database synced offsite overwrites the good one; the 30 local copies cover that.
