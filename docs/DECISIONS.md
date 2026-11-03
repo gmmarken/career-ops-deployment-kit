@@ -216,7 +216,7 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Context:** D24 warned that 12/12 overstated accuracy. Seven roles from the first fresh batch, never seen when the rules were written, were labeled and added as `holdout` cases.
 **Result:** 4/7 matched. The three misses were two AI misreads and one rule question (D44–D46). Review also found the runner had never classified a miss (it read confirmed facts from the wrong place); fixed with a test, and the report now scores holdout cases on their own.
 **Why it matters:** The honest accuracy number comes from roles the rules never saw; it's tracked separately from now on.
-**After D44–D46:** 18/19 overall, holdout 6/7, every case re-extracted under the final prompt (about 37 AI calls, roughly $1.20 API-equivalent, on the subscription). Reading the same posting twice showed run-to-run noise: one travel flag and one strategic/mixed call flipped between runs. That noise, not the definitions, is now the main source of error; how to handle it (e.g. extract twice and flag disagreement) is a candidate decision, not built.
+**After D44–D46:** 18/19 overall, holdout 6/7, every case re-extracted under the final prompt (34 AI calls, about $1.10 API-equivalent, on the subscription). Reading the same posting twice showed run-to-run noise: one travel flag and one strategic/mixed call flipped between runs. That noise, not the definitions, is now the main source of error; how to handle it (e.g. extract twice and flag disagreement) is a candidate decision, not built.
 
 ## D44 — "A book of deployments" is not a book of business (2026-11-02)
 **Options:** (A) add a "does not count" example to the prompt; (B) require a second quote showing how the book is measured, checked in code.
