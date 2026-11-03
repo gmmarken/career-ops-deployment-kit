@@ -4,6 +4,7 @@
 #   scripts/install-daily.sh [--at HH:MM] --load     …then copy it to ~/Library/LaunchAgents and load it
 #   scripts/install-daily.sh --unload                stop and remove the job (and the helper app)
 #   scripts/install-daily.sh --run-now               start today's run now, exactly as launchd does at the set time
+#   scripts/install-daily.sh --test-message          send one test text through the helper app (checks the Messages permission)
 #   --kit-dir DIR                                    which kit checkout the run uses (default: this one)
 #
 # launchd starts a small helper app, not bash directly (D65): macOS blocks background bash from
@@ -24,6 +25,7 @@ while [ $# -gt 0 ]; do
     --load) MODE=load; shift ;;
     --unload) MODE=unload; shift ;;
     --run-now) MODE=run; shift ;;
+    --test-message) MODE=test; shift ;;
     --kit-dir) KIT_DIR="$(cd "${2:?--kit-dir needs a folder}" && pwd)"; shift 2 ;;
     *) echo "install-daily.sh: unknown option $1" >&2; exit 1 ;;
   esac
@@ -34,6 +36,12 @@ if [ "$MODE" = unload ]; then
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || echo "($LABEL was not loaded)"
   rm -f "$AGENT"; echo "Removed $AGENT"
   rm -rf "$APP"; echo "Removed $APP"; exit 0
+fi
+if [ "$MODE" = test ]; then
+  [ -d "$APP" ] || { echo "install-daily.sh: $APP not found. Run with --load first." >&2; exit 1; }
+  open -g -W --env CAREER_OPS_DAILY_TEST=1 "$APP"
+  echo "Test text requested. If macOS asks to let \"$APP_NAME\" control Messages, click Allow."
+  echo "Result: tail -1 $APP_LOG (exit 0 = sent)"; exit 0
 fi
 if [ "$MODE" = run ]; then
   launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "install-daily.sh: $LABEL is not loaded. Run with --load first." >&2; exit 1; }

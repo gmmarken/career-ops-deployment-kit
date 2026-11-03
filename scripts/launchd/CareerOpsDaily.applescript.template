@@ -15,8 +15,11 @@ property appLog : "__APP_LOG__"
 on run
 	set code to 0
 	set detail to ""
+	-- install-daily.sh --test-message opens the app with CAREER_OPS_DAILY_TEST=1: send a test text only.
+	set extra to ""
+	if (system attribute "CAREER_OPS_DAILY_TEST") is "1" then set extra to " --test-message"
 	try
-		do shell script "export PATH=" & quoted form of runPath & "; /bin/bash " & quoted form of dailySh & " 2>&1"
+		do shell script "export PATH=" & quoted form of runPath & "; /bin/bash " & quoted form of dailySh & extra & " 2>&1"
 	on error errMsg number errNum
 		set code to errNum
 		set detail to errMsg
