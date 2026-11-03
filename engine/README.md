@@ -19,7 +19,7 @@ Real settings live in `<data dir>/config/tier-rules.json` and are never committe
 4. **Traps** → C
 5. **Criteria**: family (`other` → C), company (`strong`/`exceptional`), shape (`strategic`, or `mixed` at an `exceptional` company), pay (`s_bar_top`, or `early_stage_bar_top` at an early stage; no posted pay is not a miss), fit (`weak` → C). Misses: 0 = S, 1 = A, 2 = B, 3+ = C
 6. **Seniority**: years from `experience_start`; +1 to `reach_max_extra_years` over = Reach; more, or an unmet hard gate → C; asks `below_level_years` or more below = Below level
-7. **Caps**: Reach, Below level, Tactical, MBB, borderline equity, and anything `unclear` (family/shape/fit/company) → `caps.unclear_judgment`
+7. **Caps**: Reach (`caps.reach_1_year` when the ask is exactly 1 year over, `caps.reach` otherwise), Below level, Tactical, MBB, borderline equity, and anything `unclear` (family/shape/fit/company) → `caps.unclear_judgment`
 8. **Drops**: remote, back office, each red flag; one tier each, never below C
 Red flags (each one drop): `ticket_config_work`, `high_account_load`, `quota_ownership`, `travel_50_plus`, `book_of_business`. `sortKey.ai_native` breaks ties within a tier; it never changes the tier.
 
