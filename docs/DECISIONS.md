@@ -216,15 +216,17 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Context:** D24 warned that 12/12 overstated accuracy. Seven roles from the first fresh batch, never seen when the rules were written, were labeled and added as `holdout` cases.
 **Result:** 4/7 matched. The three misses were two AI misreads and one rule question (D44–D46). Review also found the runner had never classified a miss (it read confirmed facts from the wrong place); fixed with a test, and the report now scores holdout cases on their own.
 **Why it matters:** The honest accuracy number comes from roles the rules never saw; it's tracked separately from now on.
+**After D44–D46:** 18/19 overall, holdout 6/7, every case re-extracted under the final prompt (about 37 AI calls, roughly $1.20 API-equivalent, on the subscription). Reading the same posting twice showed run-to-run noise: one travel flag and one strategic/mixed call flipped between runs. That noise, not the definitions, is now the main source of error; how to handle it (e.g. extract twice and flag disagreement) is a candidate decision, not built.
 
 ## D44 — "A book of deployments" is not a book of business (2026-11-02)
 **Options:** (A) add a "does not count" example to the prompt; (B) require a second quote showing how the book is measured, checked in code.
 **Decision:** A. Escalate to B the first time a new role repeats the misread.
 **Why:** The definition was already right; the model needed the counter-example. Two EliseAI roles each lost a tier to "Hold a full book of concurrent deployments."
+**Follow-up:** On re-extraction one role picked up `ticket_config_work` from "drive product configuration" instead; that flag now requires the role itself to do the configuration, not coordinate it.
 
 ## D45 — Back office includes ops for a customer-facing team (2026-11-02)
 **Options:** (A) widen the definition: the role's main customers are internal teams, even teams that face customers; (B) keep it and record the disagreement.
-**Decision:** A, with every strategy-and-operations case re-extracted to check nothing the candidate rated S or A drops.
+**Decision:** A, worded by who the role's output serves (one internal team's management vs. pipeline, deals, pricing, product or customers). The first wording also caught a growth BizOps role rated A, so it was tightened; each strategy-and-operations case was then extracted twice and came out right both times.
 **Why:** A CS Strategy & Operations role building capacity models, comp plans and dashboards for the CS org reached S; the candidate rates it A ("internal consultant" work is what they're moving away from). Roles owning company-level growth or pricing calls stay out.
 
 ## D46 — Reach cap graded by the gap (2026-11-02)
