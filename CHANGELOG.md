@@ -26,6 +26,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `scripts/tier-new.sh [--limit N] [--dry-run]`: tiers every untiered open NYC target-family role the scan found, then syncs them to Notion in one pass; failures are listed and the run exits non-zero. First run: 38 roles, 7 S.
 
 ### Changed
+- Tier engine: a role asking exactly 1 year more than the candidate has is capped by the new `caps.reach_1_year` setting; larger gaps keep `caps.reach` (D46). Existing settings files need the new key, and the engine stops with a clear error if it is missing.
+- Extraction prompt: a load of concurrent deployments is not a book of business (D44); back office now covers ops, planning and analytics for a customer-facing team (D45).
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
