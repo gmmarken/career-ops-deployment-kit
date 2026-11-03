@@ -5,6 +5,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- Title classifier v2 (D49, D56): more target titles, a `borderline` label, and a no-AI text check (AI + deployment + customers) so only promising borderline roles are tiered; `market.sh relabel` moves open postings to the new version.
+- Investor job boards (D50, D51, D57): `market.sh scan` reads Thrive's and Scale's public Getro sitemaps, traces each relevant company to its own Ashby/Greenhouse/Lever board, and adds it to the scan. Configured in `private/config/sources.json` (template: `market/sources.example.json`).
+- Companies to Watch (D51): a watched company with no readable board is reported; `market.sh add-board <link>` adds one by hand.
 - Repo scaffold: README, architecture, decision log, roadmap, security policy.
 - Secret scanning: gitleaks pre-commit hook and GitHub Action.
 - `scripts/co.sh`: runs a career-ops script with `CAREER_OPS_DATA_DIR` set to `../private` (e.g. `scripts/co.sh doctor.mjs`).
@@ -34,6 +37,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
+- Greenhouse boards that link to the company's own site no longer collapse into a single posting (the job id in `?gh_jid=` is kept).
 - Extraction: travel stated as trips ("~2x per month for 2-3 days") is converted to a share of working days before the 50%+ travel flag is set (D55).
 - Calibration: misses are now classified as AI misread or rule miss (the runner read confirmed key facts from the wrong place, so every miss showed as "unclassified"). The report adds a second score for holdout cases, roles the rules never saw.
 - A red flag quoted twice no longer drops a role two tiers.

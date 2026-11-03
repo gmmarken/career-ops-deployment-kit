@@ -283,7 +283,31 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Why:** B would miss postings that describe heavy travel as weekly on-site days. The engine still decides the tier; only the flag definition changed.
 **Result:** all 19 re-extracted (19 AI calls). EliseAI Lead no longer gets the flag; the two roles with real 50%+ travel (Distyl "50%", Palantir "25–75%") still do. 18/19, holdout 7/7. The one miss moved to Decagon BizOps Growth (read as "other", not BizOps), a role that came out right in the two runs before: more run-to-run noise, not the travel change.
 
-## D59 — Backups reach iCloud through the synced workspace, checked each run (2026-11-02)
+## D56 — Title-v2 as built: new patterns, a "borderline" label, and a three-part text check (2026-11-03)
+**Context:** D49 chose patterns plus a no-AI text check. This records the definitions.
+**Decision:**
+- New titles counted directly: Solutions Strategist, Deployment Lead, non-engineer forward-deployed titles (lead, manager, strategist…), Strategy & Planning (BizOps). Engineer titles that mention forward-deployed count as FDE.
+- A `borderline` label for titles that may be target roles (Solutions Consultant/Consulting, Product Operations, Agent Product Manager, Engagement Manager, Strategic Growth/Projects, "… Strategy", Strategist, Implementation Lead/Manager, Transformation, Founder's Associate…), unless the title is plainly engineering, research, sales development, recruiting, marketing, design or legal.
+- Text check (`text-v1`): a borderline NYC posting passes only if its text mentions **AI**, **putting it into use** (deploy, implement, roll out, forward-deployed) **and customers**. Only passes are tiered; the words found are stored.
+- `market.sh relabel` moves **open** postings to title-v2, logging each change; closed postings keep title-v1 (D33). November 2026 is still provisional, so no published number changes.
+**Measured on the live database (open NYC postings):** 2 roles move into the deployment family (EliseAI Deployment Lead, Thread AI Federal Deployment Lead); 20 become borderline, of which 11 pass the text check (e.g. Decagon Agent PMs and Agent Strategy Manager, EliseAI AI Engagement Managers); 4 engineer titles move to FDE.
+**Trade-off:** EliseAI's Growth Strategy Analyst (labelled B) fails the text check (no deployment wording), so a role like it would not be tiered. Revisit with the monthly recall check.
+
+## D57 — Investor boards read from their public sitemap and job pages (2026-11-03)
+**Context:** D50–D51 chose investor job boards on Getro first.
+**Decision:** For each board in `private/config/sources.json` (Thrive Capital, Scale Venture Partners), read the public sitemap (every job link, title in the link). For each company with a target or borderline title not yet traced, open one job page to learn where the company posts jobs; Ashby, Greenhouse and Lever boards join the daily scan, and postings are read from the company's own board. Requests name the kit in their user agent and are spaced 1.5 s apart.
+**Not done:** Getro's search API (it is meant for the board's own pages; calling it from outside meant pretending to be the site, which we won't do). a16z's job board is not on Getro and needs its own reader.
+**Also fixed:** Greenhouse boards that link to the company's own site name the job only in `?gh_jid=`; posting identity now keeps it (otherwise a whole board collapsed into one posting).
+**Watch (D51):** a company ticked Watch with no readable board is reported as a problem in the scan, with the fix: `market.sh add-board <job link>`. Watch ticks reach the database when roles are tiered (Notion pull), so a new tick takes effect on the next day's scan.
+
+## D58 — The workspace stays in iCloud Drive (2026-11-03)
+**Context:** The candidate's Mac syncs Desktop & Documents to iCloud, so the whole workspace, including `private/` (keys, CV, profile, the live `market.db` and its backups), is already in iCloud Drive.
+**Options:** (A) move the workspace to a folder that doesn't sync and keep a separate daily iCloud copy of the database (D54); (B) keep it where it is and drop the separate offsite copy, since `private/backups/` already syncs.
+**Decision:** B, the candidate's call.
+**Why:** No move or re-pointing of sessions and schedules; the dated backups reach iCloud anyway.
+**Trade-off accepted:** iCloud may sync `market.db` while a scan writes to it (risk of a conflict copy or a damaged file; the 30 dated backups are the recovery path), and keys and personal files are stored in iCloud.
+
+## D59 — Backups reach iCloud through the synced workspace, checked each run (2026-11-03)
 **Context:** Gabriel keeps the workspace in `~/Documents`, which iCloud "Desktop & Documents Folders" syncs (D58), so `private/backups/` is already offsite. D54's extra `market-latest.db` copy into a chosen iCloud folder doubled that.
 **Decision:** Gabriel dropped the separate offsite copy. `private/config/daily.json` now needs only `imessage_to` (a leftover `icloud_dir` stops the run with a pointer to this entry). Each run, after writing and pruning the dated copies, the backup step checks that `private/backups/` sits in an iCloud-synced folder: iCloud Drive itself, or `~/Documents` / `~/Desktop` carrying macOS's `com.apple.icloud.desktop` sync marker. The run log names that folder. If the check fails (workspace moved, sync turned off), the backup step is reported as a failure by iMessage, so "backed up to iCloud" is never claimed falsely.
 **Why:** One place for backups, no second folder to configure; the check keeps D54's offsite guarantee honest.

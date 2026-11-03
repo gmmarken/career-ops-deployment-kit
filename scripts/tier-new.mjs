@@ -21,10 +21,12 @@ async function main() {
   const dry = process.argv.includes('--dry-run');
   const rules = loadRules();
   let store = openStore();
-  const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && TARGET_FAMILIES.has(p.title_family) && p.url && !store.latestDecision(p.id));
+  // Target-family titles, plus borderline titles whose text passed the no-AI check (D49).
+  const wanted = (p) => TARGET_FAMILIES.has(p.title_family) || (p.title_family === 'borderline' && p.text_check === 'hit');
+  const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id));
   store.close();
   const batch = todo.slice(0, limit);
-  console.log(`${todo.length} untiered NYC target-family role(s); tiering ${batch.length}.`);
+  console.log(`${todo.length} untiered NYC role(s) to tier (target-family titles + borderline titles that passed the text check); tiering ${batch.length}.`);
   for (const p of batch) console.log(`  · ${p.company} — ${p.title}`);
   if (dry || !batch.length) return;
 

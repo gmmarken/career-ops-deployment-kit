@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey } from './classify.mjs';
+import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
+import { knownBoards, watchedWithoutBoard } from './boards.mjs';
+import { DatabaseSync } from 'node:sqlite';
 import { openStore, urlKey, CLOSE_AFTER_MISSES } from './store.mjs';
 import { monthRange, openInMonth, monthlyByCompany, ranking, toCsv } from './metrics.mjs';
 
@@ -18,6 +20,24 @@ for (const [title, family] of [
   ['Chief of Staff to the CEO', 'chief_of_staff'],
   ['Member of Technical Staff (NY)', 'other'],
   ['Account Executive', 'other'],
+  // title-v2 (D49)
+  ['AI Solutions Strategist', 'deployment_ai_strategist'],
+  ['Federal Deployment Lead', 'deployment_ai_strategist'],
+  ['Deployment Lead, Finance Transformation | Housing', 'deployment_ai_strategist'],
+  ['Forward Deployed Strategist', 'deployment_ai_strategist'],
+  ['Software Engineer, Forward Deployed', 'forward_deployed_engineer'],
+  ['Forward Deployed AI Engineer', 'forward_deployed_engineer'],
+  ['Solutions Strategy & Operations Manager', 'bizops_so'],
+  ['Strategy & Planning Lead', 'bizops_so'],
+  ['Senior Agent Product Manager', 'borderline'],
+  ['Solutions Consultant, Enterprise', 'borderline'],
+  ['Product Operations Manager | Housing', 'borderline'],
+  ['AI Engagement Manager', 'borderline'],
+  ['Strategic Growth Partner (NYC)', 'borderline'],
+  ['Talent Strategist', 'other'],
+  ['Applied AI Researcher, Post-Training', 'other'],
+  ['Solutions Engineer', 'other'],
+  ['Senior Product Manager', 'other'],
 ]) test(`title "${title}" → ${family}`, () => assert.equal(titleFamily(title), family));
 test('classifier has a version stamp', () => assert.match(TITLE_CLASSIFIER_VERSION, /^title-v\d+$/));
 
@@ -34,6 +54,11 @@ test('home metro: aliases, whole words, city part only', () => {
 test('urlKey ignores query, /application, trailing slash, and Ashby board case', () => {
   assert.equal(urlKey('https://jobs.ashbyhq.com/Distyl/ABC/application?src=x'), urlKey('https://jobs.ashbyhq.com/distyl/abc/'));
   assert.notEqual(urlKey('https://jobs.lever.co/a/ID1'), urlKey('https://jobs.lever.co/a/id1'));
+});
+test('urlKey keeps the Greenhouse job id when the link points at the company site', () => {
+  const a = urlKey('https://databricks.com/company/careers/open-positions/job?gh_jid=1&utm=x');
+  assert.equal(a, 'databricks.com/company/careers/open-positions/job?gh_jid=1');
+  assert.notEqual(a, urlKey('https://databricks.com/company/careers/open-positions/job?gh_jid=2'));
 });
 
 const P = (over = {}) => ({ url: 'https://jobs.ashbyhq.com/acme/1', board: 'ashby:acme', company: 'Acme', title: 'AI Deployment Strategist', locations: ['New York, NY'], in_home_metro: true, ...over });
@@ -183,7 +208,7 @@ test('an empty month can still be frozen', () => {
   assert.equal(s.freezeMonth('2025-12'), 0);
   assert.equal(s.monthState('2025-12'), 'frozen');
 });
-test('a v1 database upgrades to v2 in place, keeping its data', async () => {
+test('a v1 database upgrades to the current version in place, keeping its data', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const { mkdtempSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -195,7 +220,7 @@ test('a v1 database upgrades to v2 in place, keeping its data', async () => {
     INSERT INTO companies (name, first_seen, updated_at) VALUES ('OldCo', '2026-01-01', '2026-01-01');`);
   v1.close();
   const s = openStore(path);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '2');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '3');
   assert.equal(s.companies()[0].name, 'OldCo');
   s.saveCompany({ name: 'OldCo', status: 'strong' }, { source: 'x', by: 'kit' });
   assert.equal(s.companyRecords()[0].status, 'strong');
@@ -205,4 +230,88 @@ import { trackingStartMonth } from './metrics.mjs';
 test('tracking begins with the first completed scan; failed scans do not count', () => {
   assert.equal(trackingStartMonth([]), null);
   assert.equal(trackingStartMonth([{ status: 'error', started_at: '2026-10-01T00:00:00Z' }, { status: 'ok', started_at: '2026-11-03T00:00:00Z' }]), '2026-11');
+});
+
+// --- title-v2 text check (D49)
+test('text check: a hit needs AI, putting it into use, and customers', () => {
+  const r = textCheck('Partner with forward deployed engineers to deploy AI agents for our enterprise customers.');
+  assert.equal(r.hit, true);
+  assert.deepEqual(r.found.deploy.sort(), ['deploy', 'forward deployed']);
+  assert.equal(textCheck('Own AI roadmap for internal teams. Implementation of tooling.').hit, false); // no customers
+  assert.equal(textCheck('Run implementation for customers of our payroll product.').hit, false); // no AI
+  assert.throws(() => textCheck('   '), /no text/);
+});
+
+// --- schema v3: migration, relabel, text check, boards, Getro
+test('a v2 database upgrades to v3 in place, keeping its postings', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const path = join(mkdtempSync(join(tmpdir(), 'kit-')), 'm.db');
+  const s0 = openStore(path);
+  s0.seePosting(P());
+  s0.close();
+  // Turn it back into a v2 file: no v3 columns or tables.
+  const raw = new DatabaseSync(path);
+  for (const c of ['text_check', 'text_check_found', 'text_check_version', 'text_checked_at']) raw.exec(`ALTER TABLE postings DROP COLUMN ${c}`);
+  raw.exec("DROP TABLE boards; DROP TABLE getro_jobs; UPDATE meta SET value = '2' WHERE key = 'schema_version';");
+  raw.close();
+  const s = openStore(path);
+  assert.equal(s.postings().length, 1);
+  assert.equal(s.postings()[0].text_check, null);
+  assert.equal(s.boards().length, 0);
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '3');
+  s.close();
+});
+test('relabel: open postings get the current label with a logged change; closed ones keep theirs; dry run writes nothing', () => {
+  const s = openStore(':memory:');
+  const { id: openId } = s.seePosting(P({ title: 'Senior Agent Product Manager' }));
+  const { id: closedId } = s.seePosting(P({ url: 'https://jobs.ashbyhq.com/acme/2', title: 'Solutions Consultant' }));
+  s.db.prepare("UPDATE postings SET title_family = 'other', title_classifier = 'title-v1'").run();
+  s.db.prepare('UPDATE postings SET closed_at = last_seen WHERE id = ?').run(closedId);
+  assert.equal(s.relabelOpen({ dryRun: true }).length, 1);
+  assert.equal(s.postings().find((p) => p.id === openId).title_family, 'other');
+  const changes = s.relabelOpen();
+  assert.deepEqual(changes.map((c) => [c.from, c.to]), [['other', 'borderline']]);
+  const rows = Object.fromEntries(s.postings().map((p) => [p.id, p]));
+  assert.equal(rows[openId].title_family, 'borderline');
+  assert.equal(rows[openId].title_classifier, TITLE_CLASSIFIER_VERSION);
+  assert.equal(rows[closedId].title_classifier, 'title-v1');
+  assert.equal(s.postingChanges(openId)[0].field, 'title_family');
+});
+test('text check queue: open NYC borderline postings, once per check version', () => {
+  const s = openStore(':memory:');
+  const { id } = s.seePosting(P({ title: 'AI Engagement Manager' }));
+  s.seePosting(P({ url: 'https://jobs.ashbyhq.com/acme/3', title: 'AI Engagement Manager', in_home_metro: false }));
+  assert.deepEqual(s.needsTextCheck(TEXT_CHECK_VERSION).map((r) => r.id), [id]);
+  s.recordTextCheck(id, { hit: true, found: { ai: ['ai'] } }, TEXT_CHECK_VERSION);
+  assert.equal(s.needsTextCheck(TEXT_CHECK_VERSION).length, 0);
+  assert.equal(s.needsTextCheck('text-v2').length, 1);
+  assert.equal(s.postings()[0].text_check, 'hit');
+});
+test('boards: only readable board keys; adding twice is a no-op', () => {
+  const s = openStore(':memory:');
+  assert.equal(s.addBoard('ashby:acme', 'Acme', 'you').added, true);
+  assert.equal(s.addBoard('ashby:acme', 'Acme', 'getro').added, false);
+  assert.throws(() => s.addBoard('workday:acme', 'Acme', 'you'), /Not a readable job board/);
+  assert.equal(s.boards().length, 1);
+});
+test('Getro jobs: new links reported once; a company counts as traced once any job resolves', () => {
+  const s = openStore(':memory:');
+  const jobs = [{ url: 'u1', company_slug: 'a', title: 'x' }, { url: 'u2', company_slug: 'a', title: 'y' }];
+  assert.equal(s.seeGetroJobs('Net', jobs).length, 2);
+  assert.equal(s.seeGetroJobs('Net', jobs).length, 0);
+  s.resolveGetroJob('u1', { resolved_url: 'https://jobs.ashbyhq.com/a/1', company: 'A', board: 'ashby:a' });
+  assert.deepEqual([...s.resolvedGetroCompanies('Net')], ['a']);
+});
+test('knownBoards merges posting boards with added ones; Watch without a board is reported', () => {
+  const postings = [
+    { board: 'ashby:acme', company: 'Acme' },
+    { board: 'workday:big', company: 'Big Co' },
+    { board: 'file', company: 'Beta' },
+  ];
+  const { boards, unreadable } = knownBoards(postings, [{ board: 'greenhouse:beta', company: 'Beta, Inc.' }]);
+  assert.deepEqual([...boards.keys()].sort(), ['ashby:acme', 'greenhouse:beta']);
+  assert.deepEqual([...unreadable.keys()], ['Big Co']); // Beta is covered by its added board
+  assert.deepEqual(watchedWithoutBoard([{ name: 'Acme', watch: 1 }, { name: 'Gamma', watch: 1 }, { name: 'Delta', watch: 0 }], boards), ['Gamma']);
 });
