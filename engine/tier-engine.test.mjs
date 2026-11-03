@@ -180,6 +180,15 @@ for (const [label, over] of [
 
 // Step 4 — seniority (example candidate has 6 years on TODAY)
 test('asks for same years → fits → S', () => assert.equal(run({ judgment: { years_required: { min: 6, hard_gate: false, hard_gate_met: null, quote: '6+ years' } } }).tier, 'S'));
+test('asks +1 year → Reach by 1 → capped at caps.reach_1_year (A)', () => {
+  const r = run({ judgment: { years_required: { min: 7, hard_gate: false, hard_gate_met: null, quote: '7+ years' } } });
+  assert.equal(r.tier, 'A');
+  assert.match(r.steps.find((s) => s.step.startsWith('5.')).detail, /Reach \(\+1\)/);
+});
+test('settings without caps.reach_1_year are rejected', () => {
+  const bad = structuredClone(rules); delete bad.caps.reach_1_year;
+  assert.throws(() => validateRules(bad), /caps\.reach_1_year/);
+});
 test('asks +2 years → Reach → capped at B', () => assert.equal(run({ judgment: { years_required: { min: 8, hard_gate: false, hard_gate_met: null, quote: '8+ years' } } }).tier, 'B'));
 test('asks +3 years → Reference only → C', () => assert.equal(run({ judgment: { years_required: { min: 9, hard_gate: false, hard_gate_met: null, quote: '9+ years' } } }).tier, 'C'));
 test('asks 3+ years below the candidate → Below level, capped at A, flagged', () => {

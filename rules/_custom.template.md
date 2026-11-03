@@ -37,7 +37,7 @@ Every evaluation ends with **the candidate's tier**, decided by these steps in o
 - Asks for {N}+ years *less* than the candidate has = **Below level** → at most **{tier}** (a cap, not a drop).
 
 **Step 5 — Caps** (the highest the tier can be):
-- Reach → at most **{tier}**
+- Reach by 1 year → at most **{tier}**; by more → at most **{tier}**
 - Tactical shape → at most **{tier}**
 - {Company type} → at most **{tier}**
 - Mixed shape → at most **{tier}**, unless {exception}

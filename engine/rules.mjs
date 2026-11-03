@@ -50,7 +50,7 @@ export function validateRules(r, where = 'tier settings') {
   num(r.pay?.borderline_floor_top, 'pay.borderline_floor_top');
   num(r.seniority?.reach_max_extra_years, 'seniority.reach_max_extra_years');
   num(r.seniority?.below_level_years, 'seniority.below_level_years');
-  for (const k of ['reach', 'tactical', 'mbb', 'borderline_equity', 'unclear_judgment', 'below_level']) tier(r.caps?.[k], `caps.${k}`);
+  for (const k of ['reach', 'reach_1_year', 'tactical', 'mbb', 'borderline_equity', 'unclear_judgment', 'below_level']) tier(r.caps?.[k], `caps.${k}`);
   if (![...TIERS, 'Excluded'].includes(r.location?.outside_home_metro)) problems.push('location.outside_home_metro must be one of S/A/B/C/Excluded');
   num(r.old_posting_days, 'old_posting_days');
   list(r.excluded_categories, 'excluded_categories');

@@ -173,7 +173,7 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   // Step 5 — caps.
   const caps = [];
   const applyCap = (cap, why) => { const before = tier; tier = capAt(tier, cap); caps.push(`${why} → max ${cap}${before !== tier ? ` (${before}→${tier})` : ''}`); };
-  if (reach) applyCap(rules.caps.reach, 'Reach');
+  if (reach) applyCap(ask - yrs === 1 ? rules.caps.reach_1_year : rules.caps.reach, `Reach (+${ask - yrs})`);
   if (belowLevel) { applyCap(rules.caps.below_level, 'Below level'); flags.push(`Below level: asks ${ask} years, has ${yrs}`); }
   if (shape === 'tactical') applyCap(rules.caps.tactical, 'Tactical shape');
   if (company.is_mbb) applyCap(rules.caps.mbb, 'MBB');
