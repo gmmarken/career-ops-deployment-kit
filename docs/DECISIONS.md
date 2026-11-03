@@ -201,3 +201,13 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Decision:** A. `companies.json` was imported once (history marked "import") and is now a generated copy; hand edits stop the run with a pointer to Notion.
 **Why:** One source of truth, moved while the data is small.
 **Consequence:** `market.db` is now valuable. Phase 7's daily runner needs a daily backup plus an offsite copy (a decision card then).
+
+## D41 — Whole-board scans of known companies (2026-11-02)
+**Context:** Company Radar's role counts only counted tiered roles (one or two per company), which made the numbers wrong rather than just incomplete. The candidate flagged this in review.
+**Decision:** `scripts/market.sh scan` reads every open posting on each known Ashby, Greenhouse and Lever board (no AI), records it with its title family and home-metro flag, logs the scan, and closes postings missing from 2 complete scans. If one board fails, the others still run; the failure is reported, the run exits non-zero, and nothing on that board is closed. Boards without a reader are listed as not scanned.
+**Result of the first scan:** 11 boards, 966 open postings (526 in NYC; 68 deployment-family, 30 in NYC). Market tracking officially began in November 2026.
+**Next:** run it daily (Phase 5 scheduling / Phase 7 runner), add readers for Built In, Rippling and other boards, and decide how to tier new NYC target-family roles.
+
+## D42 — Notion's Job Postings view holds tiered roles only (2026-11-02)
+**Decision:** Every scanned posting lives in the market database and counts toward Company Radar's numbers, but only tiered roles appear in the Job Postings view.
+**Why:** A single scan adds hundreds of engineering and sales roles that would bury the working view.

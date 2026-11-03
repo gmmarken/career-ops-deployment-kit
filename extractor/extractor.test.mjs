@@ -118,3 +118,31 @@ test('example settings are valid', () => {
 test('broken settings list every problem', () => {
   assert.throws(() => validateRules({ candidate: {}, pay: {}, caps: { reach: 'Z' } }), /candidate\.experience_start[\s\S]*caps\.reach must be one of/);
 });
+
+// --- whole-board readers (D41)
+import { ashbyBoard, greenhouseBoard, leverBoard } from './ats.mjs';
+test('Ashby board: every listed job, with pay and locations; unlisted skipped', () => {
+  const payload = { jobs: [
+    { ...ashby.jobs[0], jobUrl: 'https://jobs.ashbyhq.com/acme/abc-123' },
+    { ...ashby.jobs[0], id: 'hidden', jobUrl: 'https://jobs.ashbyhq.com/acme/hidden', isListed: false },
+  ] };
+  const ps = ashbyBoard('acme', payload);
+  assert.equal(ps.length, 1);
+  assert.equal(ps[0].pay.max, 190000);
+  assert.deepEqual(ps[0].locations, ['San Francisco Office', 'New York Office']);
+});
+test('Greenhouse board: multi-city locations split; pay left to tiering', () => {
+  const ps = greenhouseBoard('acme', { jobs: [{ absolute_url: 'u', title: 'AI Strategist', company_name: 'Acme', location: { name: 'New York, NY | San Francisco, CA' }, first_published: '2026-10-01' }] });
+  assert.deepEqual(ps[0].locations, ['New York, NY', 'San Francisco, CA']);
+  assert.equal(ps[0].pay, null);
+});
+test('Lever board: each posting mapped with its own URL', () => {
+  const ps = leverBoard('acme', [{ id: 'x1', hostedUrl: 'https://jobs.lever.co/acme/x1', text: 'Deployment Strategist', categories: { location: 'New York, NY' }, createdAt: Date.parse('2026-10-01'), descriptionPlain: '' }]);
+  assert.equal(ps[0].url, 'https://jobs.lever.co/acme/x1');
+  assert.equal(ps[0].title, 'Deployment Strategist');
+});
+test('a board that returns no job list fails loudly (never a partial or empty "success")', () => {
+  assert.throws(() => ashbyBoard('acme', {}), /returned no job list/);
+  assert.throws(() => greenhouseBoard('acme', { error: 'x' }), /returned no job list/);
+  assert.throws(() => leverBoard('acme', { ok: false }), /returned no job list/);
+});

@@ -7,6 +7,7 @@
 //                                check a hand-collected list ("Company | Title" per line) against the database
 //   enrich [--limit N]           research companies with no researched info yet (fills empty fields only)
 //   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
+//   scan [board ...]             read every open posting on known job boards (no AI); log scans; close gone postings
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
@@ -15,6 +16,8 @@ import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchComp
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
 import { recordTiered } from './record.mjs';
+import { listBoard } from '../extractor/ats.mjs';
+import { inHomeMetro } from './classify.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
 import { TARGET_FAMILIES, titleFamily, companyKey, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
@@ -181,6 +184,58 @@ async function enrich() {
   console.log('Run scripts/notion.sh sync to show the new info in Company Radar.');
 }
 
+/** Boards to scan: every ATS board a recorded posting came from, with the company name used there. */
+function knownBoards(store) {
+  const by = new Map();
+  const unreadable = new Map();
+  for (const p of store.postings()) {
+    if (/^(ashby|greenhouse|lever):/.test(p.board ?? '')) { if (!by.has(p.board)) by.set(p.board, p.company); }
+    else unreadable.set(p.company, p.board ?? 'unknown');
+  }
+  for (const [company] of unreadable) if ([...by.values()].includes(company)) unreadable.delete(company);
+  return { boards: by, unreadable };
+}
+
+async function scan() {
+  const rules = loadRules();
+  const wanted = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+  const store = openStore();
+  const failures = [];
+  try {
+    const { boards, unreadable } = knownBoards(store);
+    const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards];
+    if (!list.length) throw new Error('No known job boards yet. Tier a role from an Ashby, Greenhouse or Lever link first, or pass a board like lever:palantir.');
+    console.log(`Scanning ${list.length} board(s)…`);
+    for (const [board, company] of list) {
+      const scanId = store.startScan(board);
+      try {
+        const postings = await listBoard(board);
+        const name = company ?? board.split(':')[1];
+        let added = 0;
+        for (const p of postings) {
+          const { isNew } = store.seePosting({
+            url: p.url, board, company: name, title: p.title, locations: p.locations,
+            in_home_metro: p.locations.length ? inHomeMetro(p.locations, rules.candidate) : null,
+            workplace: p.workplace, pay: p.pay, posted_at: p.posted_at,
+          });
+          if (isNew) added++;
+        }
+        const { closed } = store.closeMissing(board, postings.map((p) => p.url));
+        store.finishScan(scanId, { status: 'ok', found: postings.length });
+        console.log(`  ✓ ${board} (${name}): ${postings.length} open, ${added} new, ${closed} closed`);
+      } catch (err) {
+        store.finishScan(scanId, { status: 'error', error: err.message });
+        failures.push(`${board}: ${err.message}`);
+        console.log(`  ✗ ${board}: ${err.message}`);
+      }
+    }
+    if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
+  } finally {
+    store.close();
+  }
+  if (failures.length) throw new Error(`${failures.length} board(s) failed and were skipped; their postings were NOT closed:\n  ${failures.join('\n  ')}`);
+}
+
 try {
   if (!dataDir) throw new Error('CAREER_OPS_DATA_DIR is not set. Run through scripts/market.sh.');
   const cmd = process.argv[2];
@@ -189,7 +244,8 @@ try {
   else if (cmd === 'recall') recall();
   else if (cmd === 'enrich') await enrich();
   else if (cmd === 'stats') stats();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats');
+  else if (cmd === 'scan') await scan();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);
