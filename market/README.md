@@ -8,7 +8,7 @@ The long-term market dataset: every posting the kit sees, when it was open, and 
 | `classify.mjs` | Versioned, no-AI classifiers run on every posting: title family (`title-v1`), home metro, company-name matching |
 | `record.mjs` | Records one tiered posting plus fingerprints of the settings and extraction instructions |
 | `metrics.mjs` | Monthly open/new counts per company and family, rankings, CSV |
-| `cli.mjs` | `scripts/market.sh backfill · metrics · stats · recall · enrich` |
+| `cli.mjs` | `scripts/market.sh backfill · scan · metrics · stats · recall · enrich` |
 
 ## How time works
 - A posting is **open** from its start (the earlier of the board's posted date and the day we first saw it) until it **closes**.
@@ -52,4 +52,5 @@ scripts/market.sh metrics --from 2026-11 --to 2027-10   # NYC + target families;
 scripts/market.sh recall linkedin-2026-11.txt
 scripts/market.sh enrich --limit 10                     # research companies with no researched info
 scripts/market.sh stats                                 # refresh provisional months, freeze finished ones
+scripts/market.sh scan                                  # read every open posting on known boards (no AI)
 ```

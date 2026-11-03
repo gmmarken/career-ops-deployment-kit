@@ -35,7 +35,8 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Company Radar DB schema
 
 ## Phase 5 — Sources
-- [ ] Minimal daily scan of known company boards (starts the market history; alerts stay in Phase 7)
+- [x] Whole-board scan of known company boards (`market.sh scan`, run by hand; first scan 2026-11-02)
+- [ ] Run the scan daily (scheduled)
 - [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
 - [ ] Companies to Watch boards → generated `portals.yml`
 - [ ] startup-boards plugin enabled

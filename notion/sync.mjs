@@ -160,7 +160,8 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
     }
     if (wlChanged) saveWatchlist(wl, { source: 'notion-sync', by: 'kit' });
     // Postings.
-    const postings = onlyPostings ?? store.postings();
+    // The Job Postings view holds tiered roles only (D42); every posting still counts on the Radar.
+    const postings = (onlyPostings ?? store.postings()).filter((p) => store.latestDecision(p.id));
     const jobPages = onlyPostings
       ? (await Promise.all(postings.map((p) => client.queryAll(cfg.jobs_data_source_id, { filter: { property: 'Key', rich_text: { equals: p.url_key } } })))).flat()
       : await client.queryAll(cfg.jobs_data_source_id);

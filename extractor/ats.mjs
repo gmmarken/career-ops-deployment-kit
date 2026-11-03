@@ -3,6 +3,7 @@
 // Unsupported URLs and failed fetches throw with a clear message; nothing is guessed.
 
 const TIMEOUT_MS = 20_000;
+const BOARD_TIMEOUT_MS = 90_000; // whole boards can be large (hundreds of postings with descriptions)
 
 export function parseJobUrl(raw) {
   let u;
@@ -35,6 +36,10 @@ const WORKPLACE = { OnSite: 'onsite', Hybrid: 'hybrid', Remote: 'remote', onsite
 export function fromAshby(board, id, payload, url) {
   const job = (payload.jobs || []).find((j) => j.id === id || (j.jobUrl || '').includes(id));
   if (!job) throw new Error(`Ashby board "${board}" has no listed job ${id}. The posting may be closed or unlisted.`);
+  return ashbyJob(board, job, url);
+}
+
+function ashbyJob(board, job, url = job.jobUrl) {
   const salary = (job.compensation?.compensationTiers || []).flatMap((t) => t.components || []).find((c) => c.compensationType === 'Salary');
   const equity = (job.compensation?.compensationTiers || []).flatMap((t) => t.components || []).some((c) => /equity/i.test(c.compensationType || ''));
   const locations = [job.location, ...(job.secondaryLocations || []).map((l) => l.location)].filter(Boolean);
@@ -86,10 +91,10 @@ export function fromLever(board, id, job, url) {
   };
 }
 
-async function getJson(apiUrl) {
+async function getJson(apiUrl, timeoutMs = TIMEOUT_MS) {
   let res;
   try {
-    res = await fetch(apiUrl, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: 'application/json' } });
+    res = await fetch(apiUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json' } });
   } catch (err) {
     throw new Error(`Could not reach ${apiUrl}: ${err.message}`);
   }
@@ -107,4 +112,40 @@ export async function fetchPosting(url) {
     return fromGreenhouse(board, id, await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(id)}?pay_transparency=true`), url);
   }
   return fromLever(board, id, await getJson(`https://api.lever.co/v0/postings/${encodeURIComponent(board)}/${encodeURIComponent(id)}`), url);
+}
+
+// --- Whole-board listings (D41): every open posting, hard facts only, no AI -----------
+
+const splitLocations = (s) => String(s ?? '').split(/\s*[|;]\s*/).map((x) => x.trim()).filter(Boolean);
+
+/** All open postings on an Ashby board (listed jobs only). */
+export function ashbyBoard(board, payload) {
+  if (!Array.isArray(payload?.jobs)) throw new Error(`Ashby board "${board}" returned no job list.`);
+  return payload.jobs.filter((j) => j.isListed !== false).map((j) => ashbyJob(board, j).posting);
+}
+
+/** All open postings on a Greenhouse board (pay needs a per-job call, so it's left to tiering). */
+export function greenhouseBoard(board, payload) {
+  if (!Array.isArray(payload?.jobs)) throw new Error(`Greenhouse board "${board}" returned no job list.`);
+  return payload.jobs.map((j) => ({
+    url: j.absolute_url, source: 'greenhouse', title: j.title, company: j.company_name ?? board,
+    locations: splitLocations(j.location?.name), workplace: /remote/i.test(j.location?.name ?? '') ? 'remote' : 'unclear',
+    posted_at: j.first_published ?? null, pay: null, equity_offered: null, pay_conflict: null,
+  }));
+}
+
+/** All open postings on a Lever board. */
+export function leverBoard(board, payload) {
+  if (!Array.isArray(payload)) throw new Error(`Lever board "${board}" returned no job list.`);
+  return payload.map((j) => fromLever(board, j.id, j, j.hostedUrl).posting);
+}
+
+/** "ashby:acme" → every open posting on that board. Throws on any failure (never a partial list). */
+export async function listBoard(boardKey) {
+  const [ats, board] = String(boardKey).split(':');
+  if (!board) throw new Error(`Board key must look like ashby:acme, got ${boardKey}`);
+  if (ats === 'ashby') return ashbyBoard(board, await getJson(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(board)}?includeCompensation=true`, BOARD_TIMEOUT_MS));
+  if (ats === 'greenhouse') return greenhouseBoard(board, await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs`, BOARD_TIMEOUT_MS));
+  if (ats === 'lever') return leverBoard(board, await getJson(`https://api.lever.co/v0/postings/${encodeURIComponent(board)}?mode=json`, BOARD_TIMEOUT_MS));
+  throw new Error(`No board reader for "${ats}" yet (${boardKey}). Supported: ashby, greenhouse, lever.`);
 }

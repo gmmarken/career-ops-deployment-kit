@@ -22,6 +22,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Market database (`market/`, `scripts/market.sh`): every tiered role recorded with first/last seen dates and tier history; backfill, monthly metrics CSV with scan coverage, and a hand-collected recall check (D30–D33).
 - Notion (`notion/`, `scripts/notion.sh`): Job Postings and Company Radar created from code; postings and companies synced; your company calls read back before tiering; old database archived (D34–D35).
 - History (D37–D40): company records in the market database with snapshots, funding rounds and a log of company calls; posting change log; monthly stats that freeze once tracking begins; `scripts/market.sh enrich` and `stats`.
+- `scripts/market.sh scan`: reads every open posting on known Ashby, Greenhouse and Lever boards, with no AI (D41); Company Radar counts are now real board totals; the Notion Job Postings view stays tiered-only (D42).
 
 ### Changed
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
