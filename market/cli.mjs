@@ -5,11 +5,13 @@
 //                                write monthly + ranking CSVs to <data dir>/exports/
 //   recall <file> [--source linkedin]
 //                                check a hand-collected list ("Company | Title" per line) against the database
+//   enrich [--limit N]           research companies with no researched info yet (fills empty fields only)
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
-import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts } from '../extractor/research.mjs';
+import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, fillFromResearch, needsEnrichment } from '../extractor/research.mjs';
+import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
 import { recordTiered } from './record.mjs';
 import { monthlyByCompany, ranking, toCsv } from './metrics.mjs';
@@ -109,13 +111,44 @@ function recall() {
   }
 }
 
+async function enrich() {
+  const limit = Number(arg('--limit') ?? 10);
+  if (!Number.isInteger(limit) || limit < 1) throw new Error('--limit must be a positive whole number.');
+  const path = watchlistPath(dataDir);
+  const wl = loadWatchlist(path);
+  const store = openStore();
+  const names = [...store.companies().map((c) => c.name), ...wl.companies.map((c) => c.name)];
+  store.close();
+  const todo = needsEnrichment(wl, names);
+  if (!todo.length) { console.log('Every company already has researched info. Nothing to do.'); return; }
+  const batch = todo.slice(0, limit);
+  console.log(`${todo.length} compan${todo.length === 1 ? 'y needs' : 'ies need'} research; doing ${batch.length} now.`);
+  const calls = [];
+  for (const { name, entry } of batch) {
+    const { company, usage } = await researchCompany(name);
+    calls.push({ step: `research ${name}`, ...usage });
+    if (entry) {
+      const filled = fillFromResearch(entry, company);
+      console.log(`  ${name}: filled ${filled.length ? filled.join(', ') : 'nothing new'} (your calls kept: status=${entry.status}, ai_native=${Boolean(entry.ai_native)})`);
+    } else {
+      saveResearch(path, wl, company, [name]);
+      console.log(`  ${name}: added — ${company.status}, ${company.stage}${company.investors.length ? `, investors: ${company.investors.slice(0, 4).join(', ')}` : ''}`);
+    }
+    writeFileSync(path, `${JSON.stringify(wl, null, 2)}\n`);
+  }
+  console.log(`AI calls: ${describeCalls(calls)}`);
+  if (todo.length > batch.length) console.log(`${todo.length - batch.length} left; run again to continue.`);
+  console.log('Run scripts/notion.sh sync to show the new info in Company Radar.');
+}
+
 try {
   if (!dataDir) throw new Error('CAREER_OPS_DATA_DIR is not set. Run through scripts/market.sh.');
   const cmd = process.argv[2];
   if (cmd === 'backfill') backfill();
   else if (cmd === 'metrics') metrics();
   else if (cmd === 'recall') recall();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file>');
+  else if (cmd === 'enrich') await enrich();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { claudeArgs, parseClaudeOutput } from './claude.mjs';
 import { buildInput, markdownSection } from './extract.mjs';
-import { findCompany, normalizeName, toCompanyFacts } from './research.mjs';
+import { findCompany, normalizeName, toCompanyFacts, fillFromResearch, needsEnrichment } from './research.mjs';
 
 const argAfter = (args, flag) => args[args.indexOf(flag) + 1];
 
@@ -70,4 +70,18 @@ test('unknown company becomes status unknown (engine caps it), never "strong"', 
 test('research entries stay unverified until confirmed', () => {
   assert.equal(toCompanyFacts({ name: 'X', status: 'strong', origin: 'research', verified: false }).verified, false);
   assert.equal(toCompanyFacts({ name: 'X', status: 'strong' }).verified, true);
+});
+
+// --- enrichment
+test('enrich fills only empty fields and never your calls', () => {
+  const entry = { name: 'SpaceX', status: 'strong', verified: true, ai_native: true, stage: 'unknown', investors: [], sources: [], reason: 'Your call' };
+  const research = { status: 'not_strong', verified: false, ai_native: false, stage: 'private_equity_backed', investors: ['A'], sources: [{ url: 'u', supports: 'x' }], what_they_do: 'rockets', reason: 'r' };
+  const filled = fillFromResearch(entry, research, '2026-11-02');
+  assert.deepEqual(filled.sort(), ['investors', 'sources', 'stage', 'what_they_do']);
+  assert.deepEqual([entry.status, entry.verified, entry.ai_native, entry.reason], ['strong', true, true, 'Your call']);
+  assert.equal(entry.researched_at, '2026-11-02');
+});
+test('needs enrichment: missing from watchlist, or present with no sources; each company once', () => {
+  const wl2 = { companies: [{ name: 'Acme AI', sources: [{ url: 'u' }] }, { name: 'SpaceX', sources: [] }] };
+  assert.deepEqual(needsEnrichment(wl2, ['Acme AI', 'SpaceX', 'spacex', 'Newco']).map((x) => x.name), ['SpaceX', 'Newco']);
 });
