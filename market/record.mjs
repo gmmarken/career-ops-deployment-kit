@@ -13,8 +13,13 @@ export const promptHash = () => sha(
   readFileSync(new URL('../extractor/prompt.md', import.meta.url), 'utf-8') +
   readFileSync(new URL('../extractor/judgment.schema.json', import.meta.url), 'utf-8'));
 
-/** Fingerprint of the tier settings (key order normalized). */
-export const rulesHash = (rules) => sha(JSON.stringify(rules, Object.keys(rules).sort()));
+// Keys sorted at every level, so the fingerprint changes whenever any setting changes.
+// (Before D62 only top-level keys were kept, so nested values like caps never changed it.)
+const stable = (v) => (Array.isArray(v) ? v.map(stable) : v && typeof v === 'object'
+  ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, stable(v[k])])) : v);
+
+/** Fingerprint of the tier settings (every value, key order normalized). */
+export const rulesHash = (rules) => sha(JSON.stringify(stable(rules)));
 
 /** "ashby:acme" for ATS links, "file" for pasted JDs. */
 export function boardOf(posting) {

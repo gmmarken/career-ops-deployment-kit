@@ -23,4 +23,6 @@ Real settings live in `<data dir>/config/tier-rules.json` and are never committe
 8. **Drops**: remote, back office, each red flag; one tier each, never below C
 Red flags (each one drop): `ticket_config_work`, `high_account_load`, `quota_ownership`, `travel_50_plus`, `book_of_business`. `sortKey.ai_native` breaks ties within a tier; it never changes the tier.
 
-9. **Flags only**: quota path, old posting (> `old_posting_days`), pay not posted, pay conflict, unverified company research, suspected prompt injection
+9. **Flags only**: quota path, old posting (> `old_posting_days`), pay not posted (also a ceiling, see below), pay conflict, unverified company research, suspected prompt injection
+
+**Pay ceiling (D62), applied after drops:** no posted pay → at most `caps.pay_not_posted` (A); no posted pay at a company that is not AI-native → at most `caps.pay_not_posted_not_ai_native` (B). It's a ceiling, not an extra drop, so a role already lowered by a drop isn't lowered again for missing pay. Unknown AI-native status counts as unknown, not "no".

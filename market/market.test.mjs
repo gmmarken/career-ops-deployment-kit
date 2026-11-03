@@ -333,3 +333,12 @@ test('Rippling boards are readable board keys', () => {
   assert.equal(s.addBoard('rippling:pace', 'Pace', 'getro').added, true);
   assert.deepEqual([...knownBoards([], s.boards()).boards.keys()], ['rippling:pace']);
 });
+
+// --- rules fingerprint (D62 fix)
+import { rulesHash } from './record.mjs';
+test('the rules fingerprint changes when any nested setting changes', () => {
+  const a = { caps: { reach: 'B', pay_not_posted: 'A' }, pay: { s_bar_top: 180000 } };
+  const b = { pay: { s_bar_top: 180000 }, caps: { pay_not_posted: 'A', reach: 'B' } };
+  assert.equal(rulesHash(a), rulesHash(b)); // key order doesn't matter
+  assert.notEqual(rulesHash(a), rulesHash({ ...a, caps: { ...a.caps, pay_not_posted: 'B' } }));
+});

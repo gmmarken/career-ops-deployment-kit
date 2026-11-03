@@ -201,6 +201,17 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
     step('6. Drops', 'none', '');
   }
 
+  // Step 6b — ceiling for missing pay (D62). Applied AFTER drops: it is "no higher than A
+  // without pay", not a penalty on top of other drops. Also not AI-native → no higher than B.
+  // Unknown AI-native status (null) is not treated as "no": only the first ceiling applies.
+  if (!pay) {
+    const notAi = company.ai_native === false;
+    const cap = notAi ? rules.caps.pay_not_posted_not_ai_native : rules.caps.pay_not_posted;
+    const before = tier;
+    tier = capAt(tier, cap);
+    step('6b. Pay ceiling', tier, `Pay not posted${notAi ? ', not AI-native' : ''} → max ${cap}${before !== tier ? ` (${before}→${tier})` : ''}`);
+  }
+
   // Step 7 — tags (no tier effect).
   const tags = [j.tags?.gm_path && 'GM path', j.tags?.product_path && 'Product path'].filter(Boolean);
   step('7. Tags', tags.length ? tags.join(', ') : 'none', '');

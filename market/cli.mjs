@@ -10,6 +10,7 @@
 //   scan [board ...]             find boards (investor Getro boards, Watch), read every open posting on known
 //                                job boards, text-check borderline NYC titles (all no AI); log scans; close gone postings
 //   relabel [--dry-run]          relabel open postings with the current title classifier (D49)
+//   retier [--dry-run]           re-decide open tiered postings from their saved facts with the current rules (no AI)
 //   add-board <job or board link> [--company NAME]
 //                                add a company's job board by hand (e.g. for a company you Watch)
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
@@ -19,7 +20,8 @@ import { decideTier } from '../engine/tier-engine.mjs';
 import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, fillFromResearch, needsEnrichment } from '../extractor/research.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
-import { recordTiered } from './record.mjs';
+import { recordTiered, rulesHash } from './record.mjs';
+import { syncAll } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
@@ -391,6 +393,35 @@ function relabel() {
   }
 }
 
+/**
+ * After a rules change: re-decide every open tiered posting from the facts saved with its
+ * latest decision, using the current rules (no AI, no new extraction). A new decision is
+ * recorded only where the tier changes; the old one stays in the history.
+ */
+async function retier() {
+  const dryRun = process.argv.includes('--dry-run');
+  const rules = loadRules();
+  const hash = rulesHash(rules);
+  const store = openStore();
+  const changed = [];
+  let checked = 0;
+  try {
+    for (const p of store.postings().filter((x) => !x.closed_at && x.tier)) {
+      const d = store.latestDecision(p.id);
+      checked++;
+      const result = decideTier(d.facts, rules);
+      if (result.tier === d.tier) continue;
+      changed.push({ id: p.id, company: p.company, title: p.title, from: d.tier, to: result.tier });
+      if (!dryRun) store.recordTier(p.id, result, d.facts, { rulesHash: hash, promptHash: d.prompt_hash });
+    }
+  } finally { store.close(); }
+  console.log(`${dryRun ? 'Dry run: ' : ''}${checked} open tiered role(s) re-decided with the current rules (no AI); ${changed.length} change tier.`);
+  for (const c of changed) console.log(`  ${c.from} → ${c.to}  ${c.company} — ${c.title}`);
+  if (!dryRun && changed.length) {
+    await syncAll(dataDir, { postingIds: changed.map((c) => c.id) });
+  }
+}
+
 function addBoard() {
   const link = process.argv[3];
   if (!link) throw new Error('Usage: market.sh add-board <job or board link> [--company NAME]');
@@ -414,8 +445,9 @@ try {
   else if (cmd === 'stats') stats();
   else if (cmd === 'scan') await scan();
   else if (cmd === 'relabel') relabel();
+  else if (cmd === 'retier') await retier();
   else if (cmd === 'add-board') addBoard();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | add-board <link> [--company NAME]');
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);

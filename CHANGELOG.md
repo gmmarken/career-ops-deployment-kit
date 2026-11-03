@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- `market.sh retier [--dry-run]`: after a rules change, re-decide open tiered roles from their saved facts (no AI); only tier changes are recorded and synced (D62).
 - Rippling board reader (D60): whole boards and single postings from Rippling's public pages; `tier.sh` and the scan accept `ats.rippling.com` links. Earlier investor-board traces to Rippling are picked up.
 - a16z portfolio board (D61): `market.sh scan` checks a16z's company pages (about weekly each), and adds the boards of companies with target or borderline titles. Configure under `a16z_boards` in `private/config/sources.json`.
 - Title classifier v2 (D49, D56): more target titles, a `borderline` label, and a no-AI text check (AI + deployment + customers) so only promising borderline roles are tiered; `market.sh relabel` moves open postings to the new version.
@@ -34,11 +35,13 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `market/backup.mjs`: daily dated `market.db` copy via SQLite `VACUUM INTO` (safe while open, integrity-checked), newest 30 kept (D54); they reach iCloud through the synced workspace folder, which every run checks and reports if it isn't synced (D59).
 
 ### Changed
+- Tier rules (D62): no posted pay caps a role at A, or at B when the company is not AI-native; applied after drops.
 - Tier engine: a role asking exactly 1 year more than the candidate has is capped by the new `caps.reach_1_year` setting; larger gaps keep `caps.reach` (D46). Existing settings files need the new key, and the engine stops with a clear error if it is missing.
 - Extraction prompt: a load of concurrent deployments is not a book of business (D44); back office now covers ops, planning and analytics for a customer-facing team (D45).
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
+- The rules fingerprint on each tier decision now changes when any setting changes, not just top-level names.
 - Greenhouse boards that link to the company's own site no longer collapse into a single posting (the job id in `?gh_jid=` is kept).
 - Extraction: travel stated as trips ("~2x per month for 2-3 days") is converted to a share of working days before the 50%+ travel flag is set (D55).
 - Calibration: misses are now classified as AI misread or rule miss (the runner read confirmed key facts from the wrong place, so every miss showed as "unclassified"). The report adds a second score for holdout cases, roles the rules never saw.
