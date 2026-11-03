@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { backupDb, prune, offsite, KEEP } from './backup.mjs';
+import { backupDb, prune, iCloudRoot, hasICloudMark, KEEP } from './backup.mjs';
 
 function liveDb() {
   const d = mkdtempSync(join(tmpdir(), 'bk-'));
@@ -49,13 +49,19 @@ test(`prune keeps the newest ${KEEP} dated copies and ignores other files`, () =
   assert.equal(readdirSync(d).length, KEEP + 1);
 });
 
-test('offsite writes one market-latest.db and fails loudly when the folder is missing', () => {
-  const { d, path, db } = liveDb(); db.close();
-  const file = backupDb(path, join(d, 'b'), '2026-11-03');
-  const off = join(d, 'icloud'); mkdirSync(off);
-  offsite(file, off); offsite(file, off);
-  assert.deepEqual(readdirSync(off), ['market-latest.db']);
-  assert.throws(() => offsite(file, join(d, 'missing')), /does not exist/);
-  assert.throws(() => offsite(file, ''), /no offsite folder/);
-  assert.ok(existsSync(file));
+test('iCloud check: iCloud Drive, or a synced Documents/Desktop folder; anything else fails loudly', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'home-'))); // /var vs /private/var on macOS
+  const docs = join(home, 'Documents', 'ws', 'private', 'backups'); mkdirSync(docs, { recursive: true });
+  const drive = join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'x'); mkdirSync(drive, { recursive: true });
+  const elsewhere = join(home, 'Projects', 'backups'); mkdirSync(elsewhere, { recursive: true });
+  const on = (root) => root === join(home, 'Documents');
+  assert.equal(iCloudRoot(docs, { home: home, marked: on }), join(home, 'Documents'));
+  assert.equal(iCloudRoot(drive, { home: home, marked: () => false }), join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs'));
+  assert.throws(() => iCloudRoot(docs, { home: home, marked: () => false }), /not in an iCloud-synced folder/, 'Documents with sync off is local only');
+  assert.throws(() => iCloudRoot(elsewhere, { home: home, marked: on }), /backups are on this Mac only/);
+  assert.throws(() => iCloudRoot(join(home, 'Documents2'), { home: home, marked: on }), /ENOENT/);
+});
+
+test('hasICloudMark reads macOS extended attributes (an unmarked temp folder is not synced)', () => {
+  assert.equal(hasICloudMark(mkdtempSync(join(tmpdir(), 'mark-'))), false);
 });
