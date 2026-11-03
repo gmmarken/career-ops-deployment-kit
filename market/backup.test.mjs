@@ -62,6 +62,6 @@ test('iCloud check: iCloud Drive, or a synced Documents/Desktop folder; anything
   assert.throws(() => iCloudRoot(join(home, 'Documents2'), { home: home, marked: on }), /ENOENT/);
 });
 
-test('hasICloudMark reads macOS extended attributes (an unmarked temp folder is not synced)', () => {
+test('hasICloudMark reads macOS extended attributes (an unmarked temp folder is not synced)', { skip: process.platform !== 'darwin' && 'macOS only (xattr)' }, () => {
   assert.equal(hasICloudMark(mkdtempSync(join(tmpdir(), 'mark-'))), false);
 });
