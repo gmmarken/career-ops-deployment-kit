@@ -1,0 +1,36 @@
+-- CareerOps Daily: the small helper app launchd starts each morning (D65).
+-- Filled in by scripts/install-daily.sh; this template has placeholders only, no personal values.
+--
+-- Why an app: macOS blocks background programs like /bin/bash from opening the Documents
+-- folder, where the workspace lives. An app can be allowed once (System Settings → Privacy &
+-- Security → Files and Folders), and everything it starts inherits that permission.
+--
+-- It also closes a gap: if the daily run can't start, or crashes before it sends its own text,
+-- this app sends the failure text itself, so a broken run is never silent.
+property dailySh : "__DAILY_SH__"
+property runPath : "__PATH__"
+property textTo : "__IMESSAGE_TO__"
+property appLog : "__APP_LOG__"
+
+on run
+	set code to 0
+	set detail to ""
+	try
+		do shell script "export PATH=" & quoted form of runPath & "; /bin/bash " & quoted form of dailySh & " 2>&1"
+	on error errMsg number errNum
+		set code to errNum
+		set detail to errMsg
+	end try
+	do shell script "printf '%s exit %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" " & code & " >> " & quoted form of appLog
+	-- daily.mjs exits 0 (all fine) or 1 (a step failed): it has already sent that morning's text.
+	-- Anything else means it couldn't start or couldn't send its text, so send one from here.
+	if code is not 0 and code is not 1 then
+		if length of detail > 400 then set detail to "…" & (text -400 thru -1 of detail)
+		set msg to "🚨🚨 JOB SEARCH RUN FAILED 🚨🚨" & linefeed & "The daily run could not start or could not send its own text (exit " & code & "). Action needed." & linefeed & "❌ " & detail & linefeed & "Helper log: " & appLog
+		do shell script "printf '%s\\n' " & quoted form of detail & " >> " & quoted form of appLog
+		tell application "Messages"
+			set svc to 1st account whose service type = iMessage
+			send msg to participant textTo of svc
+		end tell
+	end if
+end run

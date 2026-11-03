@@ -343,3 +343,17 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Fail loudly:** counts are read from the steps' own output; if a line can't be read, the text says "couldn't read the count (see log)", never a made-up zero. `scripts/daily.sh --sample-messages` sends one example of each, marked SAMPLE.
 **Trade-off:** one more text a day. The summary only covers what the run did; it does not track which roles were already applied to.
 
+
+## D64 — Drop the Built In NYC reader (2026-11-03)
+**Context:** Built In NYC lists other companies' jobs. Reading it was planned "after a terms-of-use review" (Phase 5), and its terms don't make clear that automated reading is allowed.
+**Options:** (A) the candidate reviews the terms and the kit reads it if allowed; (B) drop it.
+**Decision:** B, the candidate's call: "it's not clear it's allowed."
+**Trade-off:** companies that post only on Built In are missed. Search-engine discovery (Serper, D52) is meant to find NYC postings on companies' own boards and should cover most of that ground.
+
+## D65 — The daily run starts through a small helper app that macOS can allow into Documents (2026-11-03)
+**Context:** The first scheduled run (2026-11-03, 7:00 AM) started on time, but macOS refused to let `/bin/bash` open `scripts/daily.sh`: the workspace is in the Documents folder (kept in iCloud, D58), which macOS protects from background programs. It failed before the text code ran, so no text was sent at all: a silent failure, against the "unattended runs report their errors" rule.
+**Options:** (A) give `/bin/bash` Full Disk Access: 2 minutes, but every background script on the Mac gets every file; (B) move the workspace out of Documents: undoes D58 and loses the iCloud copy; (C) a small helper app that only runs the daily job, allowed once into Documents.
+**Decision:** C, the candidate's call. `scripts/install-daily.sh` builds `~/Applications/CareerOps Daily.app` (an AppleScript app, built on the Mac from `scripts/launchd/CareerOpsDaily.applescript.template`; personal values go only into the built app and `private/launchd/`). launchd starts the app; the app runs `scripts/daily.sh`. On the first run macOS asks to allow the app into Documents and to control Messages; the candidate clicks Allow.
+**Second notice (changes D53's "no second channel"):** `daily.mjs` exits 0 (fine) or 1 (a step failed) only after it has sent the morning text. Any other exit means the run couldn't start or couldn't send its text, so the app sends the "🚨🚨 JOB SEARCH RUN FAILED 🚨🚨" text itself, with the error. Every exit is logged in `~/Library/Logs/career-ops-daily.log` (outside Documents, so it can be written even when Documents is blocked).
+**Also:** `install-daily.sh --run-now` starts the run through launchd now, exactly as at 7 AM. `--kit-dir` picks which checkout the run uses.
+**Trade-off:** macOS ties the Allow to the exact app build, so the app is rebuilt only when its content changes (handle, paths, template); a rebuild means clicking Allow again. If Messages itself is broken, neither text can be sent; the error is only in the logs.

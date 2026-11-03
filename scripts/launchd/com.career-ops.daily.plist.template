@@ -1,20 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Daily career-ops run (D53). Filled in by scripts/install-daily.sh; placeholders only, no personal values. -->
+<!-- Daily career-ops run (D53). Starts the CareerOps Daily helper app, which runs scripts/daily.sh (D65). Filled in by scripts/install-daily.sh; placeholders only, no personal values. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>com.career-ops.daily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>__DAILY_SH__</string>
+    <string>__APP_BIN__</string>
   </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>__PATH__</string>
-  </dict>
   <!-- Once a day. If the Mac is asleep at this time, launchd runs it on wake; if it is off, that day is missed. -->
   <key>StartCalendarInterval</key>
   <dict>
