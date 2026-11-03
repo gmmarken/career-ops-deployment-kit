@@ -6,7 +6,9 @@
 // those boards (Ashby, Greenhouse, Lever) by the existing readers, so every posting in
 // the market database still comes from the employer's own board.
 
-export const USER_AGENT = 'career-ops-deployment-kit (personal job search; github.com/gmmarken/career-ops-deployment-kit)';
+import { USER_AGENT } from './ats.mjs';
+
+export { USER_AGENT };
 const TIMEOUT_MS = 30_000;
 export const PAGE_DELAY_MS = 1_500; // be gentle: one job page every 1.5 s
 
