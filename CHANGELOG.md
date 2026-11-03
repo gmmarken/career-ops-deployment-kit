@@ -24,6 +24,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - History (D37–D40): company records in the market database with snapshots, funding rounds and a log of company calls; posting change log; monthly stats that freeze once tracking begins; `scripts/market.sh enrich` and `stats`.
 - `scripts/market.sh scan`: reads every open posting on known Ashby, Greenhouse and Lever boards, with no AI (D41); Company Radar counts are now real board totals; the Notion Job Postings view stays tiered-only (D42).
 - `scripts/tier-new.sh [--limit N] [--dry-run]`: tiers every untiered open NYC target-family role the scan found, then syncs them to Notion in one pass; failures are listed and the run exits non-zero. First run: 38 roles, 7 S.
+- `scripts/daily.sh`: the daily unattended run (D53). Runs `market.sh scan`, then `tier-new.sh`, then backs up `market.db`; every step runs even if an earlier one failed; writes `private/logs/daily-YYYY-MM-DD.log` and sends one iMessage listing every failure (including a single board). `--test-message` checks the iMessage link. Settings in `private/config/daily.json` (not in the repo).
+- `scripts/install-daily.sh` + `scripts/launchd/com.career-ops.daily.plist.template`: fills in the launchd job, saves it under `private/launchd/` and prints it; loads it only with `--load` (`--unload` removes it).
+- `market/backup.mjs`: daily dated `market.db` copy via SQLite `VACUUM INTO` (safe while open, integrity-checked), newest 30 kept, plus one `market-latest.db` in iCloud Drive (D54).
 
 ### Changed
 - Tier engine: a role asking exactly 1 year more than the candidate has is capped by the new `caps.reach_1_year` setting; larger gaps keep `caps.reach` (D46). Existing settings files need the new key, and the engine stops with a clear error if it is missing.
