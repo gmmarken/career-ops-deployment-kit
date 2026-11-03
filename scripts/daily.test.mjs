@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, loadConfig, defaultSteps, runCommand, localDate } from './daily.mjs';
+import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate } from './daily.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
 const bad = (name, out) => ({ name, go: async () => ({ ok: false, out }) });
@@ -17,13 +17,44 @@ function harness(steps) {
   };
 }
 
-test('all steps ok: no notice, nothing reported', async () => {
-  const h = harness([ok('scan'), ok('tier-new'), ok('backup')]);
+const SCAN_OUT = 'Scanning 3 board(s)…\n  ✓ Thrive Capital (Getro): 900 job links; traced 0 new companies, 0 new board(s) to scan\n  ✓ ashby:a (A): 10 open, 2 new, 0 closed\n  ✓ rippling:pace (Pace): 13 open, 1 new, 1 closed\n';
+const TIER_OUT = '3 untiered NYC role(s) to tier; tiering 3.\n  [1/3] S         Pace — Deployment Strategist\n  [2/3] C         A — Solutions Consultant\n  [3/3] A         Stripe — GTM Strategy & Operations Analyst\n\nTiered 3: S 1 · C 1 · A 1\n';
+
+test('all steps ok: one calm morning summary is sent (D63)', async () => {
+  const h = harness([ok('scan', SCAN_OUT), ok('tier-new', TIER_OUT), ok('backup')]);
   const r = await h.run();
   assert.deepEqual(r.problems, []);
-  assert.equal(h.sent.length, 0);
-  assert.match(h.logs.join(''), /finished .*: ok/);
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0], /^✅ Job search: morning run done/);
+  assert.doesNotMatch(h.sent[0], /FAILED|🚨/);
+  assert.match(h.logs.join(''), /Morning summary sent[\s\S]*finished .*: ok/);
 });
+
+test('morning summary: counts, tiers in order, S and A roles named, nudge to apply', () => {
+  const s = successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': TIER_OUT });
+  assert.equal(s, [
+    '✅ Job search: morning run done (Tue, Nov 3)',
+    '3 boards checked · 3 new postings',
+    '3 new NYC roles graded: 1 S · 1 A · 1 C',
+    '⭐ S: Pace — Deployment Strategist',
+    '• A: Stripe — GTM Strategy & Operations Analyst',
+    'Time to review in Notion and apply.',
+  ].join('\n'));
+});
+test('morning summary: a quiet day, and output it cannot read is said, never shown as 0', () => {
+  const quiet = successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': '0 untiered NYC role(s) to tier; tiering 0.\n' });
+  assert.match(quiet, /No new NYC roles to grade today\.\nCheck Notion when you have a minute\.$/);
+  const unknown = successSummary('2026-11-03', { scan: 'something else', 'tier-new': '' });
+  assert.match(unknown, /Boards: couldn't read the count \(see log\)\nNew roles: couldn't read the count/);
+  assert.equal(runFacts({ scan: '' }).boards, null);
+});
+test('morning summary lists at most 6 S/A roles', () => {
+  const many = Array.from({ length: 8 }, (_, i) => `  [${i + 1}/8] S         Co${i} — Role`).join('\n');
+  const s = successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': `8 untiered NYC role(s)\n${many}\n` });
+  assert.equal((s.match(/⭐ S:/g) || []).length, 6);
+  assert.match(s, /…and 2 more S\/A in Notion/);
+});
+test('shortDate reads the date as a local day', () => assert.equal(shortDate('2026-11-03'), 'Tue, Nov 3'));
 
 test('one board failing is reported by iMessage, and later steps still run', async () => {
   const scanOut = [
@@ -44,7 +75,7 @@ test('one board failing is reported by iMessage, and later steps still run', asy
   assert.ok(tierRan && backupRan);
   assert.equal(r.problems.length, 1);
   assert.equal(h.sent.length, 1);
-  assert.match(h.sent[0], /1 problem\(s\)/);
+  assert.match(h.sent[0], /🚨🚨 JOB SEARCH RUN FAILED 🚨🚨[\s\S]*1 problem\. Action needed/);
   assert.match(h.sent[0], /scan: market: 1 board\(s\) failed/);
   assert.match(h.sent[0], /lever:b: HTTP 500/);
   assert.doesNotMatch(h.sent[0], /ashby:a/, 'healthy boards are not in the notice');
@@ -61,7 +92,7 @@ test('a step that throws (e.g. backup) is reported like any failure, in one noti
   const r = await h.run();
   assert.deepEqual(r.problems.map((p) => p.step), ['scan', 'backup']);
   assert.equal(h.sent.length, 1);
-  assert.match(h.sent[0], /2 problem\(s\)/);
+  assert.match(h.sent[0], /🚨🚨 JOB SEARCH RUN FAILED[\s\S]*2 problems\. Action needed/);
   assert.match(h.sent[0], /backup: backup: offsite folder \/nope does not exist/);
 });
 
@@ -79,9 +110,10 @@ test('failureDetail picks the error block, else the last lines, and caps length'
   assert.ok(failureDetail(`market: ${'x'.repeat(2000)}`).length <= 701);
 });
 
-test('summarize lists every problem', () => {
+test('failure notice is loud and lists every problem (D63)', () => {
   const s = summarize('2026-11-03', [{ step: 'scan', detail: 'a' }, { step: 'backup', detail: 'b' }], 'L');
-  assert.equal(s, 'career-ops daily run 2026-11-03: 2 problem(s).\n• scan: a\n• backup: b\nFull log: L');
+  assert.equal(s, '🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\nTue, Nov 3: 2 problems. Action needed.\n❌ scan: a\n❌ backup: b\nFull log: L');
+  assert.match(summarize('2026-11-03', [{ step: 'scan', detail: 'a' }], 'L'), /1 problem\. Action needed/);
 });
 
 test('config: missing file or field fails loudly', () => {
