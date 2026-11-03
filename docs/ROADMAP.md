@@ -38,7 +38,7 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Whole-board scan of known company boards (`market.sh scan`, run by hand; first scan 2026-11-02)
 - [x] Batch-tier new NYC target-family roles (`tier-new.sh`)
 - [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), iMessage on any failure (D47, D53)
-- [x] Daily dated `market.db` backup, keep 30, plus an iCloud Drive copy (D48, D54)
+- [x] Daily dated `market.db` backup, keep 30, reaching iCloud through the synced workspace folder (D48, D54, D59)
 - [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
 - [ ] Companies to Watch boards → generated `portals.yml`
 - [ ] startup-boards plugin enabled
