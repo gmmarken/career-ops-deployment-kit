@@ -5,6 +5,7 @@
 // Gabriel can overrule any call by editing the file.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { openStore } from '../market/store.mjs';
 import { runClaude } from './claude.mjs';
 import { assertValid } from './validate.mjs';
 
@@ -31,12 +32,48 @@ export function watchlistPath(dataDir = process.env.CAREER_OPS_DATA_DIR) {
   return join(dataDir, 'config', 'companies.json');
 }
 
-export function loadWatchlist(path) {
-  if (!existsSync(path)) return { companies: [] };
-  let wl;
-  try { wl = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`Watchlist ${path} is not valid JSON: ${e.message}`); }
-  if (!Array.isArray(wl.companies)) throw new Error(`Watchlist ${path} must have a "companies" list.`);
-  return wl;
+const GENERATED_NOTE = 'Generated from private/data/market.db. Do not edit: change company calls in Notion (Company Radar).';
+
+/**
+ * Company records, read from the market database (D40). On first run, a hand-made
+ * companies.json is imported once (with history marked "import"); afterwards that file
+ * is only a generated copy, and hand edits to it stop the run.
+ */
+export function loadWatchlist(path = watchlistPath()) {
+  const store = openStore();
+  try {
+    let companies = store.companyRecords();
+    if (existsSync(path)) {
+      let file;
+      try { file = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
+      if (!file._generated) {
+        if (companies.length) throw new Error(`${path} was edited by hand, but company records now live in the market database. Make company calls in Notion (Company Radar); to re-import the file, move it aside and tell the kit maintainer.`);
+        if (!Array.isArray(file.companies)) throw new Error(`${path} must have a "companies" list.`);
+        for (const e of file.companies) store.saveCompany(e, { source: 'import', by: 'import' });
+        companies = store.companyRecords();
+        writeExport(path, companies);
+        console.log(`Imported ${companies.length} companies from companies.json into the market database (one time).`);
+      }
+    }
+    return { companies };
+  } finally {
+    store.close();
+  }
+}
+
+function writeExport(path, companies) {
+  writeFileSync(path, `${JSON.stringify({ _generated: GENERATED_NOTE, companies }, null, 2)}\n`);
+}
+
+/** Save every record (history is appended for what changed) and refresh the generated copy. */
+export function saveWatchlist(wl, { source, by, path = watchlistPath() }) {
+  const store = openStore();
+  try {
+    for (const e of wl.companies) store.saveCompany(e, { source, by });
+    writeExport(path, store.companyRecords());
+  } finally {
+    store.close();
+  }
 }
 
 /** Find a company by name or alias (case/punctuation-insensitive). */
@@ -76,7 +113,7 @@ export function saveResearch(path, watchlist, company, aliases = []) {
     origin: 'research', verified: false, researched_at: new Date().toISOString().slice(0, 10),
   };
   watchlist.companies.push(entry);
-  writeFileSync(path, `${JSON.stringify(watchlist, null, 2)}\n`);
+  saveWatchlist(watchlist, { source: 'research', by: 'kit', path });
   return entry;
 }
 

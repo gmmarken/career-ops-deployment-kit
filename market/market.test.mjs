@@ -118,3 +118,91 @@ test('companyKey ignores common endings but not real name differences', () => {
   assert.notEqual(companyKey('Ramp'), companyKey('Rampart'));
   assert.equal(companyKey('AI'), 'ai');
 });
+
+// --- v2: company records and history (D38, D40)
+test('saving a company records history: your calls, fact snapshots, funding rounds', () => {
+  const s = openStore(':memory:');
+  s.saveCompany({ name: 'Acme', status: 'strong', ai_native: true, stage: 'series_a', investors: ['X'], last_raise: { round: 'Series A', amount_usd: 2e7, date: '2026-03-01' }, sources: [{ url: 'u1' }] }, { source: 'research', by: 'kit', at: '2026-03-02T00:00:00Z' });
+  s.saveCompany({ name: 'Acme', stage: 'series_b', last_raise: { round: 'Series B', amount_usd: 6e7, date: '2026-09-01' } }, { source: 'research', by: 'kit', at: '2026-09-02T00:00:00Z' });
+  s.saveCompany({ name: 'Acme', status: 'exceptional' }, { source: 'notion', by: 'you', at: '2026-09-03T00:00:00Z' });
+  const h = s.companyHistory('Acme');
+  assert.deepEqual(h.funding.map((f) => f.round), ['Series A', 'Series B']);
+  assert.deepEqual(h.snapshots.map((x) => x.data.stage), ['series_a', 'series_b']);
+  assert.deepEqual(h.calls.filter((c) => c.field === 'status').map((c) => [c.new_value, c.by]), [['"strong"', 'kit'], ['"exceptional"', 'you']]);
+  const [rec] = s.companyRecords();
+  assert.deepEqual([rec.status, rec.stage, rec.ai_native], ['exceptional', 'series_b', true]);
+});
+test('saving the same company record twice adds no history', () => {
+  const s = openStore(':memory:');
+  const e = { name: 'Acme', status: 'strong', last_raise: { round: 'A', amount_usd: 1, date: '2026-01-01' } };
+  s.saveCompany(e, { source: 'x', by: 'kit' });
+  assert.equal(s.saveCompany(e, { source: 'x', by: 'kit' }).changed, false);
+  assert.equal(s.companyHistory('Acme').funding.length, 1);
+});
+test('saveCompany refuses to write without saying where the change came from', () => {
+  assert.throws(() => openStore(':memory:').saveCompany({ name: 'A' }, {}), /source, by/);
+});
+test('companies seen only in postings have no record until researched or decided', () => {
+  const s = openStore(':memory:');
+  s.seePosting(P(), '2026-01-01');
+  assert.equal(s.companyRecords().length, 0);
+});
+
+// --- v2: posting changes
+test('a changed pay range or title is logged with old and new values', () => {
+  const s = openStore(':memory:');
+  const { id } = s.seePosting(P({ pay: { min: 150000, max: 180000, currency: 'USD', interval: 'year' } }), '2026-01-01');
+  s.seePosting(P({ title: 'Senior AI Deployment Strategist', pay: { min: 160000, max: 200000, currency: 'USD', interval: 'year' } }), '2026-02-01');
+  const ch = s.postingChanges(id).map((c) => [c.field, c.old_value, c.new_value]);
+  assert.deepEqual(ch, [['title', 'AI Deployment Strategist', 'Senior AI Deployment Strategist'], ['pay_min', '150000', '160000'], ['pay_max', '180000', '200000']]);
+});
+
+// --- v2: frozen monthly stats (D39)
+import { freezable, FREEZE_AFTER_DAYS } from './metrics.mjs';
+test(`months freeze ${FREEZE_AFTER_DAYS} days after they end`, () => {
+  assert.deepEqual(freezable(['2026-10', '2026-11'], new Date('2026-11-06T00:00:00Z')), []);
+  assert.deepEqual(freezable(['2026-10', '2026-11'], new Date('2026-11-08T00:00:00Z')), ['2026-10']);
+});
+test('frozen months never change; corrections are added alongside with a reason', () => {
+  const s = openStore(':memory:');
+  s.seePosting(P(), '2026-01-01');
+  const cid = s.companies()[0].id;
+  const row = { company_id: cid, scope: 'home_metro', family: 'deployment_ai_strategist', open: 1, new: 1, coverage_scans: 0 };
+  s.writeProvisional('2026-01', [row], { classifier: 'title-v1' });
+  assert.equal(s.monthState('2026-01'), 'provisional');
+  s.freezeMonth('2026-01');
+  assert.equal(s.monthState('2026-01'), 'frozen');
+  assert.throws(() => s.writeProvisional('2026-01', [{ ...row, open: 9 }], { classifier: 'title-v1' }), /frozen; add a correction/);
+  assert.throws(() => s.addCorrection('2026-01', { ...row, classifier: 'title-v1', open: 2 }, ''), /needs a reason/);
+  s.addCorrection('2026-01', { ...row, classifier: 'title-v1', open: 2 }, 'late-found posting');
+  const rows = s.statsRows('2026-01', '2026-01', 'home_metro');
+  assert.deepEqual(rows.map((r) => [r.status, r.open]), [['correction', 2], ['frozen', 1]]);
+});
+test('an empty month can still be frozen', () => {
+  const s = openStore(':memory:');
+  assert.equal(s.freezeMonth('2025-12'), 0);
+  assert.equal(s.monthState('2025-12'), 'frozen');
+});
+test('a v1 database upgrades to v2 in place, keeping its data', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const path = join(mkdtempSync(join(tmpdir(), 'kit-')), 'm.db');
+  const v1 = new DatabaseSync(path);
+  v1.exec(`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO meta VALUES ('schema_version','1');
+    CREATE TABLE companies (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, first_seen TEXT NOT NULL, updated_at TEXT NOT NULL);
+    INSERT INTO companies (name, first_seen, updated_at) VALUES ('OldCo', '2026-01-01', '2026-01-01');`);
+  v1.close();
+  const s = openStore(path);
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '2');
+  assert.equal(s.companies()[0].name, 'OldCo');
+  s.saveCompany({ name: 'OldCo', status: 'strong' }, { source: 'x', by: 'kit' });
+  assert.equal(s.companyRecords()[0].status, 'strong');
+});
+
+import { trackingStartMonth } from './metrics.mjs';
+test('tracking begins with the first completed scan; failed scans do not count', () => {
+  assert.equal(trackingStartMonth([]), null);
+  assert.equal(trackingStartMonth([{ status: 'error', started_at: '2026-10-01T00:00:00Z' }, { status: 'ok', started_at: '2026-11-03T00:00:00Z' }]), '2026-11');
+});

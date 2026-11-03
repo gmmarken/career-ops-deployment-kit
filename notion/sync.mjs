@@ -4,13 +4,12 @@
 //   pull: Company Radar's Status / Verified / Watch / AI-native → watchlist (companies.json),
 //         so the candidate's company calls drive tiering.
 // Any Notion error stops the run (fail loudly).
-import { writeFileSync } from 'node:fs';
 import { createClient, readToken, text, title, select, multi, num, date, check, url, relation, readProp } from './client.mjs';
 import { loadNotionConfig } from './setup.mjs';
 import { OWNED_BY_YOU } from './schema.mjs';
 import { openStore } from '../market/store.mjs';
 import { companyKey } from '../market/classify.mjs';
-import { loadWatchlist, watchlistPath, findCompany } from '../extractor/research.mjs';
+import { loadWatchlist, saveWatchlist, findCompany } from '../extractor/research.mjs';
 
 /** Short, stable tag for a flag string ("Old posting: posted …" → "Old posting"). */
 export function flagLabel(flag) {
@@ -127,7 +126,7 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
   const cfg = loadNotionConfig(dataDir);
   const client = createClient(readToken(dataDir));
   const store = openStore();
-  const wl = loadWatchlist(watchlistPath(dataDir));
+  const wl = loadWatchlist();
   try {
     // Companies.
     await ensureRadarColumns(client, cfg);
@@ -159,7 +158,7 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
         cNew++;
       }
     }
-    if (wlChanged) writeFileSync(watchlistPath(dataDir), `${JSON.stringify(wl, null, 2)}\n`);
+    if (wlChanged) saveWatchlist(wl, { source: 'notion-sync', by: 'kit' });
     // Postings.
     const postings = onlyPostings ?? store.postings();
     const jobPages = onlyPostings
@@ -191,8 +190,7 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
 export async function pullCompanyEdits(dataDir, { verbose = false, log = console.log } = {}) {
   const cfg = loadNotionConfig(dataDir);
   const client = createClient(readToken(dataDir));
-  const path = watchlistPath(dataDir);
-  const wl = loadWatchlist(path);
+  const wl = loadWatchlist();
   const pages = await client.queryAll(cfg.radar_data_source_id);
   const changes = [];
   let changed = false;
@@ -214,7 +212,7 @@ export async function pullCompanyEdits(dataDir, { verbose = false, log = console
     const nowPushed = { ...OWNED_DEFAULTS, ...entry.notion_pushed, ...agreed, ...yourEdits };
     if (JSON.stringify(entry.notion_pushed) !== JSON.stringify(nowPushed)) { entry.notion_pushed = nowPushed; changed = true; }
   }
-  if (changes.length || changed) writeFileSync(path, `${JSON.stringify(wl, null, 2)}\n`);
+  if (changes.length || changed) saveWatchlist(wl, { source: 'notion', by: 'you' });
   if (verbose || changes.length) log(changes.length ? `Company edits from Notion:\n  ${changes.join('\n  ')}` : 'No company edits in Notion.');
   return changes;
 }

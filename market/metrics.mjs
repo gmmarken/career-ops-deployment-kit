@@ -47,7 +47,7 @@ export function monthlyByCompany(postings, scans, { from, to, filter = () => tru
       const isNew = ym(postingStart(p)) === m;
       if (!open && !isNew) continue;
       const k = `${p.company}\u0000${p.title_family}`;
-      const g = groups.get(k) ?? { month: m, coverage_scans: scansByMonth.get(m) ?? 0, company: p.company, family: p.title_family, open: 0, new: 0 };
+      const g = groups.get(k) ?? { month: m, coverage_scans: scansByMonth.get(m) ?? 0, company: p.company, company_id: p.company_id, family: p.title_family, open: 0, new: 0 };
       if (open) g.open++;
       if (isNew) g.new++;
       groups.set(k, g);
@@ -78,4 +78,21 @@ export function toCsv(rows) {
   const cols = Object.keys(rows[0]);
   const cell = (v) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   return [cols.join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\n') + '\n';
+}
+
+export const FREEZE_AFTER_DAYS = 7;
+
+/** Months that should be frozen on `today`: ended at least FREEZE_AFTER_DAYS ago. */
+export function freezable(months, today = new Date()) {
+  return months.filter((m) => {
+    const [y, mo] = m.split('-').map(Number);
+    const end = Date.UTC(y, mo, 0);
+    return today.getTime() - end >= FREEZE_AFTER_DAYS * 86_400_000;
+  });
+}
+
+/** Month of the first completed scan (when real market tracking began), or null. */
+export function trackingStartMonth(scans) {
+  const ok = scans.filter((s) => s.status === 'ok').map((s) => String(s.started_at).slice(0, 7)).sort();
+  return ok[0] ?? null;
 }
