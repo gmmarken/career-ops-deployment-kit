@@ -299,3 +299,10 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Also fixed:** Greenhouse boards that link to the company's own site name the job only in `?gh_jid=`; posting identity now keeps it (otherwise a whole board collapsed into one posting).
 **Watch (D51):** a company ticked Watch with no readable board is reported as a problem in the scan, with the fix: `market.sh add-board <job link>`. Watch ticks reach the database when roles are tiered (Notion pull), so a new tick takes effect on the next day's scan.
 
+## D58 — The workspace stays in iCloud Drive (2026-11-03)
+**Context:** The candidate's Mac syncs Desktop & Documents to iCloud, so the whole workspace, including `private/` (keys, CV, profile, the live `market.db` and its backups), is already in iCloud Drive.
+**Options:** (A) move the workspace to a folder that doesn't sync and keep a separate daily iCloud copy of the database (D54); (B) keep it where it is and drop the separate offsite copy, since `private/backups/` already syncs.
+**Decision:** B, the candidate's call.
+**Why:** No move or re-pointing of sessions and schedules; the dated backups reach iCloud anyway.
+**Trade-off accepted:** iCloud may sync `market.db` while a scan writes to it (risk of a conflict copy or a damaged file; the 30 dated backups are the recovery path), and keys and personal files are stored in iCloud.
+
