@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -74,6 +74,50 @@ CREATE TABLE IF NOT EXISTS recall_checks (
 );
 `;
 
+// v2 (D38–D40): company records live here, and history is append-only.
+const COMPANY_COLUMNS = {
+  aliases: "TEXT NOT NULL DEFAULT '[]'", status: 'TEXT', verified: 'INTEGER', watch: 'INTEGER', ai_native: 'INTEGER',
+  stage: 'TEXT', last_raise: 'TEXT', investors: "TEXT NOT NULL DEFAULT '[]'", what_they_do: 'TEXT', parent: 'TEXT',
+  nyc_presence: 'INTEGER', owner_categories: "TEXT NOT NULL DEFAULT '[]'", is_mbb: 'INTEGER', reason: 'TEXT',
+  sources: "TEXT NOT NULL DEFAULT '[]'", origin: 'TEXT', researched_at: 'TEXT', notion_pushed: 'TEXT',
+};
+const SCHEMA_V2 = `
+CREATE TABLE IF NOT EXISTS company_snapshots (
+  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
+  observed_at TEXT NOT NULL, source TEXT NOT NULL, data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS funding_rounds (
+  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
+  round TEXT, amount_usd REAL, announced TEXT, investors TEXT NOT NULL DEFAULT '[]', source_url TEXT, recorded_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS funding_unique ON funding_rounds(company_id, COALESCE(announced, ''), COALESCE(round, ''), COALESCE(amount_usd, -1));
+CREATE TABLE IF NOT EXISTS company_calls (
+  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
+  at TEXT NOT NULL, field TEXT NOT NULL, old_value TEXT, new_value TEXT, by TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS posting_changes (
+  id INTEGER PRIMARY KEY, posting_id INTEGER NOT NULL REFERENCES postings(id),
+  observed_at TEXT NOT NULL, field TEXT NOT NULL, old_value TEXT, new_value TEXT
+);
+CREATE TABLE IF NOT EXISTS monthly_stats (
+  id INTEGER PRIMARY KEY, month TEXT NOT NULL, company_id INTEGER NOT NULL REFERENCES companies(id),
+  scope TEXT NOT NULL, family TEXT NOT NULL, classifier TEXT NOT NULL, open INTEGER NOT NULL, new INTEGER NOT NULL,
+  coverage_scans INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('provisional', 'frozen', 'correction')),
+  computed_at TEXT NOT NULL, frozen_at TEXT, note TEXT
+);
+CREATE INDEX IF NOT EXISTS stats_month ON monthly_stats(month, scope, status);
+CREATE TABLE IF NOT EXISTS frozen_months (month TEXT PRIMARY KEY, frozen_at TEXT NOT NULL, rows INTEGER NOT NULL);
+`;
+
+function migrate(db, from) {
+  if (from < 2) {
+    const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
+    for (const [col, type] of Object.entries(COMPANY_COLUMNS)) if (!have.has(col)) db.exec(`ALTER TABLE companies ADD COLUMN ${col} ${type}`);
+    db.exec(SCHEMA_V2);
+  }
+  db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
+}
+
 const day = (d = new Date()) => (typeof d === 'string' ? d : d.toISOString()).slice(0, 10);
 
 /** Stable identity for a posting URL: host + path, no query/fragment/trailing slash or /application. */
@@ -98,9 +142,47 @@ export function openStore(path = defaultDbPath()) {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   const v = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
-  if (!v) db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
-  else if (Number(v.value) !== SCHEMA_VERSION) throw new Error(`market.db is schema v${v.value}; this code expects v${SCHEMA_VERSION}. Migrate before running.`);
+  if (!v) {
+    db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', '1')").run();
+    migrate(db, 1);
+  } else if (Number(v.value) < SCHEMA_VERSION) {
+    db.exec('BEGIN');
+    try { migrate(db, Number(v.value)); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw new Error(`market.db upgrade from v${v.value} failed, nothing changed: ${e.message}`); }
+  } else if (Number(v.value) > SCHEMA_VERSION) {
+    throw new Error(`market.db is schema v${v.value}, newer than this code (v${SCHEMA_VERSION}). Update the kit.`);
+  }
   return new Store(db);
+}
+
+const TRACKED_POSTING_FIELDS = ['title', 'pay_min', 'pay_max', 'pay_currency', 'pay_interval', 'locations', 'workplace'];
+const OWNED = ['status', 'verified', 'watch', 'ai_native'];
+const FACT_FIELDS = ['aliases', 'stage', 'last_raise', 'investors', 'what_they_do', 'parent', 'nyc_presence', 'owner_categories', 'is_mbb', 'reason', 'sources', 'origin'];
+const JSON_COLS = ['aliases', 'last_raise', 'investors', 'owner_categories', 'sources', 'notion_pushed'];
+const BOOL_COLS = ['verified', 'watch', 'ai_native', 'nyc_presence', 'is_mbb'];
+const ownedValue = (e, f) => (f === 'status' ? e.status ?? 'unknown' : f === 'verified' ? e.verified !== false : Boolean(e[f]));
+const factsOf = (e) => Object.fromEntries(FACT_FIELDS.map((k) => [k, e[k] ?? null]));
+
+function rowToEntry(r) {
+  const e = { name: r.name, first_seen: r.first_seen };
+  for (const k of Object.keys(COMPANY_COLUMNS)) {
+    let v = r[k];
+    if (JSON_COLS.includes(k)) v = v == null ? null : JSON.parse(v);
+    else if (BOOL_COLS.includes(k)) v = v == null ? null : Boolean(v);
+    if (v != null) e[k] = v;
+  }
+  return e;
+}
+function entryToRow(e) {
+  const out = {};
+  for (const k of Object.keys(COMPANY_COLUMNS)) {
+    let v = e[k];
+    if (JSON_COLS.includes(k)) v = v == null ? (['aliases', 'investors', 'owner_categories', 'sources'].includes(k) ? '[]' : null) : JSON.stringify(v);
+    else if (BOOL_COLS.includes(k)) v = v == null ? null : Number(Boolean(v));
+    else v = v ?? null;
+    out[k] = v;
+  }
+  if (out.status == null) out.status = 'unknown';
+  return out;
 }
 
 class Store {
@@ -126,7 +208,7 @@ class Store {
     const key = p.url ? urlKey(p.url) : textKey(p.company, p.title);
     const companyId = this.company(p.company, at);
     const pay = p.pay ?? {};
-    const existing = this.db.prepare('SELECT id, first_seen FROM postings WHERE url_key = ?').get(key);
+    const existing = this.db.prepare('SELECT * FROM postings WHERE url_key = ?').get(key);
     const fields = {
       url: p.url ?? null, board: p.board ?? null, company_id: companyId, title: p.title,
       locations: JSON.stringify(p.locations ?? []), in_home_metro: p.in_home_metro == null ? null : Number(Boolean(p.in_home_metro)),
@@ -134,6 +216,15 @@ class Store {
       pay_interval: pay.interval ?? null, pay_source: pay.source ?? null, posted_at: p.posted_at ?? null,
     };
     if (existing) {
+      // Keep a trace of anything about the role that changed (D38): pay, title, place, work model.
+      for (const f of TRACKED_POSTING_FIELDS) {
+        const was = existing[f];
+        const now = fields[f];
+        if (now != null && was != null && String(was) !== String(now)) {
+          this.db.prepare('INSERT INTO posting_changes (posting_id, observed_at, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)')
+            .run(existing.id, new Date(at).toISOString(), f, String(was), String(now));
+        }
+      }
       const firstSeen = d < existing.first_seen ? d : existing.first_seen;
       this.db.prepare(`UPDATE postings SET url = ?, board = ?, company_id = ?, title = ?, locations = ?, in_home_metro = ?, workplace = ?,
         pay_min = ?, pay_max = ?, pay_currency = ?, pay_interval = ?, pay_source = ?, posted_at = COALESCE(?, posted_at),
@@ -202,4 +293,114 @@ class Store {
     return r ? { ...r, flags: JSON.parse(r.flags), steps: JSON.parse(r.steps), facts: JSON.parse(r.facts) } : null;
   }
   companies() { return this.db.prepare('SELECT * FROM companies ORDER BY name').all(); }
+
+  // --- Company records (D40) and their history (D38) --------------------------------
+
+  /** Companies with a record (researched, imported, or decided by you), shaped like watchlist entries. */
+  companyRecords() {
+    return this.db.prepare('SELECT * FROM companies WHERE status IS NOT NULL ORDER BY name').all().map(rowToEntry);
+  }
+
+  /**
+   * Save one company record. Diffs against what's stored and appends history:
+   * your columns → company_calls (by), facts → company_snapshots (source),
+   * a new last_raise → funding_rounds. Nothing is overwritten without a trace.
+   */
+  saveCompany(entry, { source, by, at = new Date() }) {
+    if (!entry?.name?.trim()) throw new Error('Company record needs a name.');
+    if (!source || !by) throw new Error('saveCompany needs { source, by } so history says where the change came from.');
+    const iso = new Date(at).toISOString();
+    let row = this.db.prepare('SELECT * FROM companies WHERE name = ?').get(entry.name.trim());
+    if (!row) {
+      const id = this.company(entry.name, at);
+      row = this.db.prepare('SELECT * FROM companies WHERE id = ?').get(id);
+    }
+    const before = row.status == null ? null : rowToEntry(row);
+    const next = { ...(before ?? {}), ...entry };
+    const enc = entryToRow(next);
+    const cols = Object.keys(enc);
+    this.db.prepare(`UPDATE companies SET ${cols.map((c) => `${c} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).run(...Object.values(enc), iso.slice(0, 10), row.id);
+
+    let changed = false;
+    for (const f of OWNED) {
+      const was = before ? ownedValue(before, f) : null;
+      const now = ownedValue(next, f);
+      if (JSON.stringify(was) !== JSON.stringify(now)) {
+        this.db.prepare('INSERT INTO company_calls (company_id, at, field, old_value, new_value, by) VALUES (?, ?, ?, ?, ?, ?)').run(row.id, iso, f, JSON.stringify(was), JSON.stringify(now), by);
+        changed = true;
+      }
+    }
+    const facts = factsOf(next);
+    if (!before || JSON.stringify(factsOf(before)) !== JSON.stringify(facts)) {
+      this.db.prepare('INSERT INTO company_snapshots (company_id, observed_at, source, data) VALUES (?, ?, ?, ?)').run(row.id, iso, source, JSON.stringify(facts));
+      changed = true;
+    }
+    const r = next.last_raise;
+    if (r && (r.amount_usd != null || r.date || r.round)) {
+      const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(row.id, r.round ?? null, r.amount_usd ?? null, r.date ?? null, JSON.stringify(next.investors ?? []), next.sources?.[0]?.url ?? null, iso);
+      if (res.changes) changed = true;
+    }
+    return { id: row.id, changed };
+  }
+
+  postingChanges(postingId) {
+    return this.db.prepare('SELECT observed_at, field, old_value, new_value FROM posting_changes WHERE posting_id = ? ORDER BY observed_at, id').all(postingId);
+  }
+
+  // --- Monthly stats (D39): provisional while the month is open, frozen after ----------
+
+  monthState(month) {
+    if (this.db.prepare('SELECT 1 FROM frozen_months WHERE month = ?').get(month)) return 'frozen';
+    return this.db.prepare("SELECT 1 FROM monthly_stats WHERE month = ? AND status = 'provisional' LIMIT 1").get(month) ? 'provisional' : 'empty';
+  }
+
+  /** Replace a month's provisional rows. Refuses frozen months: those never change. */
+  writeProvisional(month, rows, { classifier, at = new Date() }) {
+    if (this.monthState(month) === 'frozen') throw new Error(`${month} is frozen; add a correction instead of recomputing it.`);
+    const iso = new Date(at).toISOString();
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare("DELETE FROM monthly_stats WHERE month = ? AND status = 'provisional'").run(month);
+      const ins = this.db.prepare(`INSERT INTO monthly_stats (month, company_id, scope, family, classifier, open, new, coverage_scans, status, computed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'provisional', ?)`);
+      for (const r of rows) ins.run(month, r.company_id, r.scope, r.family, classifier, r.open, r.new, r.coverage_scans, iso);
+      this.db.exec('COMMIT');
+    } catch (e) { this.db.exec('ROLLBACK'); throw e; }
+  }
+
+  freezeMonth(month, at = new Date()) {
+    const state = this.monthState(month);
+    if (state === 'frozen') throw new Error(`${month} is already frozen.`);
+    const iso = new Date(at).toISOString();
+    const n = Number(this.db.prepare("UPDATE monthly_stats SET status = 'frozen', frozen_at = ? WHERE month = ? AND status = 'provisional'").run(iso, month).changes);
+    this.db.prepare('INSERT INTO frozen_months (month, frozen_at, rows) VALUES (?, ?, ?)').run(month, iso, n);
+    return n;
+  }
+
+  /** Add a correction to a frozen month; the frozen row stays as published. */
+  addCorrection(month, row, note, at = new Date()) {
+    if (this.monthState(month) !== 'frozen') throw new Error(`${month} isn't frozen; corrections are only for published months.`);
+    if (!note?.trim()) throw new Error('A correction needs a reason.');
+    this.db.prepare(`INSERT INTO monthly_stats (month, company_id, scope, family, classifier, open, new, coverage_scans, status, computed_at, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'correction', ?, ?)`).run(month, row.company_id, row.scope, row.family, row.classifier, row.open, row.new, row.coverage_scans, new Date(at).toISOString(), note);
+  }
+
+  /** Stored stats for a range and scope, with company names; frozen/provisional plus any corrections. */
+  statsRows(from, to, scope) {
+    return this.db.prepare(`SELECT s.month, c.name AS company, s.family, s.classifier, s.open, s.new, s.coverage_scans, s.status, s.note
+      FROM monthly_stats s JOIN companies c ON c.id = s.company_id
+      WHERE s.month BETWEEN ? AND ? AND s.scope = ? ORDER BY s.month, s.open DESC, c.name`).all(from, to, scope);
+  }
+
+  companyHistory(name) {
+    const row = this.db.prepare('SELECT id FROM companies WHERE name = ?').get(name);
+    if (!row) return null;
+    const q = (sql) => this.db.prepare(sql).all(row.id);
+    return {
+      snapshots: q('SELECT observed_at, source, data FROM company_snapshots WHERE company_id = ? ORDER BY observed_at').map((r) => ({ ...r, data: JSON.parse(r.data) })),
+      funding: q('SELECT round, amount_usd, announced, investors, source_url, recorded_at FROM funding_rounds WHERE company_id = ? ORDER BY announced').map((r) => ({ ...r, investors: JSON.parse(r.investors) })),
+      calls: q('SELECT at, field, old_value, new_value, by FROM company_calls WHERE company_id = ? ORDER BY at, id'),
+    };
+  }
 }

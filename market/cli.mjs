@@ -6,16 +6,17 @@
 //   recall <file> [--source linkedin]
 //                                check a hand-collected list ("Company | Title" per line) against the database
 //   enrich [--limit N]           research companies with no researched info yet (fills empty fields only)
+//   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
-import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, fillFromResearch, needsEnrichment } from '../extractor/research.mjs';
+import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, fillFromResearch, needsEnrichment } from '../extractor/research.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
 import { recordTiered } from './record.mjs';
-import { monthlyByCompany, ranking, toCsv } from './metrics.mjs';
-import { TARGET_FAMILIES, titleFamily, companyKey } from './classify.mjs';
+import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
+import { TARGET_FAMILIES, titleFamily, companyKey, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
 const dataDir = process.env.CAREER_OPS_DATA_DIR;
 const arg = (name) => { const i = process.argv.indexOf(name); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -51,6 +52,42 @@ function backfill() {
   console.log(`Backfill: ${items.length} records read → ${added} new postings, ${updated} updates. Database now holds ${n} postings.`);
 }
 
+/** Recompute provisional months and freeze finished ones (D39). Returns the month range covered. */
+function refreshStats(store) {
+  const postings = store.postings();
+  const scans = store.scans();
+  if (!postings.length) return null;
+  const from = postings.map((p) => postingStart(p).slice(0, 7)).sort()[0];
+  const to = thisMonth();
+  const months = monthRange(from, to);
+  const trackingStart = trackingStartMonth(scans);
+  const frozenNow = [];
+  for (const m of months) {
+    if (store.monthState(m) === 'frozen') continue;
+    const rows = [
+      ...monthlyByCompany(postings, scans, { from: m, to: m, filter: (p) => p.in_home_metro === true }).map((r) => ({ ...r, scope: 'home_metro' })),
+      ...monthlyByCompany(postings, scans, { from: m, to: m }).map((r) => ({ ...r, scope: 'all' })),
+    ];
+    store.writeProvisional(m, rows, { classifier: TITLE_CLASSIFIER_VERSION });
+    // Only months inside real tracking can be frozen; earlier ones stay provisional ("before tracking").
+    if (trackingStart && m >= trackingStart && freezable([m]).length) { store.freezeMonth(m); frozenNow.push(m); }
+  }
+  return { from, to, frozenNow, trackingStart };
+}
+
+function stats() {
+  const store = openStore();
+  try {
+    const r = refreshStats(store);
+    if (!r) { console.log('No postings yet; nothing to compute.'); return; }
+    console.log(`Monthly stats ${r.from}..${r.to}: provisional months refreshed.${r.frozenNow.length ? ` Frozen now: ${r.frozenNow.join(', ')}.` : ''}`);
+    console.log(r.trackingStart ? `Tracking began ${r.trackingStart} (first completed scan). Earlier months are "before tracking" and never frozen.`
+      : 'No completed scans yet, so tracking hasn\'t begun: every month stays provisional ("before tracking") and nothing is frozen.');
+    const states = monthRange(r.from, r.to).map((m) => [m, !r.trackingStart || m < r.trackingStart ? 'before tracking' : store.monthState(m)]);
+    for (const [m, st] of states.filter(([, st], i, a) => st !== 'before tracking' || i === a.length - 1 || i === 0)) console.log(`  ${m}: ${st}`);
+  } finally { store.close(); }
+}
+
 function metrics() {
   const rules = loadRules();
   const from = arg('--from') ?? thisMonth();
@@ -58,20 +95,23 @@ function metrics() {
   if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) throw new Error('--from/--to must be YYYY-MM.');
   const allLoc = process.argv.includes('--all-locations');
   const allFam = process.argv.includes('--all-families');
-  const filter = (p) => (allLoc || p.in_home_metro === true) && (allFam || TARGET_FAMILIES.has(p.title_family));
   const store = openStore();
-  const postings = store.postings();
-  const scans = store.scans();
-  store.close();
-  const monthly = monthlyByCompany(postings, scans, { from, to, filter });
-  const rank = ranking(postings, { from, to, filter });
+  let monthly, rank, states;
+  try {
+    refreshStats(store);
+    monthly = store.statsRows(from, to, allLoc ? 'all' : 'home_metro').filter((r) => allFam || TARGET_FAMILIES.has(r.family));
+    const filter = (p) => (allLoc || p.in_home_metro === true) && (allFam || TARGET_FAMILIES.has(p.title_family));
+    rank = ranking(store.postings(), { from, to, filter });
+    states = monthRange(from, to).map((m) => `${m} ${store.monthState(m)}`);
+  } finally { store.close(); }
   const out = join(dataDir, 'exports');
   mkdirSync(out, { recursive: true });
   const scope = `${allLoc ? 'all-locations' : rules.candidate.home_metro.toLowerCase().replace(/\s+/g, '-')}_${allFam ? 'all-families' : 'target-families'}`;
   writeFileSync(join(out, `monthly_${scope}_${from}_${to}.csv`), toCsv(monthly));
   writeFileSync(join(out, `ranking_${scope}_${from}_${to}.csv`), toCsv(rank));
-  const uncovered = [...new Set(monthly.filter((r) => r.coverage_scans === 0).map((r) => r.month))];
   console.log(`Metrics ${from}..${to} (${scope}): ${monthly.length} monthly rows, ${rank.length} companies ranked → ${out}`);
+  console.log(`Months: ${states.join(' · ')}  (frozen numbers never change; provisional ones refresh until the month is frozen ${7} days after it ends)`);
+  const uncovered = [...new Set(monthly.filter((r) => r.coverage_scans === 0).map((r) => r.month))];
   if (uncovered.length) console.log(`⚠️ No completed scans in: ${uncovered.join(', ')}. Counts for these months reflect one-off tiering only, not market coverage.`);
   for (const r of rank.slice(0, 10)) console.log(`  ${String(r.rank).padStart(2)}. ${r.company} — ${r.postings} posting(s)`);
 }
@@ -134,7 +174,7 @@ async function enrich() {
       saveResearch(path, wl, company, [name]);
       console.log(`  ${name}: added — ${company.status}, ${company.stage}${company.investors.length ? `, investors: ${company.investors.slice(0, 4).join(', ')}` : ''}`);
     }
-    writeFileSync(path, `${JSON.stringify(wl, null, 2)}\n`);
+    saveWatchlist(wl, { source: 'research', by: 'kit' });
   }
   console.log(`AI calls: ${describeCalls(calls)}`);
   if (todo.length > batch.length) console.log(`${todo.length - batch.length} left; run again to continue.`);
@@ -148,7 +188,8 @@ try {
   else if (cmd === 'metrics') metrics();
   else if (cmd === 'recall') recall();
   else if (cmd === 'enrich') await enrich();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N]');
+  else if (cmd === 'stats') stats();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);
