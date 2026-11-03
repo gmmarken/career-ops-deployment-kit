@@ -181,3 +181,23 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Context:** Review found two bugs: company calls made in Notion for companies not yet on the watchlist were skipped, and research arriving after a Radar page existed was overwritten by the page's default "unknown".
 **Decision:** The kit records the value it last wrote to each candidate-owned company column. Notion differing from it means the candidate edited it (their value wins); Notion matching it lets newer kit information through. Pull and sync each record only what they actually did. Company Radar shows kit-written "Open postings" and "Open deployment postings" instead of rollups of tiered roles.
 **Why:** The candidate's company calls must never be lost or silently reverted, and the Radar needs counts of the whole job board, not just tiered roles.
+
+## D37 — A separate enrich step researches every company (2026-11-02)
+**Options:** (A) a separate command that researches companies with no researched info; (B) research every company at tiering time.
+**Decision:** A (`scripts/market.sh enrich`). It fills empty fields only and never touches the candidate's company calls. Tiering keeps researching only companies whose role could reach S or A.
+**Why:** The Radar doubles as the newsletter's company list, so every company needs real info, but tiering should stay lean.
+
+## D38 — History is append-only (2026-11-02)
+**Options:** (A) change tables (`posting_changes`, `company_snapshots`, `funding_rounds`, `company_calls`); (B) daily copies of the whole database.
+**Decision:** A. Nothing is overwritten without the old value being kept. Every company save says where the change came from (research, Notion, import) and who made it (kit or the candidate).
+**Why:** Precise questions ("funding rounds in October", "when did I change my call on X") stay easy, and storage stays small.
+
+## D39 — Monthly numbers freeze, but only inside real tracking (2026-11-02)
+**Decision:** Monthly stats per company, family and scope (home metro / all) are provisional while a month is open and freeze 7 days after it ends. Frozen numbers never change; a correction is a separate row with a reason. Only months from the first completed scan onward can freeze.
+**Why:** Published charts must not drift. The tracking rule came from a mistake caught on the first run: backfilled one-off postings dated back to 2022 caused 47 months with zero scans to freeze. Those minutes-old, unpublished numbers were cleared and the rule added, with a test.
+
+## D40 — Company records live in the market database (2026-11-02)
+**Options:** (A) the database is the source of truth, and `companies.json` and Notion are views; (B) keep JSON as the source and only log history.
+**Decision:** A. `companies.json` was imported once (history marked "import") and is now a generated copy; hand edits stop the run with a pointer to Notion.
+**Why:** One source of truth, moved while the data is small.
+**Consequence:** `market.db` is now valuable. Phase 7's daily runner needs a daily backup plus an offsite copy (a decision card then).
