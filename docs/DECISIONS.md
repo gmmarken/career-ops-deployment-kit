@@ -269,6 +269,7 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Trade-off / limits:** If the Mac is off at run time that day is missed (launchd runs a missed job on wake from sleep, not after power-off). If the iMessage itself can't be sent, the error lands in the run log and `launchd.err.log` only; there is no second notice channel (that would be a fallback needing its own decision). Runs from whichever branch the main kit checkout has checked out.
 
 ## D54 — market.db backups: daily dated copy + one offsite (2026-11-02)
+**Superseded in part by D59:** the separate iCloud copy and `icloud_dir` are gone; the dated copies reach iCloud through the synced workspace folder (D58).
 **Context:** Since D40 the market database is the source of truth for postings, companies and history.
 **Implements D48** (Gabriel's call, card 5A); this entry records how it was built.
 **Decision:** The daily run's last step writes `private/backups/market-YYYY-MM-DD.db` with SQLite's `VACUUM INTO` (a consistent copy even while the database is open; a raw file copy could catch it mid-write), checks the copy's integrity, keeps the newest 30, and overwrites `market-latest.db` in the iCloud Drive folder named in `private/config/daily.json`. A backup failure is reported like any other failure.
@@ -306,3 +307,8 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Why:** No move or re-pointing of sessions and schedules; the dated backups reach iCloud anyway.
 **Trade-off accepted:** iCloud may sync `market.db` while a scan writes to it (risk of a conflict copy or a damaged file; the 30 dated backups are the recovery path), and keys and personal files are stored in iCloud.
 
+## D59 — Backups reach iCloud through the synced workspace, checked each run (2026-11-03)
+**Context:** Gabriel keeps the workspace in `~/Documents`, which iCloud "Desktop & Documents Folders" syncs (D58), so `private/backups/` is already offsite. D54's extra `market-latest.db` copy into a chosen iCloud folder doubled that.
+**Decision:** Gabriel dropped the separate offsite copy. `private/config/daily.json` now needs only `imessage_to` (a leftover `icloud_dir` stops the run with a pointer to this entry). Each run, after writing and pruning the dated copies, the backup step checks that `private/backups/` sits in an iCloud-synced folder: iCloud Drive itself, or `~/Documents` / `~/Desktop` carrying macOS's `com.apple.icloud.desktop` sync marker. The run log names that folder. If the check fails (workspace moved, sync turned off), the backup step is reported as a failure by iMessage, so "backed up to iCloud" is never claimed falsely.
+**Why:** One place for backups, no second folder to configure; the check keeps D54's offsite guarantee honest.
+**Trade-off:** The check confirms the folder is set to sync, not that iCloud has finished uploading today's copy. A corrupted database also syncs, but only into a new dated file; the 30 older copies stay, locally and in iCloud.

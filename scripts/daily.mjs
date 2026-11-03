@@ -8,7 +8,7 @@ import { spawn, execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { backupDb, prune, offsite, KEEP } from '../market/backup.mjs';
+import { backupDb, prune, iCloudRoot, KEEP } from '../market/backup.mjs';
 
 const KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const STEP_TIMEOUT_MS = 2 * 60 * 60 * 1000; // a hung step is reported as a failure, not waited on forever
@@ -17,15 +17,14 @@ const MAX_DETAIL = 700; // keep the iMessage readable; the full text is in the l
 /** Today's date on this Mac's clock, YYYY-MM-DD. */
 export const localDate = (d = new Date()) => d.toLocaleDateString('en-CA');
 
-/** Read private/config/daily.json. Both fields are required; nothing is guessed. */
+/** Read private/config/daily.json. imessage_to is required; nothing is guessed. */
 export function loadConfig(dataDir) {
   const path = join(dataDir, 'config', 'daily.json');
-  if (!existsSync(path)) throw new Error(`${path} not found. Create it with {"imessage_to": "<your iMessage phone or email>", "icloud_dir": "<iCloud Drive folder for the offsite backup>"}.`);
+  if (!existsSync(path)) throw new Error(`${path} not found. Create it with {"imessage_to": "<your iMessage phone or email>"}.`);
   let cfg;
   try { cfg = JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
-  for (const k of ['imessage_to', 'icloud_dir']) {
-    if (typeof cfg[k] !== 'string' || !cfg[k].trim()) throw new Error(`${path}: "${k}" is missing or empty.`);
-  }
+  if (typeof cfg.imessage_to !== 'string' || !cfg.imessage_to.trim()) throw new Error(`${path}: "imessage_to" is missing or empty.`);
+  if ('icloud_dir' in cfg) throw new Error(`${path}: "icloud_dir" is no longer used (D59: backups reach iCloud through the synced workspace folder). Remove it.`);
   return cfg;
 }
 
@@ -78,7 +77,7 @@ export function sendIMessage(to, text) {
 }
 
 /** The three daily steps. Each returns {ok, out}. */
-export function defaultSteps({ dataDir, cfg, date, run = runCommand }) {
+export function defaultSteps({ dataDir, date, run = runCommand, icloud = iCloudRoot }) {
   return [
     { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
     { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), []); return { ok: r.code === 0, out: r.out }; } },
@@ -86,8 +85,8 @@ export function defaultSteps({ dataDir, cfg, date, run = runCommand }) {
       const dir = join(dataDir, 'backups');
       const file = backupDb(join(dataDir, 'data', 'market.db'), dir, date);
       const gone = prune(dir, KEEP);
-      const off = offsite(file, cfg.icloud_dir);
-      return { ok: true, out: `backup: wrote ${file}; offsite copy ${off}; removed ${gone.length} old cop${gone.length === 1 ? 'y' : 'ies'}\n` };
+      const root = icloud(dir); // throws (reported as a failure) if the folder isn't iCloud-synced
+      return { ok: true, out: `backup: wrote ${file}; removed ${gone.length} old cop${gone.length === 1 ? 'y' : 'ies'}; dated backups reach iCloud through the synced ${root} folder\n` };
     } },
   ];
 }
@@ -133,7 +132,7 @@ async function main() {
     console.log('Test message sent.');
     return 0;
   }
-  const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, cfg, date }), log, notify, logPath });
+  const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date }), log, notify, logPath });
   return problems.length ? 1 : 0;
 }
 

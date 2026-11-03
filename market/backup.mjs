@@ -1,8 +1,11 @@
-// market.db backups (D54): a dated, consistent copy made with SQLite's VACUUM INTO
-// (safe while the database is open), the newest KEEP kept, plus one offsite copy.
+// market.db backups (D54, D59): a dated, consistent copy made with SQLite's VACUUM INTO
+// (safe while the database is open), the newest KEEP kept. The offsite copy is iCloud's own sync
+// of the folder the workspace lives in (D58), checked on every run rather than assumed.
 import { DatabaseSync } from 'node:sqlite';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, sep } from 'node:path';
 
 export const KEEP = 30;
 const NAME = /^market-(\d{4}-\d{2}-\d{2})\.db$/;
@@ -41,15 +44,26 @@ export function prune(dir, keep = KEEP) {
   return gone;
 }
 
-/** Copy a finished backup to the offsite folder as market-latest.db (one copy, overwritten daily). */
-export function offsite(file, offsiteDir) {
-  if (!offsiteDir) throw new Error('backup: no offsite folder set (icloud_dir in private/config/daily.json).');
-  if (!existsSync(offsiteDir) || !statSync(offsiteDir).isDirectory()) {
-    throw new Error(`backup: offsite folder ${offsiteDir} does not exist. Create it (in iCloud Drive) or fix icloud_dir in private/config/daily.json.`);
+const ICLOUD_MARK = 'com.apple.icloud.desktop'; // set on ~/Desktop and ~/Documents when "Desktop & Documents Folders" sync is on
+
+/** True if macOS has marked this folder as synced by iCloud Desktop & Documents. */
+export function hasICloudMark(path) {
+  const names = execFileSync('xattr', [path], { encoding: 'utf8' });
+  return names.split('\n').includes(ICLOUD_MARK);
+}
+
+/**
+ * Which iCloud-synced folder holds `dir`: iCloud Drive itself, or ~/Desktop / ~/Documents with
+ * Desktop & Documents sync on. Throws if none does, so "backed up to iCloud" is never claimed falsely.
+ */
+export function iCloudRoot(dir, { home = homedir(), marked = hasICloudMark } = {}) {
+  const real = realpathSync(dir);
+  const inside = (root) => real === root || real.startsWith(root + sep);
+  const drive = join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+  if (inside(drive)) return drive;
+  for (const name of ['Documents', 'Desktop']) {
+    const root = join(home, name);
+    if (inside(root) && marked(root)) return root;
   }
-  const out = join(offsiteDir, 'market-latest.db');
-  const tmp = `${out}.partial`;
-  copyFileSync(file, tmp);
-  renameSync(tmp, out);
-  return out;
+  throw new Error(`backup: ${real} is not in an iCloud-synced folder, so backups are on this Mac only. Turn on iCloud Drive → "Desktop & Documents Folders", or move the workspace back under ~/Documents (D58).`);
 }
