@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -109,23 +109,45 @@ CREATE INDEX IF NOT EXISTS stats_month ON monthly_stats(month, scope, status);
 CREATE TABLE IF NOT EXISTS frozen_months (month TEXT PRIMARY KEY, frozen_at TEXT NOT NULL, rows INTEGER NOT NULL);
 `;
 
+// v3 (D49–D51): the no-AI text check on borderline titles, and job boards found other
+// ways than a recorded posting (an investor board, or added by hand for a watched company).
+const POSTING_COLUMNS_V3 = { text_check: 'TEXT', text_check_found: 'TEXT', text_check_version: 'TEXT', text_checked_at: 'TEXT' };
+const SCHEMA_V3 = `
+CREATE TABLE IF NOT EXISTS boards (
+  board TEXT PRIMARY KEY, company TEXT NOT NULL, source TEXT NOT NULL, detail TEXT, added_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS getro_jobs (
+  url TEXT PRIMARY KEY, network TEXT NOT NULL, company_slug TEXT NOT NULL, title TEXT NOT NULL,
+  first_seen TEXT NOT NULL, resolved_url TEXT, company TEXT, resolved_at TEXT, board TEXT
+);
+CREATE INDEX IF NOT EXISTS getro_company ON getro_jobs(network, company_slug);
+`;
+
 function migrate(db, from) {
   if (from < 2) {
     const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
     for (const [col, type] of Object.entries(COMPANY_COLUMNS)) if (!have.has(col)) db.exec(`ALTER TABLE companies ADD COLUMN ${col} ${type}`);
     db.exec(SCHEMA_V2);
   }
+  if (from < 3) {
+    const have = new Set(db.prepare('PRAGMA table_info(postings)').all().map((c) => c.name));
+    for (const [col, type] of Object.entries(POSTING_COLUMNS_V3)) if (!have.has(col)) db.exec(`ALTER TABLE postings ADD COLUMN ${col} ${type}`);
+    db.exec(SCHEMA_V3);
+  }
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
 const day = (d = new Date()) => (typeof d === 'string' ? d : d.toISOString()).slice(0, 10);
 
-/** Stable identity for a posting URL: host + path, no query/fragment/trailing slash or /application. */
+/** Stable identity for a posting URL: host + path (+ Greenhouse's gh_jid), no other query, fragment, trailing slash or /application. */
 export function urlKey(url) {
   const u = new URL(url);
   let path = u.pathname.replace(/\/application\/?$/i, '').replace(/\/+$/, '');
   if (/(^|\.)ashbyhq\.com$/i.test(u.hostname)) path = path.toLowerCase(); // Ashby board names are case-insensitive
-  return `${u.hostname.toLowerCase()}${path}`;
+  // Greenhouse boards that link to the company's own site name the job only in ?gh_jid=,
+  // so keep it, or every job on that board would look like one posting.
+  const gh = u.searchParams.get('gh_jid');
+  return `${u.hostname.toLowerCase()}${path}${gh ? `?gh_jid=${gh}` : ''}`;
 }
 
 /** Identity for a posting without a URL (pasted JD): company + title. */
@@ -391,6 +413,78 @@ class Store {
     return this.db.prepare(`SELECT s.month, c.name AS company, s.family, s.classifier, s.open, s.new, s.coverage_scans, s.status, s.note
       FROM monthly_stats s JOIN companies c ON c.id = s.company_id
       WHERE s.month BETWEEN ? AND ? AND s.scope = ? ORDER BY s.month, s.open DESC, c.name`).all(from, to, scope);
+  }
+
+  // --- Title-v2 (D49): relabel and the text check ------------------------------------
+
+  /**
+   * Relabel OPEN postings with the current title classifier. Closed postings keep the
+   * version that labelled them (D33). Each change is logged in posting_changes.
+   * With dryRun, nothing is written. Returns [{ id, company, title, from, to }].
+   */
+  relabelOpen({ dryRun = false, at = new Date() } = {}) {
+    const rows = this.db.prepare('SELECT p.id, p.title, p.title_family, p.title_classifier, c.name AS company FROM postings p JOIN companies c ON c.id = p.company_id WHERE p.closed_at IS NULL').all();
+    const changes = [];
+    const iso = new Date(at).toISOString();
+    if (!dryRun) this.db.exec('BEGIN');
+    try {
+      for (const r of rows) {
+        const fam = titleFamily(r.title);
+        if (fam !== r.title_family) changes.push({ id: r.id, company: r.company, title: r.title, from: r.title_family, to: fam });
+        if (dryRun || (fam === r.title_family && r.title_classifier === TITLE_CLASSIFIER_VERSION)) continue;
+        if (fam !== r.title_family) {
+          this.db.prepare('INSERT INTO posting_changes (posting_id, observed_at, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)')
+            .run(r.id, iso, 'title_family', `${r.title_family} (${r.title_classifier})`, `${fam} (${TITLE_CLASSIFIER_VERSION})`);
+        }
+        this.db.prepare('UPDATE postings SET title_family = ?, title_classifier = ? WHERE id = ?').run(fam, TITLE_CLASSIFIER_VERSION, r.id);
+      }
+      if (!dryRun) this.db.exec('COMMIT');
+    } catch (e) { if (!dryRun) this.db.exec('ROLLBACK'); throw e; }
+    return changes;
+  }
+
+  /** Open home-metro borderline postings with no text check yet (or one from an older check version). */
+  needsTextCheck(version) {
+    return this.db.prepare(`SELECT p.id, p.url, p.title, c.name AS company FROM postings p JOIN companies c ON c.id = p.company_id
+      WHERE p.closed_at IS NULL AND p.in_home_metro = 1 AND p.title_family = 'borderline' AND p.url IS NOT NULL
+      AND (p.text_check IS NULL OR p.text_check_version IS NOT ?) ORDER BY p.id`).all(version);
+  }
+  recordTextCheck(postingId, { hit, found }, version, at = new Date()) {
+    this.db.prepare('UPDATE postings SET text_check = ?, text_check_found = ?, text_check_version = ?, text_checked_at = ? WHERE id = ?')
+      .run(hit ? 'hit' : 'miss', JSON.stringify(found), version, new Date(at).toISOString(), postingId);
+  }
+
+  // --- Job boards found without a recorded posting (D50–D51) -------------------------
+
+  addBoard(board, company, source, detail = null, at = new Date()) {
+    if (!/^(ashby|greenhouse|lever):[^\s:]+$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse: or lever:<name>).`);
+    if (!company?.trim()) throw new Error('A board needs a company name.');
+    const res = this.db.prepare('INSERT OR IGNORE INTO boards (board, company, source, detail, added_at) VALUES (?, ?, ?, ?, ?)').run(board, company.trim(), source, detail, new Date(at).toISOString());
+    return { added: Boolean(res.changes) };
+  }
+  boards() { return this.db.prepare('SELECT * FROM boards ORDER BY board').all(); }
+
+  // --- Investor job boards on Getro (D50–D51) ---------------------------------------
+
+  /** Record Getro job links; returns the ones not seen before. */
+  seeGetroJobs(network, jobs, at = new Date()) {
+    const d = day(at);
+    const ins = this.db.prepare('INSERT OR IGNORE INTO getro_jobs (url, network, company_slug, title, first_seen) VALUES (?, ?, ?, ?, ?)');
+    const fresh = [];
+    this.db.exec('BEGIN');
+    try {
+      for (const j of jobs) if (ins.run(j.url, network, j.company_slug, j.title, d).changes) fresh.push(j);
+      this.db.exec('COMMIT');
+    } catch (e) { this.db.exec('ROLLBACK'); throw e; }
+    return fresh;
+  }
+  /** Companies on a network already traced to where they post jobs (any of their jobs resolved). */
+  resolvedGetroCompanies(network) {
+    return new Set(this.db.prepare('SELECT DISTINCT company_slug FROM getro_jobs WHERE network = ? AND resolved_at IS NOT NULL').all(network).map((r) => r.company_slug));
+  }
+  getroJobs(network) { return this.db.prepare('SELECT * FROM getro_jobs WHERE network = ? ORDER BY url').all(network); }
+  resolveGetroJob(url, { resolved_url, company, board }, at = new Date()) {
+    this.db.prepare('UPDATE getro_jobs SET resolved_url = ?, company = ?, board = ?, resolved_at = ? WHERE url = ?').run(resolved_url, company, board ?? null, new Date(at).toISOString(), url);
   }
 
   companyHistory(name) {

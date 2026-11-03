@@ -7,7 +7,11 @@
 //                                check a hand-collected list ("Company | Title" per line) against the database
 //   enrich [--limit N]           research companies with no researched info yet (fills empty fields only)
 //   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
-//   scan [board ...]             read every open posting on known job boards (no AI); log scans; close gone postings
+//   scan [board ...]             find boards (investor Getro boards, Watch), read every open posting on known
+//                                job boards, text-check borderline NYC titles (all no AI); log scans; close gone postings
+//   relabel [--dry-run]          relabel open postings with the current title classifier (D49)
+//   add-board <job or board link> [--company NAME]
+//                                add a company's job board by hand (e.g. for a company you Watch)
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
@@ -16,10 +20,12 @@ import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchComp
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
 import { recordTiered } from './record.mjs';
-import { listBoard } from '../extractor/ats.mjs';
+import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
+import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { inHomeMetro } from './classify.mjs';
+import { knownBoards, watchedWithoutBoard } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
-import { TARGET_FAMILIES, titleFamily, companyKey, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
+import { TARGET_FAMILIES, titleFamily, companyKey, TITLE_CLASSIFIER_VERSION, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
 
 const dataDir = process.env.CAREER_OPS_DATA_DIR;
 const arg = (name) => { const i = process.argv.indexOf(name); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -184,16 +190,51 @@ async function enrich() {
   console.log('Run scripts/notion.sh sync to show the new info in Company Radar.');
 }
 
-/** Boards to scan: every ATS board a recorded posting came from, with the company name used there. */
-function knownBoards(store) {
-  const by = new Map();
-  const unreadable = new Map();
-  for (const p of store.postings()) {
-    if (/^(ashby|greenhouse|lever):/.test(p.board ?? '')) { if (!by.has(p.board)) by.set(p.board, p.company); }
-    else unreadable.set(p.company, p.board ?? 'unknown');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Investor job boards to read, from private/config/sources.json. Missing file = clear error. */
+function loadSources() {
+  const path = join(dataDir, 'config', 'sources.json');
+  if (!existsSync(path)) throw new Error(`${path} not found. Copy market/sources.example.json there and list the investor job boards to read.`);
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
+  if (!Array.isArray(cfg.getro_boards)) throw new Error(`${path}: "getro_boards" must be a list (it can be empty).`);
+  for (const b of cfg.getro_boards) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each getro_boards entry needs a "name" and an https "url".`);
+  return cfg;
+}
+
+/**
+ * One investor board: record its job links, and for each company with a target or
+ * borderline title that we haven't traced yet, open ONE of its job pages to learn where
+ * the company posts jobs. Readable boards are added to the scan list.
+ * Returns { jobs, traced, added, unreadable: [{company, url}], errors: [] }.
+ */
+async function readGetro(store, { name, url }) {
+  const jobs = await listGetroJobs(url);
+  store.seeGetroJobs(name, jobs);
+  const done = store.resolvedGetroCompanies(name);
+  const pick = new Map();
+  for (const j of store.getroJobs(name)) {
+    if (done.has(j.company_slug) || pick.has(j.company_slug)) continue;
+    const f = titleFamily(j.title);
+    if (TARGET_FAMILIES.has(f) || f === 'borderline') pick.set(j.company_slug, j);
   }
-  for (const [company] of unreadable) if ([...by.values()].includes(company)) unreadable.delete(company);
-  return { boards: by, unreadable };
+  const out = { jobs: jobs.length, traced: 0, added: 0, unreadable: [], errors: [] };
+  for (const j of pick.values()) {
+    await sleep(PAGE_DELAY_MS);
+    try {
+      const page = await fetchJobPage(j.url);
+      const board = boardFromUrl(page.url);
+      const company = page.company ?? j.company_slug;
+      store.resolveGetroJob(j.url, { resolved_url: page.url, company, board });
+      out.traced++;
+      if (board) { if (store.addBoard(board, company, 'getro', name).added) out.added++; }
+      else out.unreadable.push({ company, url: page.url });
+    } catch (err) {
+      out.errors.push(`${name} → ${j.company_slug} (${j.url}): ${err.message}`);
+    }
+  }
+  return out;
 }
 
 async function scan() {
@@ -202,7 +243,26 @@ async function scan() {
   const store = openStore();
   const failures = [];
   try {
-    const { boards, unreadable } = knownBoards(store);
+    // 1. Find boards on investor job boards (whole-market scans only).
+    if (!wanted.length) {
+      for (const g of loadSources().getro_boards) {
+        const scanId = store.startScan(`getro:${g.name}`);
+        try {
+          const r = await readGetro(store, g);
+          store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.jobs, error: r.errors.join(' | ') } : { status: 'ok', found: r.jobs });
+          console.log(`  ✓ ${g.name} (Getro): ${r.jobs} job links; traced ${r.traced} new compan${r.traced === 1 ? 'y' : 'ies'}, ${r.added} new board(s) to scan`);
+          if (r.unreadable.length) console.log(`    Posts somewhere we can't read yet: ${r.unreadable.map((u) => `${u.company} (${new URL(u.url).hostname})`).join(', ')}`);
+          for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
+        } catch (err) {
+          store.finishScan(scanId, { status: 'error', error: err.message });
+          failures.push(`${g.name} (Getro): ${err.message}`);
+          console.log(`  ✗ ${g.name} (Getro): ${err.message}`);
+        }
+      }
+    }
+
+    // 2. Read every known job board in full.
+    const { boards, unreadable } = knownBoards(store.postings(), store.boards());
     const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards];
     if (!list.length) throw new Error('No known job boards yet. Tier a role from an Ashby, Greenhouse or Lever link first, or pass a board like lever:palantir.');
     console.log(`Scanning ${list.length} board(s)…`);
@@ -230,10 +290,58 @@ async function scan() {
       }
     }
     if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
+
+    if (!wanted.length) {
+      // 3. Companies you Watch must have a board we read (D51).
+      const missing = watchedWithoutBoard(store.companies(), boards);
+      for (const c of missing) failures.push(`${c} is ticked Watch but has no job board we can read. Add one: scripts/market.sh add-board <a job link from its careers page>`);
+
+      // 4. Text check for borderline NYC titles (D49), no AI.
+      const todo = store.needsTextCheck(TEXT_CHECK_VERSION);
+      let hits = 0;
+      for (const p of todo) {
+        try {
+          const { jdText } = await fetchPosting(p.url);
+          const r = textCheck(jdText);
+          store.recordTextCheck(p.id, r, TEXT_CHECK_VERSION);
+          if (r.hit) hits++;
+        } catch (err) {
+          failures.push(`text check, ${p.company} — ${p.title}: ${err.message}`);
+        }
+      }
+      if (todo.length) console.log(`Text check (borderline NYC titles): ${todo.length} checked, ${hits} passed on to tiering.`);
+    }
   } finally {
     store.close();
   }
-  if (failures.length) throw new Error(`${failures.length} board(s) failed and were skipped; their postings were NOT closed:\n  ${failures.join('\n  ')}`);
+  if (failures.length) throw new Error(`${failures.length} problem(s); failed boards were skipped and their postings were NOT closed:\n  ${failures.join('\n  ')}`);
+}
+
+function relabel() {
+  const dryRun = process.argv.includes('--dry-run');
+  const store = openStore();
+  let changes;
+  try { changes = store.relabelOpen({ dryRun }); } finally { store.close(); }
+  const by = {};
+  for (const c of changes) (by[`${c.from} → ${c.to}`] ||= []).push(c);
+  console.log(`${dryRun ? 'Dry run: would relabel' : 'Relabelled'} ${changes.length} open posting(s) with ${TITLE_CLASSIFIER_VERSION}. Closed postings keep their old label.`);
+  for (const [k, v] of Object.entries(by)) {
+    console.log(`  ${k}: ${v.length}`);
+    for (const c of v.slice(0, 8)) console.log(`     ${c.company} — ${c.title}`);
+  }
+}
+
+function addBoard() {
+  const link = process.argv[3];
+  if (!link) throw new Error('Usage: market.sh add-board <job or board link> [--company NAME]');
+  const board = boardFromUrl(link);
+  if (!board) throw new Error(`${link} is not on a job board we can read (Ashby, Greenhouse, Lever).`);
+  const store = openStore();
+  try {
+    const company = arg('--company') ?? knownBoards(store.postings(), store.boards()).boards.get(board) ?? board.split(':')[1];
+    const { added } = store.addBoard(board, company, 'you', link);
+    console.log(added ? `Added ${board} (${company}). It will be read on the next scan.` : `${board} is already on the list.`);
+  } finally { store.close(); }
 }
 
 try {
@@ -245,7 +353,9 @@ try {
   else if (cmd === 'enrich') await enrich();
   else if (cmd === 'stats') stats();
   else if (cmd === 'scan') await scan();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...]');
+  else if (cmd === 'relabel') relabel();
+  else if (cmd === 'add-board') addBoard();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | add-board <link> [--company NAME]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);

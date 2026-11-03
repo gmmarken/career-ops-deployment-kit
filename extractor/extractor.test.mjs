@@ -136,6 +136,11 @@ test('Greenhouse board: multi-city locations split; pay left to tiering', () => 
   assert.deepEqual(ps[0].locations, ['New York, NY', 'San Francisco, CA']);
   assert.equal(ps[0].pay, null);
 });
+test('Greenhouse board: links are Greenhouse job links even when the board points at the company site', () => {
+  const [p] = greenhouseBoard('databricks', { jobs: [{ id: 88, absolute_url: 'https://databricks.com/careers/job?gh_jid=88', title: 'X', location: { name: 'New York, NY' } }] });
+  assert.equal(p.url, 'https://job-boards.greenhouse.io/databricks/jobs/88');
+  assert.deepEqual(parseJobUrl(p.url), { ats: 'greenhouse', board: 'databricks', id: '88' });
+});
 test('Lever board: each posting mapped with its own URL', () => {
   const ps = leverBoard('acme', [{ id: 'x1', hostedUrl: 'https://jobs.lever.co/acme/x1', text: 'Deployment Strategist', categories: { location: 'New York, NY' }, createdAt: Date.parse('2026-10-01'), descriptionPlain: '' }]);
   assert.equal(ps[0].url, 'https://jobs.lever.co/acme/x1');

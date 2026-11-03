@@ -40,8 +40,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), iMessage on any failure (D47, D53)
 - [x] Daily dated `market.db` backup, keep 30, plus an iCloud Drive copy (D48, D54)
 - [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
-- [ ] Companies to Watch boards → generated `portals.yml`
-- [ ] startup-boards plugin enabled
+- [x] Title classifier v2: more title patterns, plus a no-AI text check for borderline titles (D49, D56)
+- [x] Investor job boards on Getro (Thrive, Scale) → companies' own boards added to the scan (D50–D51, D57)
+- [x] Companies to Watch: a watched company with no readable board is reported; `market.sh add-board` (D51)
+- [ ] More board readers: a16z (not Getro), Rippling, Built In NYC (after a terms-of-use review)
 - [ ] Serper discovery + NYC tech funding sites
 
 ## Phase 6 — Company Radar + Form D
