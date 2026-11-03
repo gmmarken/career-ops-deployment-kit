@@ -29,8 +29,12 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `market/backup.mjs`: daily dated `market.db` copy via SQLite `VACUUM INTO` (safe while open, integrity-checked), newest 30 kept, plus one `market-latest.db` in iCloud Drive (D54).
 
 ### Changed
+- Tier engine: a role asking exactly 1 year more than the candidate has is capped by the new `caps.reach_1_year` setting; larger gaps keep `caps.reach` (D46). Existing settings files need the new key, and the engine stops with a clear error if it is missing.
+- Extraction prompt: a load of concurrent deployments is not a book of business (D44); back office now covers ops, planning and analytics for a customer-facing team (D45).
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
+- Extraction: travel stated as trips ("~2x per month for 2-3 days") is converted to a share of working days before the 50%+ travel flag is set (D55).
+- Calibration: misses are now classified as AI misread or rule miss (the runner read confirmed key facts from the wrong place, so every miss showed as "unclassified"). The report adds a second score for holdout cases, roles the rules never saw.
 - A red flag quoted twice no longer drops a role two tiers.
 - Home-metro matching handles aliases (e.g. Brooklyn) and "City, State" (Albany, New York is not New York City).
