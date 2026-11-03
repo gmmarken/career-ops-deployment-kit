@@ -79,3 +79,34 @@ export function saveResearch(path, watchlist, company, aliases = []) {
   writeFileSync(path, `${JSON.stringify(watchlist, null, 2)}\n`);
   return entry;
 }
+
+// --- Enrichment (D37): research companies that have no researched info yet --------
+
+/** Fields research may fill. Your calls (status, verified, watch, ai_native) are never touched. */
+export const ENRICH_FIELDS = ['stage', 'last_raise', 'investors', 'what_they_do', 'parent', 'nyc_presence', 'owner_categories', 'is_mbb', 'sources'];
+const isEmpty = (v) => v == null || v === '' || v === 'unknown' || (Array.isArray(v) && !v.length) || v === false;
+
+/** Fill only the empty fields of an existing entry from a research result. Returns the filled field names. */
+export function fillFromResearch(entry, company, today = new Date().toISOString().slice(0, 10)) {
+  const filled = [];
+  for (const k of ENRICH_FIELDS) {
+    if (isEmpty(entry[k]) && !isEmpty(company[k])) { entry[k] = company[k]; filled.push(k); }
+  }
+  if (!entry.reason && company.reason) { entry.reason = company.reason; filled.push('reason'); }
+  entry.researched_at = today;
+  return filled;
+}
+
+/** Company names that still need research: not on the watchlist, or on it with no sources. */
+export function needsEnrichment(watchlist, names) {
+  const seen = new Set();
+  const out = [];
+  for (const name of names) {
+    const entry = findCompany(watchlist, name);
+    const key = normalizeName(entry?.name ?? name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!entry || !(entry.sources || []).length) out.push({ name: entry?.name ?? name, entry });
+  }
+  return out;
+}
