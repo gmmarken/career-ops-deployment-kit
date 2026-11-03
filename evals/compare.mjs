@@ -20,6 +20,11 @@ export function keyFactsOf(facts) {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The label compareCase needs, from a case in cases.json (key facts sit beside `label`, not inside it). */
+export function labelOf(c) {
+  return { tier: c.label.tier, key_facts: c.key_facts, key_facts_confirmed: c.key_facts_confirmed };
+}
+
 /**
  * Compare one case.
  * @param {object} label      { tier, key_facts?, key_facts_confirmed? }
@@ -39,8 +44,17 @@ export function compareCase(label, facts, result) {
   return { match: false, kind: diffs.length ? 'extraction' : 'rule', diffs };
 }
 
-/** Summary line, e.g. "9/12 match (75%) · 2 AI misreads · 1 rule miss". */
+/**
+ * Summary line, e.g. "9/12 match (75%) · 2 AI misreads · 1 rule miss". When some cases are
+ * holdouts (roles the rules never saw when they were written), a second line scores those alone.
+ */
 export function summarize(rows) {
+  const holdout = rows.filter((r) => r.c?.holdout);
+  const all = summarizeRows(rows);
+  return holdout.length ? `${all}\n\nHoldout only (roles the rules never saw): ${summarizeRows(holdout)}` : all;
+}
+
+function summarizeRows(rows) {
   const n = rows.length;
   const m = rows.filter((r) => r.cmp.match).length;
   const count = (k) => rows.filter((r) => r.cmp.kind === k).length;

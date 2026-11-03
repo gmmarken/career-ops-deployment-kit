@@ -11,7 +11,7 @@ import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
 import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts } from '../extractor/research.mjs';
 import { gatherFacts, describeCalls } from '../scripts/pipeline.mjs';
-import { compareCase, keyFactsOf, summarize } from './compare.mjs';
+import { compareCase, keyFactsOf, labelOf, summarize } from './compare.mjs';
 
 const dataDir = process.env.CAREER_OPS_DATA_DIR;
 if (!dataDir) { console.error('evals: CAREER_OPS_DATA_DIR is not set. Run through scripts/evals.sh.'); process.exit(1); }
@@ -66,11 +66,11 @@ async function main() {
     const facts = { ...snap.facts, company: entry ? toCompanyFacts(entry, snap.facts.company.name) : snap.facts.company };
     const result = decideTier(facts, rules);
     if (prefill && !c.key_facts) { c.key_facts = keyFactsOf(facts); c.key_facts_confirmed = false; }
-    rows.push({ c, result, cmp: compareCase(c.label, facts, result), stale: snap.prompt_hash !== hash });
+    rows.push({ c, result, cmp: compareCase(labelOf(c), facts, result), stale: snap.prompt_hash !== hash });
   }
   if (prefill) writeFileSync(casesPath, `${JSON.stringify(data, null, 2)}\n`);
 
-  const lines = [`# Calibration — ${new Date().toISOString().slice(0, 10)}`, '', `**${summarize(rows)}**`, '',
+  const lines = [`# Calibration — ${new Date().toISOString().slice(0, 10)}`, '', summarize(rows).split("\n\n").map((l) => `**${l}**`).join("\n\n"), '',
     '| Case | Label | Pipeline | Result | Detail |', '|---|---|---|---|---|'];
   for (const r of rows) {
     const res = r.cmp.match ? '✅' : r.cmp.kind === 'extraction' ? '❌ AI misread' : r.cmp.kind === 'rule' ? '❌ rule miss' : '❌ unclassified';
