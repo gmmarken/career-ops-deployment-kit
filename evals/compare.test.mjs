@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compareCase, keyFactsOf, summarize } from './compare.mjs';
+import { compareCase, keyFactsOf, labelOf, summarize } from './compare.mjs';
 
 const facts = {
   posting: { pay: { min: 150000, max: 200000, currency: 'USD', interval: 'year' } },
@@ -34,4 +34,17 @@ test('unconfirmed facts → miss is not classified', () => {
 test('summary counts each kind', () => {
   const rows = [{ cmp: { match: true, kind: 'match' } }, { cmp: { match: false, kind: 'rule' } }, { cmp: { match: false, kind: 'extraction' } }];
   assert.equal(summarize(rows), '1/3 match (33%) · 1 AI misread(s) · 1 rule miss(es)');
+});
+
+test('labelOf reads key facts from beside the label, as cases.json stores them', () => {
+  const c = { id: 'x', label: { tier: 'S', why: 'w' }, key_facts: { ...key, shape: 'strategic' }, key_facts_confirmed: true };
+  assert.equal(compareCase(labelOf(c), facts, { tier: 'A' }).kind, 'extraction');
+});
+test('summarize adds a holdout-only line when holdout cases exist', () => {
+  const rows = [
+    { c: { holdout: false }, cmp: { match: true, kind: 'match' } },
+    { c: { holdout: true }, cmp: { match: true, kind: 'match' } },
+    { c: { holdout: true }, cmp: { match: false, kind: 'rule' } },
+  ];
+  assert.equal(summarize(rows), '2/3 match (67%) · 1 rule miss(es)\n\nHoldout only (roles the rules never saw): 1/2 match (50%) · 1 rule miss(es)');
 });
