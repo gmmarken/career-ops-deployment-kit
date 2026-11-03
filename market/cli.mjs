@@ -22,6 +22,7 @@ import { openStore } from './store.mjs';
 import { recordTiered } from './record.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
+import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
 import { inHomeMetro } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
@@ -198,8 +199,10 @@ function loadSources() {
   if (!existsSync(path)) throw new Error(`${path} not found. Copy market/sources.example.json there and list the investor job boards to read.`);
   let cfg;
   try { cfg = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
-  if (!Array.isArray(cfg.getro_boards)) throw new Error(`${path}: "getro_boards" must be a list (it can be empty).`);
-  for (const b of cfg.getro_boards) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each getro_boards entry needs a "name" and an https "url".`);
+  for (const key of ['getro_boards', 'a16z_boards']) {
+    if (!Array.isArray(cfg[key])) throw new Error(`${path}: "${key}" must be a list (it can be empty). See market/sources.example.json.`);
+    for (const b of cfg[key]) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each ${key} entry needs a "name" and an https "url".`);
+  }
   return cfg;
 }
 
@@ -220,6 +223,14 @@ async function readGetro(store, { name, url }) {
     if (TARGET_FAMILIES.has(f) || f === 'borderline') pick.set(j.company_slug, j);
   }
   const out = { jobs: jobs.length, traced: 0, added: 0, unreadable: [], errors: [] };
+  // Companies traced earlier to a board we couldn't read then, but can now (e.g. Rippling, D60).
+  for (const j of store.getroJobs(name)) {
+    if (!j.resolved_at || j.board) continue;
+    const board = boardFromUrl(j.resolved_url);
+    if (!board) continue;
+    store.resolveGetroJob(j.url, { resolved_url: j.resolved_url, company: j.company, board });
+    if (store.addBoard(board, j.company, 'getro', name).added) out.added++;
+  }
   for (const j of pick.values()) {
     await sleep(PAGE_DELAY_MS);
     try {
@@ -237,6 +248,40 @@ async function readGetro(store, { name, url }) {
   return out;
 }
 
+// a16z-style portfolio boards (D61): each company page is checked about once a week.
+export const PORTFOLIO_RECHECK_DAYS = 7;
+export const PORTFOLIO_PAGES_PER_RUN = 150;
+const isRelevantTitle = (t) => { const f = titleFamily(t); return TARGET_FAMILIES.has(f) || f === 'borderline'; };
+
+/**
+ * One a16z-style board: list its company pages, then check the ones that are due. A company
+ * with a target or borderline title has its readable job boards added to the scan.
+ * Returns { companies, checked, relevant, added, unreadable: [{company, hosts}], errors: [] }.
+ */
+async function readPortfolio(store, { name, url }) {
+  const pages = await listCompanyPages(url);
+  store.seePortfolioPages(name, pages);
+  const due = store.portfolioPagesDue(name, { days: PORTFOLIO_RECHECK_DAYS, limit: PORTFOLIO_PAGES_PER_RUN });
+  const out = { companies: pages.length, checked: 0, relevant: 0, added: 0, unreadable: [], errors: [] };
+  for (const p of due) {
+    await sleep(PAGE_DELAY_MS);
+    try {
+      const r = await fetchCompanyPage(p.url);
+      const relevant = r.titles.some(isRelevantTitle);
+      store.recordPortfolioPage(name, p.slug, { ...r, relevant });
+      out.checked++;
+      if (!relevant) continue;
+      out.relevant++;
+      const company = r.company ?? p.slug;
+      for (const b of r.boards) if (store.addBoard(b, company, 'a16z', name).added) out.added++;
+      if (!r.boards.length) out.unreadable.push({ company, hosts: r.unreadable });
+    } catch (err) {
+      out.errors.push(`${name} → ${p.slug} (${p.url}): ${err.message}`);
+    }
+  }
+  return out;
+}
+
 async function scan() {
   const rules = loadRules();
   const wanted = process.argv.slice(3).filter((a) => !a.startsWith('--'));
@@ -245,7 +290,8 @@ async function scan() {
   try {
     // 1. Find boards on investor job boards (whole-market scans only).
     if (!wanted.length) {
-      for (const g of loadSources().getro_boards) {
+      const sources = loadSources();
+      for (const g of sources.getro_boards) {
         const scanId = store.startScan(`getro:${g.name}`);
         try {
           const r = await readGetro(store, g);
@@ -257,6 +303,20 @@ async function scan() {
           store.finishScan(scanId, { status: 'error', error: err.message });
           failures.push(`${g.name} (Getro): ${err.message}`);
           console.log(`  ✗ ${g.name} (Getro): ${err.message}`);
+        }
+      }
+      for (const g of sources.a16z_boards) {
+        const scanId = store.startScan(`portfolio:${g.name}`);
+        try {
+          const r = await readPortfolio(store, g);
+          store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.companies, error: r.errors.join(' | ') } : { status: 'ok', found: r.companies });
+          console.log(`  ✓ ${g.name}: ${r.companies} companies; checked ${r.checked} page(s), ${r.relevant} with relevant titles, ${r.added} new board(s) to scan`);
+          if (r.unreadable.length) console.log(`    Posts somewhere we can't read yet: ${r.unreadable.map((u) => `${u.company}${u.hosts.length ? ` (${u.hosts.join(', ')})` : ''}`).join(', ')}`);
+          for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
+        } catch (err) {
+          store.finishScan(scanId, { status: 'error', error: err.message });
+          failures.push(`${g.name}: ${err.message}`);
+          console.log(`  ✗ ${g.name}: ${err.message}`);
         }
       }
     }
@@ -335,7 +395,7 @@ function addBoard() {
   const link = process.argv[3];
   if (!link) throw new Error('Usage: market.sh add-board <job or board link> [--company NAME]');
   const board = boardFromUrl(link);
-  if (!board) throw new Error(`${link} is not on a job board we can read (Ashby, Greenhouse, Lever).`);
+  if (!board) throw new Error(`${link} is not on a job board we can read (Ashby, Greenhouse, Lever, Rippling).`);
   const store = openStore();
   try {
     const company = arg('--company') ?? knownBoards(store.postings(), store.boards()).boards.get(board) ?? board.split(':')[1];

@@ -1,7 +1,19 @@
 {
-  "_note": "Copy to private/config/sources.json. Investor job boards hosted on Getro; the scan reads their public sitemap and job pages only (D50-D51). Boards that need a sign-in are not supported.",
+  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported.",
   "getro_boards": [
-    { "name": "Thrive Capital", "url": "https://jobs.thrivecap.com" },
-    { "name": "Scale Venture Partners", "url": "https://jobs.scalevp.com" }
+    {
+      "name": "Thrive Capital",
+      "url": "https://jobs.thrivecap.com"
+    },
+    {
+      "name": "Scale Venture Partners",
+      "url": "https://jobs.scalevp.com"
+    }
+  ],
+  "a16z_boards": [
+    {
+      "name": "Andreessen Horowitz",
+      "url": "https://jobs.a16z.com"
+    }
   ]
 }

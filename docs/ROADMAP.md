@@ -43,7 +43,9 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Title classifier v2: more title patterns, plus a no-AI text check for borderline titles (D49, D56)
 - [x] Investor job boards on Getro (Thrive, Scale) → companies' own boards added to the scan (D50–D51, D57)
 - [x] Companies to Watch: a watched company with no readable board is reported; `market.sh add-board` (D51)
-- [ ] More board readers: a16z (not Getro), Rippling, Built In NYC (after a terms-of-use review)
+- [x] Rippling board reader (D60)
+- [x] a16z portfolio board: relevant companies traced to their boards, pages rechecked weekly (D61)
+- [ ] Built In NYC reader (after a terms-of-use review)
 - [ ] Serper discovery + NYC tech funding sites
 
 ## Phase 6 — Company Radar + Form D

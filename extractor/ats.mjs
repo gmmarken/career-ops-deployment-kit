@@ -15,7 +15,8 @@ export function parseJobUrl(raw) {
     return { ats: 'greenhouse', board: parts[0], id: parts[2] };
   }
   if (host === 'jobs.lever.co' && parts.length >= 2) return { ats: 'lever', board: parts[0], id: parts[1] };
-  throw new Error(`Unsupported job board: ${host}. Supported: Ashby, Greenhouse, Lever. For other boards, save the JD text to a file and run with --jd-file.`);
+  if (host === 'ats.rippling.com' && parts[1] === 'jobs' && parts[2]) return { ats: 'rippling', board: parts[0], id: parts[2] };
+  throw new Error(`Unsupported job board: ${host}. Supported: Ashby, Greenhouse, Lever, Rippling. For other boards, save the JD text to a file and run with --jd-file.`);
 }
 
 export function htmlToText(html) {
@@ -103,6 +104,7 @@ export function boardFromUrl(raw) {
   const host = u.hostname.toLowerCase();
   if (host === 'jobs.ashbyhq.com' && parts[0]) return `ashby:${parts[0].toLowerCase()}`;
   if (host === 'jobs.lever.co' && parts[0]) return `lever:${parts[0]}`;
+  if (host === 'ats.rippling.com' && parts[0]) return `rippling:${parts[0]}`;
   if (host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') {
     if (parts[0] === 'embed') { const f = u.searchParams.get('for'); return f ? `greenhouse:${f}` : null; }
     if (parts[0]) return `greenhouse:${parts[0]}`;
@@ -130,7 +132,84 @@ export async function fetchPosting(url) {
   if (ats === 'greenhouse') {
     return fromGreenhouse(board, id, await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(id)}?pay_transparency=true`), url);
   }
+  if (ats === 'rippling') return fromRippling(await getPage(`https://ats.rippling.com/${encodeURIComponent(board)}/jobs/${encodeURIComponent(id)}`), url);
   return fromLever(board, id, await getJson(`https://api.lever.co/v0/postings/${encodeURIComponent(board)}/${encodeURIComponent(id)}`), url);
+}
+
+// --- Rippling (D60): no public JSON API, so read the data its public pages carry -------
+
+export const USER_AGENT = 'career-ops-deployment-kit (personal job search; github.com/gmmarken/career-ops-deployment-kit)';
+
+async function getPage(url, timeoutMs = TIMEOUT_MS) {
+  let res;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': USER_AGENT } });
+  } catch (err) {
+    throw new Error(`Could not reach ${url}: ${err.message}`);
+  }
+  if (!res.ok) throw new Error(`${url} returned HTTP ${res.status}. The posting may be closed, or the board name is wrong.`);
+  return res.text();
+}
+
+/** The page data a Rippling page carries (Next.js __NEXT_DATA__). */
+export function ripplingPageData(html, what = 'Rippling page') {
+  const m = String(html).match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) throw new Error(`${what} has no page data. Rippling may have changed its pages.`);
+  try { return JSON.parse(m[1]).props?.pageProps ?? {}; } catch (e) { throw new Error(`${what}: page data is not valid JSON (${e.message}).`); }
+}
+
+const RIPPLING_WORKPLACE = { ON_SITE: 'onsite', HYBRID: 'hybrid', REMOTE: 'remote' };
+
+/**
+ * Rippling pay. Every posting seen so far has none ([]). Any other shape is reported, not
+ * guessed, so the reader can be taught it with a real example.
+ */
+export function ripplingPay(details, what) {
+  if (details == null || (Array.isArray(details) && !details.length)) return null;
+  throw new Error(`${what}: Rippling pay details are in a format the kit doesn't read yet: ${JSON.stringify(details).slice(0, 300)}`);
+}
+
+/** A Rippling job page → hard facts + JD text. */
+export function fromRippling(html, url) {
+  const job = ripplingPageData(html, url).apiData?.jobPost;
+  if (!job?.name) throw new Error(`${url} has no job on it. The posting may be closed.`);
+  const locations = (job.workLocations || []).map(String).filter(Boolean);
+  return {
+    posting: {
+      url, source: 'rippling', title: job.name, company: job.companyName ?? job.board?.slug ?? null,
+      locations, workplace: locations.some((l) => /remote/i.test(l)) ? 'remote' : 'unclear',
+      posted_at: job.createdOn ?? null,
+      pay: ripplingPay(job.payRangeDetails, url),
+      equity_offered: null,
+      pay_conflict: null,
+    },
+    jdText: htmlToText([job.description?.company, job.description?.role].filter(Boolean).join('\n')),
+  };
+}
+
+/** One page of a Rippling board → { items, totalPages }. */
+export function ripplingBoardPage(board, html) {
+  const q = (ripplingPageData(html, `Rippling board "${board}"`).dehydratedState?.queries || []).find((x) => x.queryKey?.[2] === 'job-posts');
+  const data = q?.state?.data;
+  if (!Array.isArray(data?.items) || !Number.isInteger(data?.totalPages)) throw new Error(`Rippling board "${board}" page has no job list. Rippling may have changed its pages.`);
+  const items = data.items.map((j) => ({
+    url: j.url, source: 'rippling', title: j.name, company: board,
+    locations: (j.locations || []).map((l) => l?.name).filter(Boolean),
+    workplace: RIPPLING_WORKPLACE[j.locations?.[0]?.workplaceType] ?? 'unclear',
+    posted_at: null, pay: null, equity_offered: null, pay_conflict: null,
+  }));
+  return { items, totalPages: data.totalPages };
+}
+
+async function ripplingBoard(board) {
+  const all = [];
+  let total = 1;
+  for (let page = 0; page < total; page++) {
+    const r = ripplingBoardPage(board, await getPage(`https://ats.rippling.com/${encodeURIComponent(board)}/jobs?page=${page}`, BOARD_TIMEOUT_MS));
+    total = r.totalPages;
+    all.push(...r.items);
+  }
+  return all;
 }
 
 // --- Whole-board listings (D41): every open posting, hard facts only, no AI -----------
@@ -168,5 +247,6 @@ export async function listBoard(boardKey) {
   if (ats === 'ashby') return ashbyBoard(board, await getJson(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(board)}?includeCompensation=true`, BOARD_TIMEOUT_MS));
   if (ats === 'greenhouse') return greenhouseBoard(board, await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs`, BOARD_TIMEOUT_MS));
   if (ats === 'lever') return leverBoard(board, await getJson(`https://api.lever.co/v0/postings/${encodeURIComponent(board)}?mode=json`, BOARD_TIMEOUT_MS));
-  throw new Error(`No board reader for "${ats}" yet (${boardKey}). Supported: ashby, greenhouse, lever.`);
+  if (ats === 'rippling') return ripplingBoard(board);
+  throw new Error(`No board reader for "${ats}" yet (${boardKey}). Supported: ashby, greenhouse, lever, rippling.`);
 }

@@ -1,7 +1,7 @@
 // Which job boards the scan reads (D41, D50–D51). Pure functions, no file or network access.
 import { companyKey } from './classify.mjs';
 
-const READABLE = /^(ashby|greenhouse|lever):/;
+const READABLE = /^(ashby|greenhouse|lever|rippling):/;
 /**
  * Boards to scan: every ATS board a recorded posting came from, plus boards found on
  * investor boards or added by hand (D50–D51), each with the company name used there.

@@ -2,7 +2,7 @@
 // Tier one job: hard facts (code) → judgment facts (model, no tools) → company bar → tier (code).
 //
 // Usage (via scripts/tier.sh, which sets CAREER_OPS_DATA_DIR):
-//   scripts/tier.sh <ashby|greenhouse|lever job URL> [--model sonnet] [--no-research] [--no-notion]
+//   scripts/tier.sh <ashby|greenhouse|lever|rippling job URL> [--model sonnet] [--no-research] [--no-notion]
 //   scripts/tier.sh --jd-file <file> --company "<name>" [--title "<role>"] [--location "<city>" ...] [--pay 135000-180000]
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';

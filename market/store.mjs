@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -123,6 +123,15 @@ CREATE TABLE IF NOT EXISTS getro_jobs (
 CREATE INDEX IF NOT EXISTS getro_company ON getro_jobs(network, company_slug);
 `;
 
+// v4 (D61): portfolio-board company pages (a16z), each checked about once a week.
+const SCHEMA_V4 = `
+CREATE TABLE IF NOT EXISTS portfolio_pages (
+  network TEXT NOT NULL, slug TEXT NOT NULL, url TEXT NOT NULL, first_seen TEXT NOT NULL,
+  checked_at TEXT, company TEXT, titles TEXT, boards TEXT, relevant INTEGER, unreadable TEXT, error TEXT,
+  PRIMARY KEY (network, slug)
+);
+`;
+
 function migrate(db, from) {
   if (from < 2) {
     const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
@@ -134,6 +143,7 @@ function migrate(db, from) {
     for (const [col, type] of Object.entries(POSTING_COLUMNS_V3)) if (!have.has(col)) db.exec(`ALTER TABLE postings ADD COLUMN ${col} ${type}`);
     db.exec(SCHEMA_V3);
   }
+  if (from < 4) db.exec(SCHEMA_V4);
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
@@ -457,7 +467,7 @@ class Store {
   // --- Job boards found without a recorded posting (D50–D51) -------------------------
 
   addBoard(board, company, source, detail = null, at = new Date()) {
-    if (!/^(ashby|greenhouse|lever):[^\s:]+$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse: or lever:<name>).`);
+    if (!/^(ashby|greenhouse|lever|rippling):[^\s:]+$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse:, lever: or rippling:<name>).`);
     if (!company?.trim()) throw new Error('A board needs a company name.');
     const res = this.db.prepare('INSERT OR IGNORE INTO boards (board, company, source, detail, added_at) VALUES (?, ?, ?, ?, ?)').run(board, company.trim(), source, detail, new Date(at).toISOString());
     return { added: Boolean(res.changes) };
@@ -486,6 +496,32 @@ class Store {
   resolveGetroJob(url, { resolved_url, company, board }, at = new Date()) {
     this.db.prepare('UPDATE getro_jobs SET resolved_url = ?, company = ?, board = ?, resolved_at = ? WHERE url = ?').run(resolved_url, company, board ?? null, new Date(at).toISOString(), url);
   }
+
+  // --- Portfolio-board company pages (D61) -----------------------------------------
+
+  /** Record the company pages a board lists; returns how many are new. */
+  seePortfolioPages(network, pages, at = new Date()) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO portfolio_pages (network, slug, url, first_seen) VALUES (?, ?, ?, ?)');
+    let added = 0;
+    this.db.exec('BEGIN');
+    try {
+      for (const p of pages) added += Number(ins.run(network, p.slug, p.url, day(at)).changes);
+      this.db.exec('COMMIT');
+    } catch (e) { this.db.exec('ROLLBACK'); throw e; }
+    return added;
+  }
+  /** Pages never checked, then the longest-unchecked ones older than `days`; at most `limit`. */
+  portfolioPagesDue(network, { days, limit, at = new Date() }) {
+    const cutoff = new Date(new Date(at).getTime() - days * 86_400_000).toISOString();
+    return this.db.prepare(`SELECT * FROM portfolio_pages WHERE network = ? AND (checked_at IS NULL OR checked_at < ?)
+      ORDER BY checked_at IS NOT NULL, checked_at, slug LIMIT ?`).all(network, cutoff, limit);
+  }
+  recordPortfolioPage(network, slug, { company, titles, boards, relevant, unreadable, error = null }, at = new Date()) {
+    this.db.prepare(`UPDATE portfolio_pages SET checked_at = ?, company = ?, titles = ?, boards = ?, relevant = ?, unreadable = ?, error = ?
+      WHERE network = ? AND slug = ?`).run(new Date(at).toISOString(), company ?? null, JSON.stringify(titles ?? []), JSON.stringify(boards ?? []),
+      relevant == null ? null : Number(Boolean(relevant)), JSON.stringify(unreadable ?? []), error, network, slug);
+  }
+  portfolioPages(network) { return this.db.prepare('SELECT * FROM portfolio_pages WHERE network = ? ORDER BY slug').all(network); }
 
   companyHistory(name) {
     const row = this.db.prepare('SELECT id FROM companies WHERE name = ?').get(name);

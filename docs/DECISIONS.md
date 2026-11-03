@@ -312,3 +312,17 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 **Decision:** Gabriel dropped the separate offsite copy. `private/config/daily.json` now needs only `imessage_to` (a leftover `icloud_dir` stops the run with a pointer to this entry). Each run, after writing and pruning the dated copies, the backup step checks that `private/backups/` sits in an iCloud-synced folder: iCloud Drive itself, or `~/Documents` / `~/Desktop` carrying macOS's `com.apple.icloud.desktop` sync marker. The run log names that folder. If the check fails (workspace moved, sync turned off), the backup step is reported as a failure by iMessage, so "backed up to iCloud" is never claimed falsely.
 **Why:** One place for backups, no second folder to configure; the check keeps D54's offsite guarantee honest.
 **Trade-off:** The check confirms the folder is set to sync, not that iCloud has finished uploading today's copy. A corrupted database also syncs, but only into a new dated file; the 30 older copies stay, locally and in iCloud.
+
+## D60 — Rippling board reader (2026-11-03)
+**Context:** The coverage review after D57 found companies posting on Rippling's job boards, including an NYC Deployment Strategist at Pace (a Thrive company) the scan was missing. The candidate approved building the reader.
+**Options:** (A) read Rippling's public board and job pages; (B) keep listing Rippling companies as unreadable and check them by hand.
+**Decision:** A. Rippling has no public JSON API, so the reader uses the data its public pages carry: the board page lists every job with its locations (paged with `?page=N`), and the job page has the description. Requests name the kit in their user agent. Rippling's robots.txt allows the job boards; no automated-access clause was found in the terms pages we could read.
+**Fail loudly:** Rippling pay has not been seen on any posting yet, so pay in any format is reported as an error instead of guessed; the first real example will teach the reader. A changed page layout is an error, never "no jobs".
+**Also:** companies traced earlier (D57) to a board that was unreadable then are re-checked, so Pace and ProcessUnity join the scan.
+
+## D61 — a16z portfolio board reader: relevant companies only, each page checked weekly (2026-11-03)
+**Context:** a16z's job board (jobs.a16z.com) is not on Getro. Its sitemap lists about 690 company pages; each page carries the company's job titles (schema.org data) and links to its own job board.
+**Options:** (A) open each company page, and add the company's board only if a title is a target or borderline title; (B) add every company's board; (C) wait.
+**Decision:** A, the candidate's call. Each company page is rechecked about once a week (at most 150 pages per run, 1.5 s apart), so the first full pass takes about five daily runs and later postings are still caught.
+**Trade-off:** big companies list only their first 25 titles on the page, so a company whose relevant roles sit past the first 25 is missed until they surface. Companies whose jobs link to their own website (not a readable board) are listed as unreadable.
+

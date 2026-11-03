@@ -5,6 +5,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- Rippling board reader (D60): whole boards and single postings from Rippling's public pages; `tier.sh` and the scan accept `ats.rippling.com` links. Earlier investor-board traces to Rippling are picked up.
+- a16z portfolio board (D61): `market.sh scan` checks a16z's company pages (about weekly each), and adds the boards of companies with target or borderline titles. Configure under `a16z_boards` in `private/config/sources.json`.
 - Title classifier v2 (D49, D56): more target titles, a `borderline` label, and a no-AI text check (AI + deployment + customers) so only promising borderline roles are tiered; `market.sh relabel` moves open postings to the new version.
 - Investor job boards (D50, D51, D57): `market.sh scan` reads Thrive's and Scale's public Getro sitemaps, traces each relevant company to its own Ashby/Greenhouse/Lever board, and adds it to the scan. Configured in `private/config/sources.json` (template: `market/sources.example.json`).
 - Companies to Watch (D51): a watched company with no readable board is reported; `market.sh add-board <link>` adds one by hand.

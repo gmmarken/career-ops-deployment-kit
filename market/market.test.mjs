@@ -220,7 +220,7 @@ test('a v1 database upgrades to the current version in place, keeping its data',
     INSERT INTO companies (name, first_seen, updated_at) VALUES ('OldCo', '2026-01-01', '2026-01-01');`);
   v1.close();
   const s = openStore(path);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '3');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '4');
   assert.equal(s.companies()[0].name, 'OldCo');
   s.saveCompany({ name: 'OldCo', status: 'strong' }, { source: 'x', by: 'kit' });
   assert.equal(s.companyRecords()[0].status, 'strong');
@@ -254,13 +254,14 @@ test('a v2 database upgrades to v3 in place, keeping its postings', async () => 
   // Turn it back into a v2 file: no v3 columns or tables.
   const raw = new DatabaseSync(path);
   for (const c of ['text_check', 'text_check_found', 'text_check_version', 'text_checked_at']) raw.exec(`ALTER TABLE postings DROP COLUMN ${c}`);
-  raw.exec("DROP TABLE boards; DROP TABLE getro_jobs; UPDATE meta SET value = '2' WHERE key = 'schema_version';");
+  raw.exec("DROP TABLE boards; DROP TABLE getro_jobs; DROP TABLE portfolio_pages; UPDATE meta SET value = '2' WHERE key = 'schema_version';");
   raw.close();
   const s = openStore(path);
   assert.equal(s.postings().length, 1);
   assert.equal(s.postings()[0].text_check, null);
   assert.equal(s.boards().length, 0);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '3');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '4');
+  assert.deepEqual(s.portfolioPages('a16z'), []);
   s.close();
 });
 test('relabel: open postings get the current label with a logged change; closed ones keep theirs; dry run writes nothing', () => {
@@ -314,4 +315,21 @@ test('knownBoards merges posting boards with added ones; Watch without a board i
   assert.deepEqual([...boards.keys()].sort(), ['ashby:acme', 'greenhouse:beta']);
   assert.deepEqual([...unreadable.keys()], ['Big Co']); // Beta is covered by its added board
   assert.deepEqual(watchedWithoutBoard([{ name: 'Acme', watch: 1 }, { name: 'Gamma', watch: 1 }, { name: 'Delta', watch: 0 }], boards), ['Gamma']);
+});
+
+// --- portfolio pages (D61)
+test('portfolio pages: new first, then ones older than the recheck window, up to the limit', () => {
+  const s = openStore(':memory:');
+  assert.equal(s.seePortfolioPages('a16z', [{ slug: 'a', url: 'u/a' }, { slug: 'b', url: 'u/b' }, { slug: 'c', url: 'u/c' }], '2026-11-01'), 3);
+  assert.equal(s.seePortfolioPages('a16z', [{ slug: 'a', url: 'u/a' }], '2026-11-02'), 0);
+  s.recordPortfolioPage('a16z', 'a', { company: 'A', titles: ['x'], boards: [], relevant: false }, '2026-11-01T00:00:00Z');
+  s.recordPortfolioPage('a16z', 'b', { company: 'B', titles: ['y'], boards: ['ashby:b'], relevant: true }, '2026-10-20T00:00:00Z');
+  const due = s.portfolioPagesDue('a16z', { days: 7, limit: 10, at: '2026-11-03T00:00:00Z' }).map((p) => p.slug);
+  assert.deepEqual(due, ['c', 'b']); // never checked first; 'a' was checked 2 days ago
+  assert.equal(s.portfolioPagesDue('a16z', { days: 7, limit: 1, at: '2026-11-03T00:00:00Z' }).length, 1);
+});
+test('Rippling boards are readable board keys', () => {
+  const s = openStore(':memory:');
+  assert.equal(s.addBoard('rippling:pace', 'Pace', 'getro').added, true);
+  assert.deepEqual([...knownBoards([], s.boards()).boards.keys()], ['rippling:pace']);
 });
