@@ -118,7 +118,8 @@ export function sendIMessage(to, text) {
   const args = script.flatMap((l) => ['-e', l]).concat(['--', text, to]);
   return new Promise((resolve, reject) => {
     execFile('osascript', args, { timeout: 60000 }, (err, _o, stderr) => {
-      if (err) reject(new Error(`iMessage send failed: ${(stderr || err.message).trim()}`));
+      if (err?.killed) reject(new Error('iMessage send failed: Messages did not answer within 60 s. If macOS is asking to let the app control Messages, click Allow (System Settings → Privacy & Security → Automation).'));
+      else if (err) reject(new Error(`iMessage send failed: ${(stderr || `osascript exited with code ${err.code}`).trim()}`));
       else resolve();
     });
   });
