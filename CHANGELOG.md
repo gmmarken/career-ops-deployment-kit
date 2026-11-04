@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Morning text says "S&A" instead of "S/A" for the top roles.
 - Rippling links that start with a language code (`ats.rippling.com/es-419/<company>/…`) were read as a board named after the language; the code is now skipped.
 - Board names with a space (e.g. Ashby's `hippocratic ai`) were stored URL-encoded and then encoded again when read, so the board returned "not found". Links are now decoded once; board names may contain spaces.
 - Daily run blocked by macOS (D65): the 7 AM job couldn't open the kit in the Documents folder, and failed without a text. `install-daily.sh` now builds a small helper app (`~/Applications/CareerOps Daily.app`) that launchd starts; you allow it into Documents once. If the run can't start or can't text, the app sends the failure text itself. New `install-daily.sh --run-now` and `--test-message`. A failed iMessage send now says why (e.g. waiting for the Messages permission) instead of repeating the whole command, text and phone number.
@@ -53,6 +54,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `secret-scan` workflow can read PR commits (`pull-requests: read`).
 
 ### Fixed
+- Morning text says "S&A" instead of "S/A" for the top roles.
 - The rules fingerprint on each tier decision now changes when any setting changes, not just top-level names.
 - Greenhouse boards that link to the company's own site no longer collapse into a single posting (the job id in `?gh_jid=` is kept).
 - Extraction: travel stated as trips ("~2x per month for 2-3 days") is converted to a share of working days before the 50%+ travel flag is set (D55).
