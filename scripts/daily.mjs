@@ -109,7 +109,7 @@ export function successSummary(date, outputs) {
     lines.push(`${f.graded.length} new NYC role${f.graded.length === 1 ? '' : 's'} graded: ${counts.map(([t, n]) => `${n} ${t}`).join(' · ')}`);
     const top = f.graded.filter((g) => g.tier === 'S' || g.tier === 'A');
     for (const g of top.slice(0, MAX_LISTED)) lines.push(`${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`);
-    if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S/A in Notion`);
+    if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S&A in Notion`);
   }
   const wait = f.waiting + (f.paused?.left ?? 0);
   if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);

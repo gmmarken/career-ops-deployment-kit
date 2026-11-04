@@ -48,11 +48,11 @@ test('morning summary: a quiet day, and output it cannot read is said, never sho
   assert.match(unknown, /Boards: couldn't read the count \(see log\)\nNew roles: couldn't read the count/);
   assert.equal(runFacts({ scan: '' }).boards, null);
 });
-test('morning summary lists at most 6 S/A roles', () => {
+test('morning summary lists at most 6 S&A roles', () => {
   const many = Array.from({ length: 8 }, (_, i) => `  [${i + 1}/8] S         Co${i} — Role`).join('\n');
   const s = successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': `8 untiered NYC role(s)\n${many}\n` });
   assert.equal((s.match(/⭐ S:/g) || []).length, 6);
-  assert.match(s, /…and 2 more S\/A in Notion/);
+  assert.match(s, /…and 2 more S&A in Notion/);
 });
 test('shortDate reads the date as a local day', () => assert.equal(shortDate('2026-11-03'), 'Tue, Nov 3'));
 
