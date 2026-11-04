@@ -3,13 +3,15 @@
 // market.sh scan). Same pipeline as tier.sh: hard facts (code) → judgment (claude, no
 // tools) → company bar → tier (code) → market database → Notion (one sync at the end).
 // A failed posting is reported and skipped; the run exits non-zero if any failed.
-// Usage: scripts/tier-new.sh [--limit N] [--dry-run]
+// Usage: scripts/tier-new.sh [--limit N] [--per-company N] [--dry-run]
+// With a limit, the most relevant role families go first, at most --per-company per company (D67).
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
 import { gatherFacts, describeCalls } from './pipeline.mjs';
 import { openStore } from '../market/store.mjs';
 import { recordTiered } from '../market/record.mjs';
 import { TARGET_FAMILIES } from '../market/classify.mjs';
+import { pickBatch } from '../market/priority.mjs';
 import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -17,7 +19,14 @@ const arg = (n) => { const i = process.argv.indexOf(n); return i > -1 ? process.
 async function main() {
   const dataDir = process.env.CAREER_OPS_DATA_DIR;
   if (!dataDir) throw new Error('CAREER_OPS_DATA_DIR is not set. Run through scripts/tier-new.sh.');
-  const limit = arg('--limit') ? Number(arg('--limit')) : Infinity;
+  const num = (flag) => {
+    if (arg(flag) === undefined) return Infinity;
+    const n = Number(arg(flag));
+    if (!Number.isInteger(n) || n < 1) throw new Error(`${flag} must be a whole number of at least 1.`);
+    return n;
+  };
+  const limit = num('--limit');
+  const perCompany = num('--per-company');
   const dry = process.argv.includes('--dry-run');
   const rules = loadRules();
   let store = openStore();
@@ -25,8 +34,10 @@ async function main() {
   const wanted = (p) => TARGET_FAMILIES.has(p.title_family) || (p.title_family === 'borderline' && p.text_check === 'hit');
   const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id));
   store.close();
-  const batch = todo.slice(0, limit);
-  console.log(`${todo.length} untiered NYC role(s) to tier (target-family titles + borderline titles that passed the text check); tiering ${batch.length}.`);
+  const batch = pickBatch(todo, { limit, perCompany });
+  const caps = [limit < Infinity && `${limit} a run`, perCompany < Infinity && `${perCompany} per company`].filter(Boolean).join(', ');
+  console.log(`${todo.length} untiered NYC role(s) to tier (target-family titles + borderline titles that passed the text check); tiering ${batch.length}${caps ? ` (cap: ${caps})` : ''}.`);
+  if (todo.length > batch.length) console.log(`${todo.length - batch.length} role(s) wait for a later run.`);
   for (const p of batch) console.log(`  · ${p.company} — ${p.title}`);
   if (dry || !batch.length) return;
 

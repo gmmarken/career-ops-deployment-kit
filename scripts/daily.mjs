@@ -25,6 +25,9 @@ export function loadConfig(dataDir) {
   try { cfg = JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
   if (typeof cfg.imessage_to !== 'string' || !cfg.imessage_to.trim()) throw new Error(`${path}: "imessage_to" is missing or empty.`);
   if ('icloud_dir' in cfg) throw new Error(`${path}: "icloud_dir" is no longer used (D59: backups reach iCloud through the synced workspace folder). Remove it.`);
+  for (const k of ['tier_per_day', 'tier_per_company']) {
+    if (!Number.isInteger(cfg[k]) || cfg[k] < 1) throw new Error(`${path}: "${k}" must be a whole number of at least 1 (D67: how many roles the daily run grades, in all and per company).`);
+  }
   return cfg;
 }
 
@@ -75,11 +78,13 @@ export function runFacts(outputs) {
   const boardsM = scan.match(/^Scanning (\d+) board/m);
   const boardLines = [...scan.matchAll(/^\s*✓ \S+ \(.*\): \d+ open, (\d+) new, \d+ closed$/gm)];
   const queued = tier.match(/^(\d+) untiered NYC role/m);
+  const waiting = tier.match(/^(\d+) role\(s\) wait for a later run/m);
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
     newPostings: boardLines.length ? boardLines.reduce((n, m) => n + Number(m[1]), 0) : (boardsM ? 0 : null),
     queued: queued ? Number(queued[1]) : null,
+    waiting: waiting ? Number(waiting[1]) : 0,
     graded,
   };
 }
@@ -101,6 +106,7 @@ export function successSummary(date, outputs) {
     for (const g of top.slice(0, MAX_LISTED)) lines.push(`${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`);
     if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S/A in Notion`);
   }
+  if (f.waiting) lines.push(`⏳ ${f.waiting} more NYC role${f.waiting === 1 ? '' : 's'} waiting; graded over the next runs`);
   lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
   return lines.join('\n');
 }
@@ -126,10 +132,12 @@ export function sendIMessage(to, text) {
 }
 
 /** The three daily steps. Each returns {ok, out}. */
-export function defaultSteps({ dataDir, date, run = runCommand, icloud = iCloudRoot }) {
+export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iCloudRoot }) {
+  if (!cfg) throw new Error('defaultSteps needs the daily settings (cfg).');
+  const tierArgs = ['--limit', String(cfg.tier_per_day), '--per-company', String(cfg.tier_per_company)];
   return [
     { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
-    { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), []); return { ok: r.code === 0, out: r.out }; } },
+    { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out }; } },
     { name: 'backup', go: async () => {
       const dir = join(dataDir, 'backups');
       const file = backupDb(join(dataDir, 'data', 'market.db'), dir, date);
@@ -197,7 +205,7 @@ async function main() {
     console.log('Two sample messages sent.');
     return 0;
   }
-  const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date }), log, notify, logPath });
+  const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg }), log, notify, logPath });
   return problems.length ? 1 : 0;
 }
 
