@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Board names with a space (e.g. Ashby's `hippocratic ai`) were stored URL-encoded and then encoded again when read, so the board returned "not found". Links are now decoded once; board names may contain spaces.
 - Daily run blocked by macOS (D65): the 7 AM job couldn't open the kit in the Documents folder, and failed without a text. `install-daily.sh` now builds a small helper app (`~/Applications/CareerOps Daily.app`) that launchd starts; you allow it into Documents once. If the run can't start or can't text, the app sends the failure text itself. New `install-daily.sh --run-now` and `--test-message`. A failed iMessage send now says why (e.g. waiting for the Messages permission) instead of repeating the whole command, text and phone number.
 
 ### Removed

@@ -5,10 +5,18 @@
 const TIMEOUT_MS = 20_000;
 const BOARD_TIMEOUT_MS = 90_000; // whole boards can be large (hundreds of postings with descriptions)
 
+// Path parts of a link, decoded once ("hippocratic%20ai" → "hippocratic ai"). Readers encode
+// board names again when they build API links, so a name stored encoded would be encoded twice.
+function pathParts(u) {
+  return u.pathname.split('/').filter(Boolean).map((p) => {
+    try { return decodeURIComponent(p); } catch { throw new Error(`Link has a badly encoded part (${p}): ${u.href}`); }
+  });
+}
+
 export function parseJobUrl(raw) {
   let u;
   try { u = new URL(raw); } catch { throw new Error(`Not a valid URL: ${raw}`); }
-  const parts = u.pathname.split('/').filter(Boolean);
+  const parts = pathParts(u);
   const host = u.hostname.toLowerCase();
   if (host === 'jobs.ashbyhq.com' && parts.length >= 2) return { ats: 'ashby', board: parts[0], id: parts[1] };
   if ((host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') && parts[1] === 'jobs' && parts[2]) {
@@ -100,7 +108,8 @@ export function fromLever(board, id, job, url) {
 export function boardFromUrl(raw) {
   let u;
   try { u = new URL(raw); } catch { return null; }
-  const parts = u.pathname.split('/').filter(Boolean);
+  let parts;
+  try { parts = pathParts(u); } catch { return null; }
   const host = u.hostname.toLowerCase();
   if (host === 'jobs.ashbyhq.com' && parts[0]) return `ashby:${parts[0].toLowerCase()}`;
   if (host === 'jobs.lever.co' && parts[0]) return `lever:${parts[0]}`;

@@ -467,7 +467,7 @@ class Store {
   // --- Job boards found without a recorded posting (D50–D51) -------------------------
 
   addBoard(board, company, source, detail = null, at = new Date()) {
-    if (!/^(ashby|greenhouse|lever|rippling):[^\s:]+$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse:, lever: or rippling:<name>).`);
+    if (!/^(ashby|greenhouse|lever|rippling):\S(?:[^:]*\S)?$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse:, lever: or rippling:<name>).`);
     if (!company?.trim()) throw new Error('A board needs a company name.');
     const res = this.db.prepare('INSERT OR IGNORE INTO boards (board, company, source, detail, added_at) VALUES (?, ?, ?, ?, ?)').run(board, company.trim(), source, detail, new Date(at).toISOString());
     return { added: Boolean(res.changes) };
