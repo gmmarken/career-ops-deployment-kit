@@ -6,7 +6,7 @@
 // Any Notion error stops the run (fail loudly).
 import { createClient, readToken, text, title, select, multi, num, date, check, url, relation, readProp } from './client.mjs';
 import { loadNotionConfig } from './setup.mjs';
-import { OWNED_BY_YOU } from './schema.mjs';
+import { OWNED_BY_YOU, RADAR_V6 } from './schema.mjs';
 import { openStore } from '../market/store.mjs';
 import { companyKey } from '../market/classify.mjs';
 import { loadWatchlist, saveWatchlist, findCompany } from '../extractor/research.mjs';
@@ -62,6 +62,9 @@ export function postingProps(p, decision, companyPageId, { create }) {
   return props;
 }
 
+/** How the kit first found a company: a Form D, the news, you (Notion / watchlist), or a job board it scanned. */
+export const foundVia = (entry) => entry?.found_via ?? (entry?.origin === 'you' || entry?.origin === 'watchlist' ? 'You' : 'Job board');
+
 /** Company Radar properties from a watchlist entry (or a bare name). */
 export function companyProps(name, entry, firstSeen, { create, counts = null }) {
   const e = entry ?? {};
@@ -79,6 +82,16 @@ export function companyProps(name, entry, firstSeen, { create, counts = null }) 
     Origin: select(entry ? (e.origin === 'research' ? 'research' : 'watchlist') : null),
     'First seen': date(firstSeen),
     ...(counts ? { 'Open postings': num(counts.open), 'Open deployment postings': num(counts.deployment) } : {}),
+    'Deployment fit': select(e.fit ?? null),
+    'Fit reason': text(e.fit_reason ?? ''),
+    'Funding amount': num(e.last_raise?.amount_usd ?? null),
+    'Funding date': date(e.last_raise?.date ?? null),
+    'Funding source': url(e.last_raise ? (e.last_raise.source_url ?? e.sources?.[0]?.url ?? null) : null),
+    'Found via': select(foundVia(entry)),
+    Leaders: text((e.leaders ?? []).map((l) => `${l.name} (${l.title})`).join('; ')),
+    'NYC presence': select(e.nyc_presence === true ? 'Yes' : e.nyc_presence === false ? 'No' : 'Unknown'),
+    'NYC evidence': text(e.nyc_evidence ?? ''),
+    'Careers page': url(e.careers_url ?? null),
   };
   if (create) Object.assign(props, {
     Status: select(e.status ?? 'unknown'),
@@ -122,7 +135,7 @@ const ownedProps = (vals) => Object.fromEntries(Object.entries(vals).map(([k, v]
 const ownedRemoved = (props, owned) => Object.fromEntries(Object.entries(props).filter(([k]) => !owned.includes(k)));
 
 /** Push postings and their companies: all of them, or only `postingIds`. Returns counts. */
-export async function syncAll(dataDir, { log = console.log, postingIds = null } = {}) {
+export async function syncAll(dataDir, { log = console.log, postingIds = null, companyNames = null } = {}) {
   const cfg = loadNotionConfig(dataDir);
   const client = createClient(readToken(dataDir));
   const store = openStore();
@@ -135,7 +148,10 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
     const counts = companyCounts(store.postings());
     let cNew = 0, cUpd = 0, wlChanged = false;
     const onlyPostings = postingIds ? store.postings().filter((p) => postingIds.includes(p.id)) : null;
-    const companies = onlyPostings ? store.companies().filter((c) => onlyPostings.some((p) => p.company_id === c.id)) : store.companies();
+    // companyNames: only these companies, and no postings (the Radar step, Phase 6).
+    const wantNames = companyNames ? new Set(companyNames.map(companyKey)) : null;
+    const companies = onlyPostings ? store.companies().filter((c) => onlyPostings.some((p) => p.company_id === c.id))
+      : wantNames ? store.companies().filter((c) => wantNames.has(companyKey(c.name))) : store.companies();
     for (const c of companies) {
       const entry = findCompany(wl, c.name);
       const key = companyKey(entry?.name ?? c.name);
@@ -161,8 +177,8 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null } 
     if (wlChanged) saveWatchlist(wl, { source: 'notion-sync', by: 'kit' });
     // Postings.
     // The Job Postings view holds tiered roles only (D42); every posting still counts on the Radar.
-    const postings = (onlyPostings ?? store.postings()).filter((p) => store.latestDecision(p.id));
-    const jobPages = onlyPostings
+    const postings = wantNames ? [] : (onlyPostings ?? store.postings()).filter((p) => store.latestDecision(p.id));
+    const jobPages = wantNames ? [] : onlyPostings
       ? (await Promise.all(postings.map((p) => client.queryAll(cfg.jobs_data_source_id, { filter: { property: 'Key', rich_text: { equals: p.url_key } } })))).flat()
       : await client.queryAll(cfg.jobs_data_source_id);
     const jobsByKey = new Map(jobPages.map((pg) => [readProp(pg.properties.Key), pg.id]));
@@ -236,6 +252,7 @@ export async function ensureRadarColumns(client, cfg) {
   const ds = await client.api(`data_sources/${cfg.radar_data_source_id}`);
   const patch = {};
   for (const name of ['Open postings', 'Open deployment postings']) if (!ds.properties[name]) patch[name] = { number: {} };
+  for (const [name, def] of Object.entries(RADAR_V6)) if (!ds.properties[name]) patch[name] = def;
   for (const name of ['Live roles', 'All roles']) if (ds.properties[name]) patch[name] = null;
   if (Object.keys(patch).length) await client.api(`data_sources/${cfg.radar_data_source_id}`, 'PATCH', { properties: patch });
 }

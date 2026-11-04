@@ -580,6 +580,13 @@ class Store {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
   }
 
+  /** Record a funding round seen in a Form D or the news. Returns true if it is new (not already recorded). */
+  addFundingRound(companyId, r, at = new Date()) {
+    const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at, found_via)
+      VALUES (?, ?, ?, ?, '[]', ?, ?, ?)`).run(companyId, r.round ?? null, r.amount_usd ?? null, r.date ?? null, r.source_url ?? null, new Date(at).toISOString(), r.found_via ?? null);
+    return res.changes > 0;
+  }
+
   /** Funding rounds per company (newest announced first), for the Radar. */
   fundingByCompany() {
     const by = new Map();

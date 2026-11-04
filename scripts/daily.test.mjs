@@ -131,6 +131,8 @@ test('config: missing file or field fails loudly', () => {
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 0}');
   assert.throws(() => loadConfig(d), /"tier_per_company" must be a whole number/);
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5}');
+  assert.throws(() => loadConfig(d), /"research_per_day" must be a whole number/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10}');
   assert.equal(loadConfig(d).imessage_to, 'x');
 });
 
@@ -152,22 +154,22 @@ test('default steps: non-zero exit from scan/tier-new is a failure; backup write
   const db = new DatabaseSync(join(d, 'data', 'market.db'));
   db.exec('CREATE TABLE t (x); INSERT INTO t VALUES (1);'); db.close();
   const calls = [];
-  const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return cmd.endsWith('market.sh') ? { code: 1, out: 'market: 1 board(s) failed' } : { code: 0, out: 'ok' }; };
-  const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5 }, run, icloud: () => '/Users/me/Documents' });
+  const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return cmd.endsWith('market.sh') && args[0] === 'scan' ? { code: 1, out: 'market: 1 board(s) failed' } : { code: 0, out: 'ok' }; };
+  const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5, research_per_day: 10 }, run, icloud: () => '/Users/me/Documents' });
   const results = [];
   for (const s of steps) results.push(await s.go());
-  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5']]);
-  assert.deepEqual(results.map((r) => r.ok), [false, true, true]);
+  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10']]);
+  assert.deepEqual(results.map((r) => r.ok), [false, true, true, true]);
   assert.ok(existsSync(join(d, 'backups', 'market-2026-11-03.db')));
   assert.deepEqual(readdirSync(join(d, 'backups')), ['market-2026-11-03.db']);
-  assert.match(results[2].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
+  assert.match(results[3].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
 });
 
 test('backup step fails (and so is reported) when the folder is not iCloud-synced', async () => {
   const d = mkdtempSync(join(tmpdir(), 'daily-'));
   mkdirSync(join(d, 'data'));
   const db = new DatabaseSync(join(d, 'data', 'market.db')); db.exec('CREATE TABLE t (x)'); db.close();
-  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5 }, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[2];
+  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5, research_per_day: 10 }, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[3];
   const sent = [];
   const r = await runDaily({ date: '2026-11-03', steps: [step], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
   assert.equal(r.problems.length, 1);
@@ -190,4 +192,14 @@ test('summary: a usage-limit pause is loud but says nothing is broken (D68)', ()
   assert.match(s, /Claude usage limit hit after 1 of 30 roles\. Nothing is broken/);
   assert.match(s, /⏳ 230 more NYC roles waiting/);
   assert.doesNotMatch(s, /✅/);
+});
+
+test('summary: newly funded NYC companies get one line; a research pause is mentioned, not alarming (Phase 6)', () => {
+  const radar = 'Funding sources:\n  ✓ Form D (SEC): 40 NY filing(s)\nNewly funded NYC companies (4): Minerva BI ($15M, Form D) · Clark ($11M, Seed, News) · Hyphenate ($45M, News) · Acme ($2M, Form D)\nPaused: Claude usage limit reached after 2 of 10 researched; the rest wait for the next run.\n';
+  const s = successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': TIER_OUT, radar });
+  assert.match(s, /🆕 4 newly funded NYC companies: Minerva BI, Clark, Hyphenate, \+1 more \(Company Radar\)/);
+  assert.match(s, /⏳ Company research paused/);
+  assert.match(s, /^✅/);
+  const none = successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': TIER_OUT, radar: 'Newly funded NYC companies: none new this run.\n' });
+  assert.doesNotMatch(none, /🆕|research paused/);
 });

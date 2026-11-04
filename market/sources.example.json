@@ -1,5 +1,5 @@
 {
-  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66, D69); each title is searched on each readable job-board site in any of the places, once every every_days. core_titles are searched every run; rotating_titles take turns with what is left of max_credits_per_run, each run continuing where the last stopped; one search page = one credit; needs SERPER_API_KEY in private/.env.",
+  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66, D69); each title is searched on each readable job-board site in any of the places, once every every_days. core_titles are searched every run; rotating_titles take turns with what is left of max_credits_per_run, each run continuing where the last stopped; one search page = one credit; needs SERPER_API_KEY in private/.env. form_d: SEC Form D filings (Phase 6, D70-D71); the SEC requires a contact email in every request, kept only here. funding_news: TechCrunch funding RSS feeds (every run) and Serper news searches (every serper.every_days; 1 credit each) (D72).",
   "getro_boards": [
     {
       "name": "Thrive Capital",
@@ -39,5 +39,46 @@
       "NYC",
       "Brooklyn"
     ]
+  },
+  "form_d": {
+    "contact_email": "you+sec@example.com",
+    "state": "NY",
+    "cities": [
+      "New York",
+      "New York City",
+      "NYC",
+      "Brooklyn",
+      "Bronx",
+      "Queens",
+      "Staten Island",
+      "Long Island City",
+      "Astoria",
+      "Flushing",
+      "Jamaica"
+    ],
+    "industry_groups": [
+      "Computers",
+      "Telecommunications",
+      "Other Technology",
+      "Business Services",
+      "Other Health Care"
+    ],
+    "min_amount_usd": 1000000,
+    "lookback_days": 30
+  },
+  "funding_news": {
+    "techcrunch_feeds": [
+      "https://techcrunch.com/tag/funding/feed/",
+      "https://techcrunch.com/category/venture/feed/"
+    ],
+    "serper": {
+      "every_days": 7,
+      "queries": [
+        "\"New York\" startup raises seed",
+        "\"New York\" startup raises \"Series A\"",
+        "\"New York\" AI startup raises \"Series B\" OR \"Series C\"",
+        "NYC startup funding round AI"
+      ]
+    }
   }
 }

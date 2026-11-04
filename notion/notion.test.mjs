@@ -131,3 +131,26 @@ test('a pull that applies nothing must not record kit updates as written (the pi
   // So the next sync still sees Notion = last written and pushes the update.
   assert.deepEqual(reconcile(D, afterPull, { ...D, status: 'strong' }).kitUpdates, { status: 'strong' });
 });
+
+test('Company Radar (Phase 6): funding, leaders, NYC presence, fit and how the company was found', () => {
+  const entry = {
+    name: 'Example Robotics', found_via: 'Form D', fit: 'Possible', fit_reason: 'Business customers, partly matches',
+    last_raise: { amount_usd: 15e6, date: '2026-10-20', round: null, source_url: 'https://www.sec.gov/x' },
+    leaders: [{ name: 'Ada Example', title: 'CEO', source_url: 'u' }], nyc_presence: true, nyc_evidence: 'Form D business address: Brooklyn, NY',
+    careers_url: 'https://jobs.ashbyhq.com/example',
+  };
+  const p = companyProps('Example Robotics', entry, '2026-11-04', { create: false });
+  assert.equal(p['Funding amount'].number, 15e6);
+  assert.equal(p['Funding date'].date.start, '2026-10-20');
+  assert.equal(p['Funding source'].url, 'https://www.sec.gov/x');
+  assert.equal(p['Found via'].select.name, 'Form D');
+  assert.equal(p.Leaders.rich_text[0].text.content, 'Ada Example (CEO)');
+  assert.equal(p['NYC presence'].select.name, 'Yes');
+  assert.equal(p['Deployment fit'].select.name, 'Possible');
+  for (const k of Object.keys(p)) assert.ok(k in radarProperties(), `${k} is a Radar column`);
+  const bare = companyProps('Unknown Co', null, '2026-11-04', { create: false });
+  assert.equal(bare['NYC presence'].select.name, 'Unknown'); // not "No"
+  assert.equal(bare['Deployment fit'].select, null);
+  assert.equal(bare['Found via'].select.name, 'Job board');
+  assert.equal(companyProps('X', { name: 'X', origin: 'you' }, null, { create: false })['Found via'].select.name, 'You');
+});
