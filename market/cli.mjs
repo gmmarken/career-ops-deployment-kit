@@ -25,8 +25,8 @@ import { syncAll } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
-import { readSerperKey, search as serperSearch, buildQueries } from '../extractor/serper.mjs';
-import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE } from './discover.mjs';
+import { readSerperKey, search as serperSearch } from '../extractor/serper.mjs';
+import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
@@ -301,6 +301,7 @@ async function serperStep(store, cfg, { force = false } = {}) {
     const r = await runDiscovery(store, cfg, (q, page) => serperSearch(key, q, page), { pause: () => sleep(300), readable: (b) => listBoard(b), known });
     store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.found, error: r.errors.join(' | ') } : { status: 'ok', found: r.found });
     console.log(`  ✓ Search discovery (Serper): ${r.searches} searches, ${r.credits} credit(s); ${r.found} readable board(s) in results, ${r.added.length} new board(s) to scan${r.capped ? ` (stopped at the ${cfg.max_credits_per_run}-credit cap)` : ''}`);
+    if (r.rotation.total) console.log(`    Rotating titles: ${r.rotation.done} of ${r.rotation.total} searches this run; next run starts with "${r.rotation.nextTitle}"`);
     if (r.added.length) console.log(`    New: ${r.added.map((a) => a.board).join(', ')}`);
     if (r.unreadable.length) console.log(`    Found but not readable, not added (tried again next run): ${r.unreadable.map((u) => u.board).join(', ')}`);
     if (r.stopped) console.log('    Stopped early: the remaining searches would fail the same way.');
@@ -315,9 +316,13 @@ async function serperStep(store, cfg, { force = false } = {}) {
 async function discover() {
   const cfg = loadSources().serper;
   if (process.argv.includes('--dry-run')) {
-    const qs = buildQueries(cfg);
-    for (const { q } of qs) console.log(q);
-    console.log(`\n${qs.length} searches; at most ${Math.min(qs.length * cfg.max_pages, cfg.max_credits_per_run)} credit(s) per run (cap ${cfg.max_credits_per_run}), every ${cfg.every_days} day(s). Nothing was searched.`);
+    const st = openStore();
+    let next;
+    try { next = st.getMeta(SERPER_ROTATE_KEY); } finally { st.close(); }
+    const qs = planQueries(cfg, next);
+    for (const { q, rotating } of qs) console.log(`${rotating ? '  (turns) ' : '  (core)  '}${q}`);
+    const core = qs.filter((x) => !x.rotating).length;
+    console.log(`\n${core} core searches every run, then ${qs.length - core} rotating searches in this order until the cap; at most ${cfg.max_credits_per_run} credit(s) per run, every ${cfg.every_days} day(s). Nothing was searched.`);
     return;
   }
   const store = openStore();

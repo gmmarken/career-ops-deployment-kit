@@ -4,17 +4,18 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildQueries, boardsFromLinks, readSerperKey, search } from '../extractor/serper.mjs';
-import { checkSerperConfig, discoveryDue, runDiscovery } from './discover.mjs';
+import { checkSerperConfig, discoveryDue, planQueries, runDiscovery, ROTATE_KEY } from './discover.mjs';
 import { openStore } from './store.mjs';
 
-const cfg = { every_days: 7, max_credits_per_run: 50, max_pages: 2, titles: ['deployment strategist', 'chief of staff'], places: ['New York', 'NYC', 'Brooklyn'] };
+const cfg = { every_days: 7, max_credits_per_run: 50, max_pages: 2, core_titles: ['deployment strategist'], rotating_titles: ['chief of staff'], places: ['New York', 'NYC', 'Brooklyn'] };
+const q = { titles: ['deployment strategist', 'chief of staff'], places: cfg.places };
 
 test('buildQueries: each title on each site, places joined with OR in one search', () => {
-  const qs = buildQueries(cfg);
+  const qs = buildQueries(q);
   assert.equal(qs.length, 8); // 2 titles × 4 sites
   assert.equal(qs[0].q, 'site:jobs.ashbyhq.com "deployment strategist" ("New York" OR NYC OR Brooklyn)');
   assert.equal(qs[1].q, '(site:job-boards.greenhouse.io OR site:boards.greenhouse.io) "deployment strategist" ("New York" OR NYC OR Brooklyn)');
-  assert.throws(() => buildQueries({ ...cfg, titles: [] }), /titles/);
+  assert.throws(() => buildQueries({ ...q, titles: [] }), /titles/);
 });
 
 test('boardsFromLinks: readable boards only, each once', () => {
@@ -28,6 +29,10 @@ test('checkSerperConfig: missing or bad settings are a clear error', () => {
   assert.throws(() => checkSerperConfig({}), /"serper" settings are missing/);
   assert.throws(() => checkSerperConfig({ serper: { ...cfg, max_pages: 0 } }), /max_pages/);
   assert.equal(checkSerperConfig({ serper: cfg }).every_days, 7);
+  assert.throws(() => checkSerperConfig({ serper: { ...cfg, titles: ['x'] } }), /split in two/);
+  assert.throws(() => checkSerperConfig({ serper: { ...cfg, core_titles: [] } }), /core_titles/);
+  assert.throws(() => checkSerperConfig({ serper: { ...cfg, rotating_titles: ['Deployment Strategist'] } }), /listed twice/);
+  assert.equal(checkSerperConfig({ serper: { ...cfg, rotating_titles: [] } }).core_titles.length, 1);
 });
 
 test('discoveryDue: due with no OK run, or once every_days have passed', () => {
@@ -104,7 +109,7 @@ test('runDiscovery: a board that cannot be read is listed, not added; known boar
   const store = openStore(':memory:');
   store.addBoard('ashby:old', 'Old', 'you');
   const tried = [];
-  const r = await runDiscovery(store, { ...cfg, titles: ['x'] }, async () => ['https://jobs.ashbyhq.com/old/1', 'https://jobs.ashbyhq.com/dead/1', 'https://jobs.ashbyhq.com/good/1', 'https://jobs.lever.co/viaposting/2'], {
+  const r = await runDiscovery(store, { ...cfg, core_titles: ['x'], rotating_titles: [] }, async () => ['https://jobs.ashbyhq.com/old/1', 'https://jobs.ashbyhq.com/dead/1', 'https://jobs.ashbyhq.com/good/1', 'https://jobs.lever.co/viaposting/2'], {
     readable: async (b) => { tried.push(b); if (b === 'ashby:dead') throw new Error('HTTP 404'); },
     known: new Set(['lever:viaposting']),
   });
@@ -112,4 +117,50 @@ test('runDiscovery: a board that cannot be read is listed, not added; known boar
   assert.deepEqual(r.added.map((a) => a.board), ['ashby:good']);
   assert.deepEqual(r.unreadable, [{ board: 'ashby:dead', why: 'HTTP 404' }]);
   assert.equal(r.found, 4);
+});
+
+const rot = { ...cfg, core_titles: ['core a', 'core b'], rotating_titles: ['r1', 'r2', 'r3'] };
+
+test('planQueries: core searches first, then the rotating ones from the saved position, wrapping', () => {
+  const titles = (qs) => [...new Set(qs.map((x) => x.title))];
+  assert.deepEqual(titles(planQueries(rot, 0)), ['core a', 'core b', 'r1', 'r2', 'r3']);
+  assert.deepEqual(titles(planQueries(rot, 4)), ['core a', 'core b', 'r2', 'r3', 'r1']); // 4 sites a title: position 4 = r2
+  assert.deepEqual(titles(planQueries(rot, 12)), titles(planQueries(rot, 0))); // wraps
+  assert.equal(planQueries(rot, null).length, 20);
+});
+
+test('runDiscovery: core titles every run; rotating titles continue where the last run stopped', async () => {
+  const store = openStore(':memory:');
+  const tight = { ...rot, max_credits_per_run: 12 }; // 8 core + 4 rotating searches a run
+  const seen = [];
+  const fake = async (qq) => { seen.push(qq); return []; };
+  const r1 = await runDiscovery(store, tight, fake);
+  assert.equal(r1.capped, true);
+  assert.deepEqual(r1.rotation, { total: 12, done: 4, nextTitle: 'r2' });
+  assert.equal(store.getMeta(ROTATE_KEY), '4');
+  seen.length = 0;
+  const r2 = await runDiscovery(store, tight, fake);
+  assert.equal(seen.filter((x) => x.includes('"core a"')).length, 4); // core again
+  assert.equal(seen.filter((x) => x.includes('"r2"')).length, 4);   // then r2, not r1
+  assert.equal(seen.filter((x) => x.includes('"r1"')).length, 0);
+  assert.equal(r2.rotation.nextTitle, 'r3');
+  await runDiscovery(store, tight, fake);
+  assert.equal(store.getMeta(ROTATE_KEY), '0'); // r3 done: wraps back to r1
+});
+
+test('runDiscovery: a stopped run saves only the rotating searches it actually tried', async () => {
+  const store = openStore(':memory:');
+  let n = 0;
+  const r = await runDiscovery(store, rot, async () => { n++; if (n === 10) { const e = new Error('HTTP 400'); e.status = 400; throw e; } return []; });
+  assert.equal(r.stopped, true);
+  assert.equal(r.rotation.done, 1); // search 9 (first rotating) ran; search 10 failed and is tried again next run
+  assert.equal(store.getMeta(ROTATE_KEY), '1');
+});
+
+test('store meta: saved settings, and schema_version is protected', () => {
+  const store = openStore(':memory:');
+  assert.equal(store.getMeta('x'), null);
+  store.setMeta('x', 3); store.setMeta('x', 5);
+  assert.equal(store.getMeta('x'), '5');
+  assert.throws(() => store.setMeta('schema_version', 9), /managed/);
 });

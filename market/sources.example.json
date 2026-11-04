@@ -1,5 +1,5 @@
 {
-  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66); each title is searched on each readable job-board site in any of the places, once every every_days; one search page = one credit; needs SERPER_API_KEY in private/.env.",
+  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66, D69); each title is searched on each readable job-board site in any of the places, once every every_days. core_titles are searched every run; rotating_titles take turns with what is left of max_credits_per_run, each run continuing where the last stopped; one search page = one credit; needs SERPER_API_KEY in private/.env.",
   "getro_boards": [
     {
       "name": "Thrive Capital",
@@ -20,15 +20,19 @@
     "every_days": 7,
     "max_credits_per_run": 50,
     "max_pages": 2,
-    "titles": [
+    "core_titles": [
       "deployment strategist",
       "forward deployed",
-      "AI strategist",
+      "AI strategist"
+    ],
+    "rotating_titles": [
       "solutions strategist",
       "AI transformation",
       "strategy & operations",
       "business operations",
-      "chief of staff"
+      "chief of staff",
+      "S&O",
+      "GTM strategy"
     ],
     "places": [
       "New York",

@@ -278,6 +278,15 @@ class Store {
       JSON.stringify(result.flags), JSON.stringify(result.steps), JSON.stringify(facts), rulesHash, promptHash);
   }
 
+  /** A small saved setting (e.g. where the search rotation stopped), or null. */
+  getMeta(key) {
+    return this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
+  }
+  setMeta(key, value) {
+    if (key === 'schema_version') throw new Error('schema_version is managed by the store.');
+    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value));
+  }
+
   startScan(source, at = new Date()) {
     return Number(this.db.prepare('INSERT INTO scans (source, started_at) VALUES (?, ?)').run(source, new Date(at).toISOString()).lastInsertRowid);
   }

@@ -47,6 +47,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `market/backup.mjs`: daily dated `market.db` copy via SQLite `VACUUM INTO` (safe while open, integrity-checked), newest 30 kept (D54); they reach iCloud through the synced workspace folder, which every run checks and reports if it isn't synced (D59).
 
 ### Changed
+- Search-engine discovery (D69): the core titles (deployment strategist, forward deployed, AI strategist) are searched every run; the other titles take turns with the credits left, each run continuing where the last one stopped. Two titles added to the rotation: "S&O" and "GTM strategy". `sources.json`: `serper.titles` is now `core_titles` + `rotating_titles`.
 - Daily run texts (D63): a morning summary every successful run (boards, new postings, new NYC roles by tier, S/A roles by name); failures send a loud, unmistakable notice instead. `daily.sh --sample-messages` sends one of each.
 - Tier rules (D62): no posted pay caps a role at A, or at B when the company is not AI-native; applied after drops.
 - Tier engine: a role asking exactly 1 year more than the candidate has is capped by the new `caps.reach_1_year` setting; larger gaps keep `caps.reach` (D46). Existing settings files need the new key, and the engine stops with a clear error if it is missing.
