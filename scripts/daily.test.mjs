@@ -182,3 +182,12 @@ test('summary: says how many roles wait for later runs (D67)', () => {
   assert.match(s, /⏳ 201 more NYC roles waiting; graded over the next runs/);
   assert.doesNotMatch(successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': TIER_OUT }), /waiting/);
 });
+
+test('summary: a usage-limit pause is loud but says nothing is broken (D68)', () => {
+  const out = '231 untiered NYC role(s) to tier (x); tiering 30 (cap: 30 a run, 5 per company).\n201 role(s) wait for a later run.\n  [1/30] A         Pace — Deployment Strategist\nPaused: Claude usage limit reached after 1 of 30 graded; 29 left for the next run.\n';
+  const s = successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': out });
+  assert.match(s, /^🚨 ⏳ Job search: grading PAUSED \(/);
+  assert.match(s, /Claude usage limit hit after 1 of 30 roles\. Nothing is broken/);
+  assert.match(s, /⏳ 230 more NYC roles waiting/);
+  assert.doesNotMatch(s, /✅/);
+});

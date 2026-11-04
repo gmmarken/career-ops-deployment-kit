@@ -30,6 +30,15 @@ export function claudeArgs({ systemPrompt, schema, tools = [], model = DEFAULT_M
   return args;
 }
 
+/**
+ * Is this error Claude's plan usage limit (5-hour, session or weekly), not a broken call? The
+ * daily run then pauses grading instead of failing every remaining role (D68).
+ */
+const USAGE_LIMIT = /usage limit reached|hit your (\w+ )?limit|\b(5-hour|five-hour|session|weekly|opus) limit\b|limit reached\s*[·∙|]/i;
+export function isUsageLimit(message) {
+  return USAGE_LIMIT.test(String(message ?? ''));
+}
+
 /** Pull the structured answer out of `claude -p --output-format json` output. */
 export function parseClaudeOutput(stdout) {
   let envelope;

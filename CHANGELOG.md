@@ -13,6 +13,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Usage-limit pause (D68): if grading hits the Claude usage limit, `tier-new` stops and keeps what it graded, and the morning text reads "🚨 ⏳ Job search: grading PAUSED" instead of listing every remaining role as failed. The rest are graded on the next run.
 - Daily grading cap (D67): the daily run grades at most `tier_per_day` (30) new roles, at most `tier_per_company` (5) per company, deployment / AI strategist roles first, then forward-deployed PM, chief of staff, BizOps and borderline. The rest wait for later runs, and the morning text says how many (⏳). Both settings are required in `private/config/daily.json`. `tier-new.sh --per-company N`.
 - Search-engine discovery (D52, D66): once a week `market.sh scan` searches Google through Serper for the target titles on Ashby, Greenhouse, Lever and Rippling boards in New York (NYC, Brooklyn), and adds each company board found to the scan. 32 searches, capped at 50 credits a run. `market.sh discover --dry-run` lists the searches. Needs `SERPER_API_KEY` in `private/.env` and a `serper` block in `private/config/sources.json`.
 - `market.sh retier [--dry-run]`: after a rules change, re-decide open tiered roles from their saved facts (no AI); only tier changes are recorded and synced (D62).

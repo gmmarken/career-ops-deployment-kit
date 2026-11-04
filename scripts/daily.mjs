@@ -79,12 +79,14 @@ export function runFacts(outputs) {
   const boardLines = [...scan.matchAll(/^\s*✓ \S+ \(.*\): \d+ open, (\d+) new, \d+ closed$/gm)];
   const queued = tier.match(/^(\d+) untiered NYC role/m);
   const waiting = tier.match(/^(\d+) role\(s\) wait for a later run/m);
+  const paused = tier.match(/^Paused: Claude usage limit reached after (\d+) of (\d+) graded; (\d+) left/m);
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
     newPostings: boardLines.length ? boardLines.reduce((n, m) => n + Number(m[1]), 0) : (boardsM ? 0 : null),
     queued: queued ? Number(queued[1]) : null,
     waiting: waiting ? Number(waiting[1]) : 0,
+    paused: paused ? { graded: Number(paused[1]), of: Number(paused[2]), left: Number(paused[3]) } : null,
     graded,
   };
 }
@@ -95,7 +97,10 @@ const MAX_LISTED = 6;
 /** The success text (D63): a calm morning summary and a nudge to go apply. */
 export function successSummary(date, outputs) {
   const f = runFacts(outputs);
-  const lines = [`✅ Job search: morning run done (${shortDate(date)})`];
+  // Paused on the Claude usage limit (D68): nothing is broken, but it needs your eye.
+  const lines = f.paused
+    ? [`🚨 ⏳ Job search: grading PAUSED (${shortDate(date)})`, `Claude usage limit hit after ${f.paused.graded} of ${f.paused.of} roles. Nothing is broken; the rest are graded on the next run.`]
+    : [`✅ Job search: morning run done (${shortDate(date)})`];
   lines.push(f.boards == null ? 'Boards: couldn\'t read the count (see log)' : `${f.boards} boards checked · ${f.newPostings} new postings`);
   if (f.queued == null) lines.push('New roles: couldn\'t read the count (see log)');
   else if (!f.graded.length) lines.push('No new NYC roles to grade today.');
@@ -106,7 +111,8 @@ export function successSummary(date, outputs) {
     for (const g of top.slice(0, MAX_LISTED)) lines.push(`${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`);
     if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S/A in Notion`);
   }
-  if (f.waiting) lines.push(`⏳ ${f.waiting} more NYC role${f.waiting === 1 ? '' : 's'} waiting; graded over the next runs`);
+  const wait = f.waiting + (f.paused?.left ?? 0);
+  if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);
   lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
   return lines.join('\n');
 }
