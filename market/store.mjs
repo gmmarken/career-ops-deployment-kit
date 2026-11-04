@@ -281,6 +281,10 @@ class Store {
   startScan(source, at = new Date()) {
     return Number(this.db.prepare('INSERT INTO scans (source, started_at) VALUES (?, ?)').run(source, new Date(at).toISOString()).lastInsertRowid);
   }
+  /** When a source last finished a scan with status ok (ISO time), or null. */
+  lastOkScan(source) {
+    return this.db.prepare("SELECT MAX(started_at) AS at FROM scans WHERE source = ? AND status = 'ok'").get(source)?.at ?? null;
+  }
   finishScan(id, { status, found = null, error = null }, at = new Date()) {
     if (!['ok', 'error'].includes(status)) throw new Error(`scan status must be ok or error, got ${status}`);
     this.db.prepare('UPDATE scans SET finished_at = ?, status = ?, found = ?, error = ? WHERE id = ?').run(new Date(at).toISOString(), status, found, error, id);
@@ -467,7 +471,7 @@ class Store {
   // --- Job boards found without a recorded posting (D50–D51) -------------------------
 
   addBoard(board, company, source, detail = null, at = new Date()) {
-    if (!/^(ashby|greenhouse|lever|rippling):[^\s:]+$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse:, lever: or rippling:<name>).`);
+    if (!/^(ashby|greenhouse|lever|rippling):\S(?:[^:]*\S)?$/.test(board)) throw new Error(`Not a readable job board key: ${board} (expected ashby:, greenhouse:, lever: or rippling:<name>).`);
     if (!company?.trim()) throw new Error('A board needs a company name.');
     const res = this.db.prepare('INSERT OR IGNORE INTO boards (board, company, source, detail, added_at) VALUES (?, ?, ?, ?, ?)').run(board, company.trim(), source, detail, new Date(at).toISOString());
     return { added: Boolean(res.changes) };

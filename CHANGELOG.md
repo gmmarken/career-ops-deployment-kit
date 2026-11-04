@@ -5,12 +5,16 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Rippling links that start with a language code (`ats.rippling.com/es-419/<company>/…`) were read as a board named after the language; the code is now skipped.
+- Board names with a space (e.g. Ashby's `hippocratic ai`) were stored URL-encoded and then encoded again when read, so the board returned "not found". Links are now decoded once; board names may contain spaces.
 - Daily run blocked by macOS (D65): the 7 AM job couldn't open the kit in the Documents folder, and failed without a text. `install-daily.sh` now builds a small helper app (`~/Applications/CareerOps Daily.app`) that launchd starts; you allow it into Documents once. If the run can't start or can't text, the app sends the failure text itself. New `install-daily.sh --run-now` and `--test-message`. A failed iMessage send now says why (e.g. waiting for the Messages permission) instead of repeating the whole command, text and phone number.
 
 ### Removed
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Daily grading cap (D67): the daily run grades at most `tier_per_day` (30) new roles, at most `tier_per_company` (5) per company, deployment / AI strategist roles first, then forward-deployed PM, chief of staff, BizOps and borderline. The rest wait for later runs, and the morning text says how many (⏳). Both settings are required in `private/config/daily.json`. `tier-new.sh --per-company N`.
+- Search-engine discovery (D52, D66): once a week `market.sh scan` searches Google through Serper for the target titles on Ashby, Greenhouse, Lever and Rippling boards in New York (NYC, Brooklyn), and adds each company board found to the scan. 32 searches, capped at 50 credits a run. `market.sh discover --dry-run` lists the searches. Needs `SERPER_API_KEY` in `private/.env` and a `serper` block in `private/config/sources.json`.
 - `market.sh retier [--dry-run]`: after a rules change, re-decide open tiered roles from their saved facts (no AI); only tier changes are recorded and synced (D62).
 - Rippling board reader (D60): whole boards and single postings from Rippling's public pages; `tier.sh` and the scan accept `ats.rippling.com` links. Earlier investor-board traces to Rippling are picked up.
 - a16z portfolio board (D61): `market.sh scan` checks a16z's company pages (about weekly each), and adds the boards of companies with target or borderline titles. Configure under `a16z_boards` in `private/config/sources.json`.

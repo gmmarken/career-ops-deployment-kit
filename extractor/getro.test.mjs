@@ -40,6 +40,7 @@ test('parseJobPage fails loudly on a changed or closed page', () => {
 
 test('boardFromUrl: readable boards from job or board links; others are null', () => {
   assert.equal(boardFromUrl('https://jobs.ashbyhq.com/Acme/abc'), 'ashby:acme');
+  assert.equal(boardFromUrl('https://jobs.ashbyhq.com/Hippocratic%20AI/abc'), 'ashby:hippocratic ai'); // decoded once, not stored as %20
   assert.equal(boardFromUrl('https://jobs.ashbyhq.com/acme'), 'ashby:acme');
   assert.equal(boardFromUrl('https://job-boards.greenhouse.io/stripe/jobs/1'), 'greenhouse:stripe');
   assert.equal(boardFromUrl('https://boards.greenhouse.io/embed/job_app?for=notion&token=1'), 'greenhouse:notion');

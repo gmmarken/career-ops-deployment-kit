@@ -9,6 +9,9 @@ const nextPage = (pageProps) => `<html><script id="__NEXT_DATA__" type="applicat
 test('Rippling links: job URL and board key', () => {
   assert.deepEqual(parseJobUrl('https://ats.rippling.com/pace/jobs/abc-123'), { ats: 'rippling', board: 'pace', id: 'abc-123' });
   assert.equal(boardFromUrl('https://ats.rippling.com/pace/jobs/abc-123'), 'rippling:pace');
+  assert.equal(boardFromUrl('https://ats.rippling.com/es-419/drivepoint/jobs/abc-123'), 'rippling:drivepoint'); // language code skipped
+  assert.equal(parseJobUrl('https://ats.rippling.com/pt-BR/acme/jobs/x1').board, 'acme');
+  assert.deepEqual(parseJobUrl('https://jobs.ashbyhq.com/hippocratic%20ai/abc-1'), { ats: 'ashby', board: 'hippocratic ai', id: 'abc-1' });
 });
 
 test('Rippling board page: jobs with locations and work model; total pages', () => {
