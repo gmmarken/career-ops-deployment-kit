@@ -39,17 +39,17 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Batch-tier new NYC target-family roles (`tier-new.sh`)
 - [x] Run the scan daily: `scripts/daily.sh` via launchd (scan → `tier-new.sh` → backup), an iMessage every morning: a summary when it worked, a loud failure notice when it didn't (D47, D53, D63); launchd starts a helper app macOS allows into Documents (D65)
 - [x] Daily dated `market.db` backup, keep 30, reaching iCloud through the synced workspace folder (D48, D54, D59)
-- [ ] Search-engine discovery of ATS postings (deployment-family titles, New York)
+- [ ] Search-engine discovery (Serper): target titles on readable job-board sites in New York, weekly, boards found added to the scan (D52, D66)
 - [x] Title classifier v2: more title patterns, plus a no-AI text check for borderline titles (D49, D56)
 - [x] Investor job boards on Getro (Thrive, Scale) → companies' own boards added to the scan (D50–D51, D57)
 - [x] Companies to Watch: a watched company with no readable board is reported; `market.sh add-board` (D51)
 - [x] Rippling board reader (D60)
 - [x] a16z portfolio board: relevant companies traced to their boards, pages rechecked weekly (D61)
 - [x] ~~Built In NYC reader~~: dropped, its terms don't clearly allow it (D64)
-- [ ] Serper discovery + NYC tech funding sites
 
 ## Phase 6 — Company Radar + Form D
 - [ ] SEC Form D provider (NY filings flagged)
+- [ ] NYC tech funding news (newly funded startups, before they post jobs); moved from Phase 5 (D66)
 - [ ] Radar enrichment: funding, what they do, leaders (public sources), NYC presence, open roles, deployment-fit read
 
 ## Phase 7 — Delivery

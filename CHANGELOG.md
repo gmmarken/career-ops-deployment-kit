@@ -12,6 +12,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Search-engine discovery (D52, D66): once a week `market.sh scan` searches Google through Serper for the target titles on Ashby, Greenhouse, Lever and Rippling boards in New York (NYC, Brooklyn), and adds each company board found to the scan. 32 searches, capped at 50 credits a run. `market.sh discover --dry-run` lists the searches. Needs `SERPER_API_KEY` in `private/.env` and a `serper` block in `private/config/sources.json`.
 - `market.sh retier [--dry-run]`: after a rules change, re-decide open tiered roles from their saved facts (no AI); only tier changes are recorded and synced (D62).
 - Rippling board reader (D60): whole boards and single postings from Rippling's public pages; `tier.sh` and the scan accept `ats.rippling.com` links. Earlier investor-board traces to Rippling are picked up.
 - a16z portfolio board (D61): `market.sh scan` checks a16z's company pages (about weekly each), and adds the boards of companies with target or borderline titles. Configure under `a16z_boards` in `private/config/sources.json`.

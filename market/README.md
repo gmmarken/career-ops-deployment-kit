@@ -9,7 +9,7 @@ The long-term market dataset: every posting the kit sees, when it was open, and 
 | `boards.mjs` | Which job boards the scan reads: boards seen on recorded postings, plus boards found on investor job boards or added by hand; watched companies with no board |
 | `record.mjs` | Records one tiered posting plus fingerprints of the settings and extraction instructions |
 | `metrics.mjs` | Monthly open/new counts per company and family, rankings, CSV |
-| `cli.mjs` | `scripts/market.sh backfill · scan · relabel · add-board · metrics · stats · recall · enrich` |
+| `cli.mjs` | `scripts/market.sh backfill · scan · discover · relabel · add-board · metrics · stats · recall · enrich` |
 | `sources.example.json` | Template for `private/config/sources.json`: the investor job boards (Getro, a16z) the scan reads |
 
 ## How time works
@@ -57,12 +57,14 @@ scripts/market.sh stats                                 # refresh provisional mo
 scripts/market.sh scan                                  # investor boards → known boards → text check (all no AI)
 scripts/market.sh relabel --dry-run                     # show what the current title classifier would change
 scripts/market.sh add-board <job link> --company NAME   # read this company's board from now on
+scripts/market.sh discover [--dry-run] [--force]        # search-engine discovery now (normally weekly, inside scan)
 ```
 
 ## What a scan does (D41, D49–D51)
 1. **Investor job boards (Getro).** For each board in `private/config/sources.json`, read its public sitemap: every job link, with the title in the link. For each company with a target or borderline title that hasn't been traced yet, open **one** of its job pages to see where the company really posts jobs. Ashby, Greenhouse and Lever boards are added to the scan; anything else is listed as "posts somewhere we can't read yet". Postings themselves always come from the company's own board.
    **a16z-style portfolio boards** (`a16z_boards`, D61): the sitemap lists one page per company; up to 150 due pages per run are opened (new ones first, then any not checked for 7 days). A company with a target or borderline title among its listed jobs has its readable boards added.
 2. **Every known board** is read in full (Ashby, Greenhouse, Lever, Rippling).
+   **Search-engine discovery** (`serper`, D66): once every `every_days` (7), each title is searched on each readable job-board site (Ashby, Greenhouse, Lever, Rippling) in New York, NYC or Brooklyn, through Serper (Google results). Each company board in the results is added. One search page = one credit; a run stops at `max_credits_per_run`. A bad key or no credits stops the run and is reported. `market.sh discover --dry-run` lists the searches without spending; `--force` runs it now.
 3. **Companies you Watch** with no readable board are reported as a problem, with the fix (`add-board`).
 4. **Text check.** Open NYC postings labelled `borderline` by title are read from their board and checked for three things: AI work, putting it into use (deploy, implement, roll out, forward-deployed), and customers. Only hits are tiered by `tier-new.sh`, so AI is spent only on promising roles. The words found are stored with the result.
 

@@ -25,6 +25,8 @@ import { syncAll } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
+import { readSerperKey, search as serperSearch, buildQueries } from '../extractor/serper.mjs';
+import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
@@ -205,6 +207,7 @@ function loadSources() {
     if (!Array.isArray(cfg[key])) throw new Error(`${path}: "${key}" must be a list (it can be empty). See market/sources.example.json.`);
     for (const b of cfg[key]) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each ${key} entry needs a "name" and an https "url".`);
   }
+  checkSerperConfig(cfg, path);
   return cfg;
 }
 
@@ -284,6 +287,45 @@ async function readPortfolio(store, { name, url }) {
   return out;
 }
 
+/**
+ * Search-engine discovery (D66), when due (or forced). Prints one summary line and any new
+ * boards; returns the problems to report.
+ */
+async function serperStep(store, cfg, { force = false } = {}) {
+  const { due, nextInDays } = discoveryDue(store.lastOkScan(SERPER_SOURCE), cfg.every_days);
+  if (!due && !force) { console.log(`  · Search discovery (Serper): not due; next run in ${nextInDays} day(s)`); return []; }
+  const scanId = store.startScan(SERPER_SOURCE);
+  try {
+    const key = readSerperKey(dataDir);
+    const r = await runDiscovery(store, cfg, (q, page) => serperSearch(key, q, page), { pause: () => sleep(300) });
+    store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.found, error: r.errors.join(' | ') } : { status: 'ok', found: r.found });
+    console.log(`  ✓ Search discovery (Serper): ${r.searches} searches, ${r.credits} credit(s); ${r.found} readable board(s) in results, ${r.added.length} new board(s) to scan${r.capped ? ` (stopped at the ${cfg.max_credits_per_run}-credit cap)` : ''}`);
+    if (r.added.length) console.log(`    New: ${r.added.map((a) => a.board).join(', ')}`);
+    if (r.stopped) console.log('    Stopped early: the remaining searches would fail the same way.');
+    return r.errors.map((e) => `Serper: ${e}`);
+  } catch (err) {
+    store.finishScan(scanId, { status: 'error', error: err.message });
+    return [`Serper: ${err.message}`];
+  }
+}
+
+/** market.sh discover [--dry-run] [--force]: run search discovery on its own. */
+async function discover() {
+  const cfg = loadSources().serper;
+  if (process.argv.includes('--dry-run')) {
+    const qs = buildQueries(cfg);
+    for (const { q } of qs) console.log(q);
+    console.log(`\n${qs.length} searches; at most ${Math.min(qs.length * cfg.max_pages, cfg.max_credits_per_run)} credit(s) per run (cap ${cfg.max_credits_per_run}), every ${cfg.every_days} day(s). Nothing was searched.`);
+    return;
+  }
+  const store = openStore();
+  try {
+    const problems = await serperStep(store, cfg, { force: process.argv.includes('--force') });
+    for (const p of problems) console.log(`  ✗ ${p}`);
+    if (problems.length) process.exitCode = 1;
+  } finally { store.close(); }
+}
+
 async function scan() {
   const rules = loadRules();
   const wanted = process.argv.slice(3).filter((a) => !a.startsWith('--'));
@@ -321,6 +363,7 @@ async function scan() {
           console.log(`  ✗ ${g.name}: ${err.message}`);
         }
       }
+      for (const p of await serperStep(store, sources.serper)) { failures.push(p); console.log(`  ✗ ${p}`); }
     }
 
     // 2. Read every known job board in full.
@@ -447,7 +490,8 @@ try {
   else if (cmd === 'relabel') relabel();
   else if (cmd === 'retier') await retier();
   else if (cmd === 'add-board') addBoard();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME]');
+  else if (cmd === 'discover') await discover();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME] | discover [--dry-run] [--force]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);
