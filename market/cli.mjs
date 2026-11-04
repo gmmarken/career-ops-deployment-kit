@@ -297,10 +297,12 @@ async function serperStep(store, cfg, { force = false } = {}) {
   const scanId = store.startScan(SERPER_SOURCE);
   try {
     const key = readSerperKey(dataDir);
-    const r = await runDiscovery(store, cfg, (q, page) => serperSearch(key, q, page), { pause: () => sleep(300) });
+    const known = new Set(knownBoards(store.postings(), store.boards()).boards.keys());
+    const r = await runDiscovery(store, cfg, (q, page) => serperSearch(key, q, page), { pause: () => sleep(300), readable: (b) => listBoard(b), known });
     store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.found, error: r.errors.join(' | ') } : { status: 'ok', found: r.found });
     console.log(`  ✓ Search discovery (Serper): ${r.searches} searches, ${r.credits} credit(s); ${r.found} readable board(s) in results, ${r.added.length} new board(s) to scan${r.capped ? ` (stopped at the ${cfg.max_credits_per_run}-credit cap)` : ''}`);
     if (r.added.length) console.log(`    New: ${r.added.map((a) => a.board).join(', ')}`);
+    if (r.unreadable.length) console.log(`    Found but not readable, not added (tried again next run): ${r.unreadable.map((u) => u.board).join(', ')}`);
     if (r.stopped) console.log('    Stopped early: the remaining searches would fail the same way.');
     return r.errors.map((e) => `Serper: ${e}`);
   } catch (err) {

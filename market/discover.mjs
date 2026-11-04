@@ -29,11 +29,15 @@ export function discoveryDue(lastOkAt, everyDays, now = new Date()) {
  * One discovery run. `search(q, page)` returns result links. A full first page (10 results)
  * that turned up a new board earns the next page, up to max_pages, while credits last.
  * An error that means every search would fail (bad key, no credits) stops the run.
- * Returns { searches, credits, found, added: [{board, q}], capped, stopped, errors: [] }.
+ * A board not yet known is added only if `readable(board)` succeeds (one free read of the
+ * board), so a dead or unreadable board doesn't fail every daily scan. It is listed instead,
+ * and tried again next run.
+ * Returns { searches, credits, found, added: [{board, q}], unreadable: [{board, why}], capped, stopped, errors: [] }.
  */
-export async function runDiscovery(store, cfg, search, { pause = () => Promise.resolve() } = {}) {
-  const out = { searches: 0, credits: 0, found: 0, added: [], capped: false, stopped: false, errors: [] };
+export async function runDiscovery(store, cfg, search, { pause = () => Promise.resolve(), readable = async () => {}, known = new Set() } = {}) {
+  const out = { searches: 0, credits: 0, found: 0, added: [], unreadable: [], capped: false, stopped: false, errors: [] };
   const seen = new Set();
+  const have = new Set([...known, ...store.boards().map((b) => b.board)]);
   for (const { q } of buildQueries(cfg)) {
     for (let page = 1; page <= cfg.max_pages; page++) {
       if (out.credits >= cfg.max_credits_per_run) { out.capped = true; break; }
@@ -50,9 +54,12 @@ export async function runDiscovery(store, cfg, search, { pause = () => Promise.r
       if (page === 1) out.searches++;
       let newHere = 0;
       for (const board of boardsFromLinks(links)) {
-        if (!seen.has(board)) { seen.add(board); out.found++; }
+        if (seen.has(board)) continue;
+        seen.add(board); out.found++;
+        if (have.has(board)) continue;
+        try { await readable(board); } catch (err) { out.unreadable.push({ board, why: err.message }); continue; }
         const company = board.slice(board.indexOf(':') + 1);
-        if (store.addBoard(board, company, SOURCE, q).added) { out.added.push({ board, q }); newHere++; }
+        if (store.addBoard(board, company, SOURCE, q).added) { out.added.push({ board, q }); have.add(board); newHere++; }
       }
       if (links.length < 10 || newHere === 0) break;
     }

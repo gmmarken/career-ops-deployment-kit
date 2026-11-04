@@ -99,3 +99,17 @@ test('search: sends the query, returns links; HTTP errors carry the status', asy
   await assert.rejects(search('k', 'q1', 1, async () => ({ ok: false, status: 403 })), (e) => e.status === 403 && /SERPER_API_KEY/.test(e.message));
   await assert.rejects(search('k', 'q1', 1, async () => ({ ok: true, json: async () => ({}) })), /no results list/);
 });
+
+test('runDiscovery: a board that cannot be read is listed, not added; known boards are not re-read', async () => {
+  const store = openStore(':memory:');
+  store.addBoard('ashby:old', 'Old', 'you');
+  const tried = [];
+  const r = await runDiscovery(store, { ...cfg, titles: ['x'] }, async () => ['https://jobs.ashbyhq.com/old/1', 'https://jobs.ashbyhq.com/dead/1', 'https://jobs.ashbyhq.com/good/1', 'https://jobs.lever.co/viaposting/2'], {
+    readable: async (b) => { tried.push(b); if (b === 'ashby:dead') throw new Error('HTTP 404'); },
+    known: new Set(['lever:viaposting']),
+  });
+  assert.deepEqual(tried, ['ashby:dead', 'ashby:good']);
+  assert.deepEqual(r.added.map((a) => a.board), ['ashby:good']);
+  assert.deepEqual(r.unreadable, [{ board: 'ashby:dead', why: 'HTTP 404' }]);
+  assert.equal(r.found, 4);
+});
