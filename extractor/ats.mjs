@@ -13,10 +13,17 @@ function pathParts(u) {
   });
 }
 
+// Rippling links may start with a language code (ats.rippling.com/es-419/acme/jobs/…): skip it.
+const RIPPLING_LOCALE = /^[a-z]{2}(-[A-Za-z0-9]{2,4})?$/;
+function ripplingParts(parts) {
+  return RIPPLING_LOCALE.test(parts[0] ?? '') && parts[1] && parts[1] !== 'jobs' ? parts.slice(1) : parts;
+}
+
 export function parseJobUrl(raw) {
   let u;
   try { u = new URL(raw); } catch { throw new Error(`Not a valid URL: ${raw}`); }
-  const parts = pathParts(u);
+  let parts = pathParts(u);
+  if (u.hostname.toLowerCase() === 'ats.rippling.com') parts = ripplingParts(parts);
   const host = u.hostname.toLowerCase();
   if (host === 'jobs.ashbyhq.com' && parts.length >= 2) return { ats: 'ashby', board: parts[0], id: parts[1] };
   if ((host === 'boards.greenhouse.io' || host === 'job-boards.greenhouse.io') && parts[1] === 'jobs' && parts[2]) {
@@ -110,6 +117,7 @@ export function boardFromUrl(raw) {
   try { u = new URL(raw); } catch { return null; }
   let parts;
   try { parts = pathParts(u); } catch { return null; }
+  if (u.hostname.toLowerCase() === 'ats.rippling.com') parts = ripplingParts(parts);
   const host = u.hostname.toLowerCase();
   if (host === 'jobs.ashbyhq.com' && parts[0]) return `ashby:${parts[0].toLowerCase()}`;
   if (host === 'jobs.lever.co' && parts[0]) return `lever:${parts[0]}`;
