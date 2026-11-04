@@ -12,6 +12,7 @@ import { openStore } from '../market/store.mjs';
 import { recordTiered } from '../market/record.mjs';
 import { TARGET_FAMILIES } from '../market/classify.mjs';
 import { pickBatch } from '../market/priority.mjs';
+import { isUsageLimit } from '../extractor/claude.mjs';
 import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -45,6 +46,7 @@ async function main() {
   const calls = [];
   const done = [];
   const failed = [];
+  let paused = false;
   for (const [i, p] of batch.entries()) {
     try {
       const { facts, calls: c } = await gatherFacts({ url: p.url }, { dataDir, rules });
@@ -56,6 +58,8 @@ async function main() {
       done.push({ id, company: facts.company.name, title: facts.posting.title, tier: result.tier, flags: result.flags });
       console.log(`  [${i + 1}/${batch.length}] ${result.tier.padEnd(9)} ${facts.company.name} — ${facts.posting.title}`);
     } catch (err) {
+      // Usage limit (D68): every remaining call would fail too, so stop; the rest wait.
+      if (isUsageLimit(err.message)) { paused = true; break; }
       failed.push(`${p.company} — ${p.title}: ${err.message.split('\n')[0]}`);
       console.log(`  [${i + 1}/${batch.length}] FAILED   ${p.company} — ${p.title}: ${err.message.split('\n')[0]}`);
     }
@@ -64,6 +68,10 @@ async function main() {
   const byTier = done.reduce((m, d) => ({ ...m, [d.tier]: (m[d.tier] ?? 0) + 1 }), {});
   console.log(`\nTiered ${done.length}: ${Object.entries(byTier).map(([t, n]) => `${t} ${n}`).join(' · ')}`);
   console.log(`AI calls: ${calls.length}, ~$${calls.reduce((s, c) => s + (c.cost_usd_equivalent ?? 0), 0).toFixed(2)} API-equivalent`);
+  if (paused) {
+    const left = batch.length - done.length - failed.length;
+    console.log(`Paused: Claude usage limit reached after ${done.length} of ${batch.length} graded; ${left} left for the next run.`);
+  }
   if (failed.length) throw new Error(`${failed.length} role(s) failed and were skipped:\n  ${failed.join('\n  ')}`);
 }
 
