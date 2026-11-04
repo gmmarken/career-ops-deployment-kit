@@ -6,7 +6,7 @@ import { join, basename } from 'node:path';
 import { decideTier } from '../engine/tier-engine.mjs';
 import { fetchPosting } from '../extractor/ats.mjs';
 import { extractJudgment, markdownSection } from '../extractor/extract.mjs';
-import { watchlistPath, loadWatchlist, findCompany, toCompanyFacts, researchCompany, saveResearch } from '../extractor/research.mjs';
+import { watchlistPath, loadWatchlist, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, applyResearch } from '../extractor/research.mjs';
 
 const payStr = (p) => `${p.min ?? '?'}-${p.max ?? '?'} ${p.currency ?? '?'}/${p.interval}`;
 
@@ -62,14 +62,19 @@ export async function gatherFacts(src, { dataDir, rules, model, research = true 
   const name = judgment.company_name.value || posting.company;
   let entry = findCompany(watchlist, name, posting.company);
   let companyNote = entry ? `watchlist (${entry.origin ?? 'watchlist'})` : null;
-  if (!entry) {
+  // A company found through a Form D or funding news has a record but no research yet.
+  const unresearched = entry && entry.found_via && !entry.researched_at;
+  if (!entry || unresearched) {
     const optimistic = decideTier({ posting, judgment, company: { ...toCompanyFacts(null, name), status: 'strong', origin: 'watchlist', verified: true } }, rules);
     if (!['S', 'A'].includes(optimistic.tier)) companyNote = `research skipped: best case is ${optimistic.tier}`;
     else if (!research) companyNote = 'research skipped: research turned off';
     else {
       const { company, usage: rUsage } = await researchCompany(name, { model });
       calls.push({ step: 'company-research', ...rUsage });
-      entry = saveResearch(wlPath, watchlist, company, [posting.company, name]);
+      if (entry) {
+        applyResearch(entry, company);
+        saveWatchlist(watchlist, { source: 'research', by: 'kit', path: wlPath });
+      } else entry = saveResearch(wlPath, watchlist, company, [posting.company, name]);
       companyNote = 'researched now (saved to watchlist, unverified)';
     }
   }

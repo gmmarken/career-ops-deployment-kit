@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { claudeArgs, parseClaudeOutput } from './claude.mjs';
 import { buildInput, markdownSection } from './extract.mjs';
-import { findCompany, normalizeName, toCompanyFacts, fillFromResearch, needsEnrichment } from './research.mjs';
+import { findCompany, normalizeName, toCompanyFacts, fillFromResearch, needsEnrichment, applyResearch, screenLeaders } from './research.mjs';
 
 const argAfter = (args, flag) => args[args.indexOf(flag) + 1];
 
@@ -81,7 +81,34 @@ test('enrich fills only empty fields and never your calls', () => {
   assert.deepEqual([entry.status, entry.verified, entry.ai_native, entry.reason], ['strong', true, true, 'Your call']);
   assert.equal(entry.researched_at, '2026-11-02');
 });
-test('needs enrichment: missing from watchlist, or present with no sources; each company once', () => {
-  const wl2 = { companies: [{ name: 'Acme AI', sources: [{ url: 'u' }] }, { name: 'SpaceX', sources: [] }] };
+test('needs enrichment: missing from watchlist, or never asked the Phase 6 questions (no fit facts); each company once', () => {
+  const wl2 = { companies: [{ name: 'Acme AI', sources: [{ url: 'u' }], fit_facts: {} }, { name: 'SpaceX', sources: [{ url: 'u' }] }] };
   assert.deepEqual(needsEnrichment(wl2, ['Acme AI', 'SpaceX', 'spacex', 'Newco']).map((x) => x.name), ['SpaceX', 'Newco']);
+});
+test('enrich merges sources and leaders; a generic Form D title takes the research title', () => {
+  const entry = { name: 'Minerva BI', sources: [{ url: 'sec', supports: 'Form D' }], leaders: [{ name: 'Jackson Engles', title: 'Executive officer', source_url: 'sec' }] };
+  const research = { sources: [{ url: 'sec', supports: 'dup' }, { url: 'site', supports: 'team page' }],
+    leaders: [{ name: 'jackson engles', title: 'CEO & Co-founder', source_url: 'site' }, { name: 'Daniel Saedi', title: 'CTO', source_url: 'site' }] };
+  const filled = fillFromResearch(entry, research, '2026-11-04');
+  assert.ok(filled.includes('sources') && filled.includes('leaders'));
+  assert.deepEqual(entry.sources.map((x) => x.url), ['sec', 'site']);
+  assert.deepEqual(entry.leaders.map((l) => `${l.name}|${l.title}`), ['Jackson Engles|CEO & Co-founder', 'Daniel Saedi|CTO']);
+});
+test('first research of a Form D / news record sets the company call; later research never does', () => {
+  const found = { name: 'Clark', status: 'unknown', ai_native: false, found_via: 'News', reason: 'Found via News; not researched yet' };
+  applyResearch(found, { status: 'strong', ai_native: true, reason: 'AI audit agents', sources: [] }, '2026-11-04');
+  assert.deepEqual([found.status, found.ai_native, found.reason], ['strong', true, 'AI audit agents']);
+  const yours = { name: 'Clark', status: 'not_strong', ai_native: false, found_via: 'News', researched_at: '2026-11-01', reason: 'Your call' };
+  applyResearch(yours, { status: 'strong', ai_native: true, reason: 'x', sources: [] }, '2026-11-04');
+  assert.deepEqual([yours.status, yours.ai_native, yours.reason], ['not_strong', false, 'Your call']);
+});
+test('leaders from LinkedIn or with contact details are dropped and reported', () => {
+  const { kept, dropped } = screenLeaders([
+    { name: 'A B', title: 'CEO', source_url: 'https://acme.com/team' },
+    { name: 'C D', title: 'COO', source_url: 'https://www.linkedin.com/in/cd' },
+    { name: 'E F', title: 'CTO (e@acme.com)', source_url: 'https://acme.com' },
+    { name: 'G H', title: 'CFO', source_url: 'press release' },
+  ]);
+  assert.deepEqual(kept.map((l) => l.name), ['A B']);
+  assert.deepEqual(dropped.map((d) => d.why), ['sourced to LinkedIn', 'contains contact details', 'no source link']);
 });
