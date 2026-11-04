@@ -30,9 +30,9 @@ Why: rules are testable and versioned, the eval set can pinpoint whether a miss 
 | 3 | **Tier engine** | Node module + unit tests | — (new) |
 | 4 | **Sources**: Companies to Watch / Radar boards | `portals.yml` (generated) | `scan.mjs`, ATS providers |
 | 5 | Startup boards | community plugin `startup-boards` | plugin engine |
-| 6 | **SEC Form D** | provider/ingest plugin (→ upstream PR) | `company-funded.mjs` pattern |
-| 7 | **Discovery**: Serper search + funding sites (AlleyWatch, Built In NYC, TechCrunch) | plugin(s) | `serper` community plugin, RSS pattern |
-| 8 | **Company Radar** — enrich new companies (funding, what they do, leaders from public sources, NYC presence, open roles, "could they use a DS?") | script + Notion DB | `company-funded.mjs` |
+| 6 | **SEC Form D** (`extractor/formd.mjs`, D70–D71) | reader in the kit (→ upstream PR in Phase 9) | `company-funded.mjs` idea; its feeds aren't reused (D72) |
+| 7 | **Discovery**: Serper job-board search (D66) + funding news: TechCrunch RSS, Serper news (D72). AlleyWatch and Built In are not read (terms) | kit readers | RSS pattern |
+| 8 | **Company Radar** — `market.sh radar`: funded companies in, research (funding, what they do, leaders from public sources, NYC presence, careers page), deployment fit by rule (`engine/fit.mjs`) | script + Notion DB | — |
 | 9 | **Notion: new Job Postings DB** (every role, date added, market-tracking fields) + **Company Radar DB** | export plugin | `plugins/notion` client code |
 | 10 | **iMessage S-tier alert** (macOS `osascript` → Messages) | notify plugin | notify hook |
 | 11 | **Weekly email** (Resend): funded NYC companies + new roles roundup | notify plugin | — (new) |
@@ -44,8 +44,9 @@ Why: rules are testable and versioned, the eval set can pinpoint whether a miss 
 
 ```
 launchd (daily) → run-daily.sh
-  1. discover: Form D + funding feeds + Serper → new companies → Company Radar (enrich)
-  2. scan: portals.yml (Watch + Radar boards) + startup boards → pipeline.md
+  1. scan: known boards + investor boards + weekly Serper job-board search (market.sh scan)
+  2. tier-new: grade up to 30 new NYC target roles
+  3. radar: Form D + TechCrunch + weekly news search → newly funded NYC companies → research 10 → fit → Notion
   3. liveness check (static "filled" = provisional)
   4. extract (claude -p, new postings only) → JSON
   5. tier engine → S/A/B/C + reasons
