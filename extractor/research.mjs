@@ -175,12 +175,15 @@ export function fillFromResearch(entry, company, today = new Date().toISOString(
 }
 
 /**
- * A record the kit created from a Form D or funding news has no company call yet. Its first
- * research sets status, AI-native and reason (unless you already set them in Notion), then
- * fills the empty fields. Any other record only gets its empty fields filled.
+ * A record the kit created before any research (from a Form D, funding news, or a company you
+ * only ticked in Notion) has no company call yet. Its first research sets status, AI-native
+ * and reason (unless you already set a status), then fills the empty fields. Any other
+ * record only gets its empty fields filled.
  */
+export const unresearched = (entry) => Boolean(entry) && !entry.researched_at && (entry.status ?? 'unknown') === 'unknown';
+
 export function applyResearch(entry, company, today) {
-  const first = entry.found_via && !entry.researched_at;
+  const first = unresearched(entry);
   const set = [];
   if (first) {
     if ((entry.status ?? 'unknown') === 'unknown' && company.status !== 'unknown') { entry.status = company.status; set.push('status'); }

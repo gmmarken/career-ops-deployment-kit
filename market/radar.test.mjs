@@ -63,6 +63,8 @@ test('Form D: screening drops amendments, funds, other cities, industries and sm
   assert.match(screenForm(parseFormD(formXml({ industry: 'Pooled Investment Fund' })), CFG), /industry/);
   assert.match(screenForm(parseFormD(formXml({ sold: '250000' })), CFG), /under the minimum/);
   assert.match(screenForm(parseFormD(formXml({ sold: 'Indefinite' })), CFG), /no amount sold/);
+  for (const n of ['Project Evergreen TopCo LP', 'Chrysler Holdings, LP', 'Halo Labs I LLC', 'Acme Co-Invest Fund II']) assert.match(screenForm(parseFormD(formXml({ name: n })), CFG), /investment vehicle/, n);
+  for (const n of ['Minerva BI, Inc.', 'Upright Education, Inc.', 'Mocean Holdings Corp']) assert.equal(screenForm(parseFormD(formXml({ name: n })), CFG), null, n);
 });
 
 test('Form D: display names drop legal suffixes; the SEC contact email is required', () => {
@@ -198,4 +200,15 @@ test('config: Form D and funding news settings are checked with clear messages',
   assert.throws(() => checkRadarConfig({ ...ok, form_d: undefined }), /"form_d" settings are missing/);
   assert.throws(() => checkRadarConfig({ ...ok, form_d: { ...CFG, contact_email: 'nope' } }), /contact email/);
   assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, techcrunch_feeds: ['https://alleywatch.com/feed/'] } }), /techcrunch/);
+});
+
+test('a company known only from a job board keeps "Job board" as how it was found', () => {
+  const store = openStore(':memory:');
+  store.company('traversal');
+  const r = recordFunded(store, companyIndex(store), { name: 'Traversal', amount_usd: 120e6, date: '2026-11-03', source_url: 'n', supports: 'x', found_via: 'News', source: 'news', nyc: true });
+  assert.equal(r.isNewCompany, false);
+  const e = store.companyRecords().find((c) => c.name === 'traversal');
+  assert.equal(e.found_via ?? null, null);
+  assert.match(e.reason, /a job board/);
+  store.close();
 });

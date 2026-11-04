@@ -98,7 +98,7 @@ test('first research of a Form D / news record sets the company call; later rese
   const found = { name: 'Clark', status: 'unknown', ai_native: false, found_via: 'News', reason: 'Found via News; not researched yet' };
   applyResearch(found, { status: 'strong', ai_native: true, reason: 'AI audit agents', sources: [] }, '2026-11-04');
   assert.deepEqual([found.status, found.ai_native, found.reason], ['strong', true, 'AI audit agents']);
-  const yours = { name: 'Clark', status: 'not_strong', ai_native: false, found_via: 'News', researched_at: '2026-11-01', reason: 'Your call' };
+  const yours = { name: 'Clark', status: 'not_strong', ai_native: false, found_via: 'News', reason: 'Your call' };
   applyResearch(yours, { status: 'strong', ai_native: true, reason: 'x', sources: [] }, '2026-11-04');
   assert.deepEqual([yours.status, yours.ai_native, yours.reason], ['not_strong', false, 'Your call']);
 });

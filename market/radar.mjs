@@ -56,7 +56,7 @@ export function companyIndex(store) {
 const newRecord = (name, foundVia) => ({
   name, aliases: [], status: 'unknown', verified: false, watch: false, ai_native: false, stage: 'unknown', investors: [],
   what_they_do: null, parent: null, owner_categories: [], is_mbb: false, sources: [], leaders: [], origin: 'research',
-  found_via: foundVia, reason: `Found via ${foundVia}; not researched yet`,
+  found_via: foundVia, reason: `Found via ${foundVia ?? 'a job board'}; not researched yet`,
 });
 
 /**
@@ -67,7 +67,8 @@ const newRecord = (name, foundVia) => ({
 export function recordFunded(store, idx, f, at = new Date()) {
   const hit = idx.get(companyKey(f.name)) ?? (f.legal_name ? idx.get(companyKey(f.legal_name)) : null) ?? null;
   const name = hit?.name ?? f.name;
-  const e = hit?.entry ? structuredClone(hit.entry) : newRecord(name, f.found_via);
+  // A company we only knew by name (from a job board) keeps "Job board" as how it was found.
+  const e = hit?.entry ? structuredClone(hit.entry) : newRecord(name, hit ? null : f.found_via);
   if (f.legal_name && normalizeName(f.legal_name) !== normalizeName(name) && !(e.aliases ?? []).includes(f.legal_name)) e.aliases = [...(e.aliases ?? []), f.legal_name];
   const round = { round: f.round ?? null, amount_usd: f.amount_usd ?? null, date: f.date ?? null, source_url: f.source_url, found_via: f.source };
   const last = e.last_raise;

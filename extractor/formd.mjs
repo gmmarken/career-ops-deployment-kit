@@ -108,7 +108,7 @@ export function parseFormD(xml) {
   }).filter((p) => p.name);
   const firstSale = tag(tag(offering, 'dateOfFirstSale') ?? '', 'value');
   return {
-    name, city: tag(address, 'city'), state: tag(address, 'stateOrCountry'),
+    name, entity_type: tag(issuer, 'entityType'), city: tag(address, 'city'), state: tag(address, 'stateOrCountry'),
     year_of_inc: tag(tag(issuer, 'yearOfInc') ?? '', 'value'),
     industry, amendment: tag(offering, 'isAmendment') === 'true',
     first_sale: /^\d{4}-\d{2}-\d{2}$/.test(firstSale ?? '') ? firstSale : null,
@@ -138,9 +138,15 @@ export function screenHit(f, cfg) {
   return null;
 }
 
+// Partnerships, trusts and numbered or holding vehicles raise money for investments, not to hire.
+const VEHICLE_TYPES = ['Limited Partnership', 'General Partnership', 'Business Trust'];
+const VEHICLE_NAME = /\b(L\.?P\.?|fund|SPV|feeder|co-?invest\w*|aggregator|topco|holdco|DST|REIT)\b|\s(I|II|III|IV|V|VI|VII|VIII|IX|X)(,?\s+(LLC|L\.L\.C\.|Inc\.?|LP))?\.?$/i;
+
 /** Second pass, from the form itself. Returns null if it counts, else why not. */
 export function screenForm(form, cfg) {
   if (form.amendment) return 'amendment';
+  if (VEHICLE_TYPES.includes(form.entity_type)) return `investment vehicle (${form.entity_type})`;
+  if (VEHICLE_NAME.test(form.name)) return 'investment vehicle (name)';
   if (!cfg.industry_groups.includes(form.industry)) return `industry: ${form.industry}`;
   if (form.amount_sold == null) return 'no amount sold given';
   if (form.amount_sold < cfg.min_amount_usd) return `raised $${Math.round(form.amount_sold).toLocaleString('en-US')} (under the minimum)`;
