@@ -64,7 +64,8 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] Pace: ~1/day, ≤3/day, ≤5/week; overflow queued by family, pay, newest (D85)
 - [x] Every CV line verified against `cv.md`: line-by-line checks plus career-ops' fact gate; a failure blocks the pack (D84, D88)
 - [x] Project map: each CV line → cv.md → the project behind it (D90)
-- [ ] Later: pick the CV look (colors/template); refresh the job-search-agent project line
+- [x] CV look: navy (D91)
+- [ ] Refresh the job-search-agent project line in cv.md (wording waits on the candidate)
 
 ## Phase 9 — Ship
 - [ ] `install.sh` + `/onboard`

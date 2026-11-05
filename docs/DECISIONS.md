@@ -511,3 +511,7 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **Context:** The candidate wants to be sure he can speak to every line, including ones carried over from an older resume that he no longer remembers in detail.
 **Decision:** The candidate asked for it. `private/cv-projects.md` (private, never in the repo or Notion) has one section per cv.md line: the project, what he did, who he worked with, what he'd say, and which old resume it was on. `scripts/packs.sh notes` adds empty sections for new cv.md lines and lists the ones still empty. Each pack's `cv-map.md` shows every tailored bullet → its cv.md line(s) → the notes. Empty notes are flagged in the map and in the pack README, but don't block the pack.
 **Also changed at the candidate's request:** cv.md now says "context engineering" (not "prompt and context engineering") and "AI agent" (not "AI tool"), with the old wording added to the banned phrases. GabesGridTalk moved under Projects, and "Additional" became "Interests".
+
+## D91 — The CV look: navy (2026-11-04)
+**Options:** (A) career-ops' default (teal and purple, with a gradient rule); (B) navy, one color; (C) black and gray; (D) the plainer "Jake" template (no Interests section).
+**Decision:** B, the candidate's call, from the four looks rendered side by side with his own CV. It's set as `style.accent_color` / `secondary_color` (#1F3A5F) in `private/config/profile.yml`, which career-ops' PDF step reads; no code change.
