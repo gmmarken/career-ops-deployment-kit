@@ -503,6 +503,7 @@ async function scan() {
     const retired = store.retiredBoards();
     const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards].filter(([b]) => !retired.has(b));
     const gone = [];
+    const counting = []; // "not found" but not yet retired: a summary line, not a failure (D93)
     if (!list.length) throw new Error('No known job boards yet. Tier a role from an Ashby, Greenhouse or Lever link first, or pass a board like lever:palantir.');
     console.log(`Scanning ${list.length} board(s)…`);
     for (const [board, company] of list) {
@@ -533,12 +534,17 @@ async function scan() {
           console.log(`  🗑 ${board}: not found ${streak} runs in a row, so it was retired; ${closed} open posting(s) closed. To scan it again: scripts/market.sh unretire ${board}`);
           continue;
         }
-        const note = notFound ? ` (not found ${streak} run${streak === 1 ? '' : 's'} in a row; retired after ${RETIRE_AFTER})` : '';
-        failures.push(`${board}: ${err.message}${note}`);
-        console.log(`  ✗ ${board}: ${err.message}${note}`);
+        if (notFound) {
+          counting.push(`${company ?? board} ${streak}/${RETIRE_AFTER}`);
+          console.log(`  ⚠ ${board}: not found (${streak} of ${RETIRE_AFTER} runs in a row; retired after ${RETIRE_AFTER}): ${err.message}`);
+          continue;
+        }
+        failures.push(`${board}: ${err.message}`);
+        console.log(`  ✗ ${board}: ${err.message}`);
       }
     }
     if (gone.length) console.log(`Retired ${gone.length} job board(s) that no longer exist: ${gone.join(', ')}`);
+    if (counting.length) console.log(`Not found (retired after ${RETIRE_AFTER} runs in a row): ${counting.join(' · ')}`);
     if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
 
     if (!wanted.length) {
