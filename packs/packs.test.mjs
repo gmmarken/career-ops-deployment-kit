@@ -92,6 +92,11 @@ test('numberProblems: a new number, a dropped "~" or "nearly", and an added "+" 
   assert.match(p[0], /drops the source's approximation/);
   assert.match(p[2], /adds a "\+"/);
   assert.match(p[3], /"12" is not in the source/);
+  // "an estimated" is a hedge like "~"; a follower count not in cv.md is blocked (GabesGridTalk stays "40,000+").
+  assert.match(numberProblems('saving 40 minutes each', 'saving an estimated 40 minutes each')[0], /drops the source's approximation/);
+  assert.deepEqual(numberProblems('saving an estimated 40 minutes', 'saving an estimated 40 minutes'), []);
+  assert.match(numberProblems('an audience of 50K followers', 'an audience of 40,000+ followers')[0], /"50K" is not in the source/);
+  assert.deepEqual(numberProblems('an audience of 40,000+ followers', 'an audience of 40,000+ followers'), []);
 });
 
 const good = {

@@ -4,7 +4,7 @@
 // pack (D88): no retry, no silent repair.
 
 // A number with what's around it: "~40", "$200K+", "nearly 300", "30%", "2-4".
-const QUAL = '(~|about |approximately |approx\\. |roughly |nearly |almost |over |under |more than |less than |up to |at least )';
+const QUAL = '(~|an estimated |estimated |about |approximately |approx\\. |roughly |nearly |almost |over |under |more than |less than |up to |at least )';
 const NUM = new RegExp(`${QUAL}?\\$?(\\d[\\d,]*(?:\\.\\d+)?)([KMB](?![a-z])|%|\\s(?:million|billion)\\b)?(\\+)?`, 'gi');
 const UNIT = { k: 'K', m: 'M', b: 'B', million: 'M', billion: 'B', '%': '%' };
 

@@ -515,3 +515,7 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 ## D91 — The CV look: navy (2026-11-04)
 **Options:** (A) career-ops' default (teal and purple, with a gradient rule); (B) navy, one color; (C) black and gray; (D) the plainer "Jake" template (no Interests section).
 **Decision:** B, the candidate's call, from the four looks rendered side by side with his own CV. It's set as `style.accent_color` / `secondary_color` (#1F3A5F) in `private/config/profile.yml`, which career-ops' PDF step reads; no code change.
+
+## D92 — Follower count locked as a fact instead of banned numbers; "an estimated" is a hedge (2026-11-04)
+**Context:** `cv-facts.json` banned other follower counts ("50K", "45K", "42K"…) so the side project's audience could only read "40,000+". Banned phrases match inside longer text, and one of them blocked a true figure. career-ops' own fact gate doesn't check counts of things like followers, which is why the bans had been added.
+**Decision:** The candidate's call. "40,000+" is the locked figure (recorded in `allow_facts`) unless he says otherwise. The number bans are gone: the kit's line checks (D84, D88) block any number that isn't in cv.md, so another follower count can't get through. The migration kit's time savings now read "an estimated", which the line checks treat as a hedge like "~", so a tailored CV can't drop it.
