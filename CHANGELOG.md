@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Funding news (D77): stories older than `funding_news.max_age_days` (30, now required in `sources.json`) or with no date are logged but no longer counted as newly funded; several articles about one raise, or a Form D and an article, now stay one round.
 - Morning text says "S&A" instead of "S/A" for the top roles.
 - Rippling links that start with a language code (`ats.rippling.com/es-419/<company>/…`) were read as a board named after the language; the code is now skipped.
 - Board names with a space (e.g. Ashby's `hippocratic ai`) were stored URL-encoded and then encoded again when read, so the board returned "not found". Links are now decoded once; board names may contain spaces.

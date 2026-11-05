@@ -169,6 +169,7 @@ function migrate(db, from) {
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
+const SAME_ROUND_DAYS = 45;
 const day = (d = new Date()) => (typeof d === 'string' ? d : d.toISOString()).slice(0, 10);
 
 /** Stable identity for a posting URL: host + path (+ Greenhouse's gh_jid), no other query, fragment, trailing slash or /application. */
@@ -406,9 +407,7 @@ class Store {
     }
     const r = next.last_raise;
     if (r && (r.amount_usd != null || r.date || r.round)) {
-      const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at, found_via)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, r.round ?? null, r.amount_usd ?? null, r.date ?? null, JSON.stringify(next.investors ?? []), r.source_url ?? next.sources?.[0]?.url ?? null, iso, r.found_via ?? source);
-      if (res.changes) changed = true;
+      if (this.#insertRound(row.id, r, { investors: next.investors ?? [], source_url: r.source_url ?? next.sources?.[0]?.url ?? null, at: iso, found_via: r.found_via ?? source })) changed = true;
     }
     return { id: row.id, changed };
   }
@@ -582,8 +581,34 @@ class Store {
 
   /** Record a funding round seen in a Form D or the news. Returns true if it is new (not already recorded). */
   addFundingRound(companyId, r, at = new Date()) {
+    return this.#insertRound(companyId, r, { investors: [], source_url: r.source_url ?? null, at: new Date(at).toISOString(), found_via: r.found_via ?? null });
+  }
+
+  /**
+   * The round already on file that `r` is another report of, or null. Same company, amounts
+   * within 10% (both known), or no amounts and the same round name; dates within 45 days.
+   * Several articles about one raise, or a Form D and the news, then stay one round.
+   */
+  sameRound(companyId, r, at = new Date()) {
+    const when = Date.parse(r.date ?? day(at));
+    for (const x of this.db.prepare('SELECT * FROM funding_rounds WHERE company_id = ?').all(companyId)) {
+      const a = x.amount_usd, b = r.amount_usd ?? null;
+      const amounts = a != null && b != null ? Math.abs(a - b) <= 0.1 * Math.max(a, b) : a == null && b == null && x.round != null && x.round === (r.round ?? null);
+      if (!amounts) continue;
+      if (Math.abs(Date.parse(x.announced ?? x.recorded_at.slice(0, 10)) - when) <= SAME_ROUND_DAYS * 86_400_000) return x;
+    }
+    return null;
+  }
+
+  /** Save a round unless it is another report of one on file (then only a missing round name is filled in). True if saved. */
+  #insertRound(companyId, r, { investors, source_url, at, found_via }) {
+    const dup = this.sameRound(companyId, r, at);
+    if (dup) {
+      if (dup.round == null && r.round) this.db.prepare('UPDATE funding_rounds SET round = ? WHERE id = ?').run(r.round, dup.id);
+      return false;
+    }
     const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at, found_via)
-      VALUES (?, ?, ?, ?, '[]', ?, ?, ?)`).run(companyId, r.round ?? null, r.amount_usd ?? null, r.date ?? null, r.source_url ?? null, new Date(at).toISOString(), r.found_via ?? null);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(companyId, r.round ?? null, r.amount_usd ?? null, r.date ?? null, JSON.stringify(investors), source_url, at, found_via);
     return res.changes > 0;
   }
 

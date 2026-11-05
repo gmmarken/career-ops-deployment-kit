@@ -139,13 +139,13 @@ test('news: NYC companies are recorded; a known company gets its new round where
     { title: 'Trajectory raises $45M to make AI model training accessible', link: 'https://n/3', text: 'San Francisco', published: '2026-11-03' },
     { title: 'Sequoia hits rewind', link: 'https://n/4', text: '', published: '2026-11-04' },
   ];
-  const r = await runTechCrunch(store, companyIndex(store), ['https://techcrunch.com/feed/'], { feed: async () => items });
+  const r = await runTechCrunch(store, companyIndex(store), ['https://techcrunch.com/feed/'], { feed: async () => items, maxAgeDays: 30, now: new Date('2026-11-04T12:00:00Z') });
   assert.deepEqual(r.counted.map((c) => `${c.name}:${c.isNewCompany}:${c.nyc}`), ['Clark:true:true', 'Serval:false:false']);
   assert.equal(store.companyRecords().find((c) => c.name === 'Serval').last_raise.amount_usd, 47_000_000);
   assert.equal(store.companyRecords().find((c) => c.name === 'Serval').status, 'strong'); // your call untouched
   assert.equal(fundedLine(r.counted), 'Newly funded NYC companies (1): Clark ($11M, Seed, News)');
   // Seen items are skipped next time.
-  const again = await runTechCrunch(store, companyIndex(store), ['https://techcrunch.com/feed/'], { feed: async () => items });
+  const again = await runTechCrunch(store, companyIndex(store), ['https://techcrunch.com/feed/'], { feed: async () => items, maxAgeDays: 30, now: new Date('2026-11-04T12:00:00Z') });
   assert.equal(again.headlines, 0);
   store.close();
 });
@@ -154,7 +154,7 @@ test('news search: a bad key or no credits stops the remaining searches', async 
   const store = openStore(':memory:');
   let n = 0;
   const search = async () => { n++; const e = new Error('HTTP 403'); e.status = 403; throw e; };
-  const r = await runNewsSearch(store, companyIndex(store), ['q1', 'q2', 'q3'], { search });
+  const r = await runNewsSearch(store, companyIndex(store), ['q1', 'q2', 'q3'], { search, maxAgeDays: 30 });
   assert.equal(n, 1);
   assert.ok(r.stopped);
   assert.equal(r.errors.length, 1);
@@ -167,8 +167,9 @@ test('the same round from Form D and the news lands on one company', () => {
   const store = openStore(':memory:');
   const idx = companyIndex(store);
   recordFunded(store, idx, { name: 'Clark', legal_name: 'Clark AI, Inc.', amount_usd: 11e6, date: '2026-10-20', source_url: 'sec', supports: 'Form D', found_via: 'Form D', source: 'form_d', nyc: true });
-  const r = considerNews(store, idx, { title: 'Audit AI Startup Clark Raises $11M Seed Round', link: 'https://n/1', text: '', published: '2026-11-03' }, { source: 'news:x', label: 'X' });
+  const r = considerNews(store, idx, { title: 'Audit AI Startup Clark Raises $11M Seed Round', link: 'https://n/1', text: '', published: '2026-11-03' }, { source: 'news:x', label: 'X', maxAgeDays: 30, now: new Date('2026-11-04T12:00:00Z') });
   assert.equal(r.isNewCompany, false);
+  assert.equal(r.newRound, false); // the Form D and the article are one round
   const e = store.companyRecords().find((c) => c.name === 'Clark');
   assert.equal(e.found_via, 'Form D');
   assert.equal(e.stage, 'seed');
@@ -195,11 +196,12 @@ test('refit: fit follows the facts and today\'s open deployment roles; unchanged
 });
 
 test('config: Form D and funding news settings are checked with clear messages', () => {
-  const ok = { form_d: CFG, funding_news: { techcrunch_feeds: ['https://techcrunch.com/tag/funding/feed/'], serper: { every_days: 7, queries: ['q'] } } };
+  const ok = { form_d: CFG, funding_news: { max_age_days: 30, techcrunch_feeds: ['https://techcrunch.com/tag/funding/feed/'], serper: { every_days: 7, queries: ['q'] } } };
   assert.ok(checkRadarConfig(ok));
   assert.throws(() => checkRadarConfig({ ...ok, form_d: undefined }), /"form_d" settings are missing/);
   assert.throws(() => checkRadarConfig({ ...ok, form_d: { ...CFG, contact_email: 'nope' } }), /contact email/);
   assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, techcrunch_feeds: ['https://alleywatch.com/feed/'] } }), /techcrunch/);
+  assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, max_age_days: undefined } }), /max_age_days/);
 });
 
 test('a company known only from a job board keeps "Job board" as how it was found', () => {
@@ -210,5 +212,41 @@ test('a company known only from a job board keeps "Job board" as how it was foun
   const e = store.companyRecords().find((c) => c.name === 'traversal');
   assert.equal(e.found_via ?? null, null);
   assert.match(e.reason, /a job board/);
+  store.close();
+});
+
+test('news: old stories and undated ones are logged but not counted as newly funded (D77)', async () => {
+  const store = openStore(':memory:');
+  store.saveCompany({ name: 'Substack', status: 'unknown', sources: [{ url: 's', supports: 'x' }] }, { source: 'research', by: 'kit' });
+  const items = [
+    { title: 'Substack raises $100M from Chernin Group', link: 'https://n/old', text: 'New York', published: '2025-07-17' },
+    { title: 'Clark Raises $11M Seed Round', link: 'https://n/nodate', text: 'New York-based', published: null },
+  ];
+  const r = await runTechCrunch(store, companyIndex(store), ['https://techcrunch.com/feed/'], { feed: async () => items, maxAgeDays: 30, now: new Date('2026-11-04T12:00:00Z') });
+  assert.equal(r.headlines, 2);
+  assert.deepEqual(r.counted, []);
+  assert.equal(store.fundingByCompany().size, 0);
+  assert.equal(store.companyRecords().find((c) => c.name === 'Substack').last_raise ?? null, null);
+  assert.throws(() => considerNews(store, companyIndex(store), items[0], { source: 'x', label: 'X' }), /max_age_days/);
+  store.close();
+});
+
+test('several articles about one raise stay one round; a different raise is a new one (D77)', () => {
+  const store = openStore(':memory:');
+  const idx = companyIndex(store);
+  const now = new Date('2026-11-04T12:00:00Z');
+  const opts = { source: 'news:x', label: 'X', maxAgeDays: 30, now };
+  const a = considerNews(store, idx, { title: 'Serval Raises $150M Series C at $3B Valuation', link: 'https://n/a', text: 'New York', published: '2026-10-30' }, opts);
+  const b = considerNews(store, idx, { title: 'Serval raises $150 million led by Sequoia', link: 'https://n/b', text: '', published: '2026-11-03' }, opts);
+  const c = considerNews(store, idx, { title: 'Serval raises $47M to bring AI agents to IT', link: 'https://n/c', text: '', published: '2026-10-25' }, opts);
+  assert.deepEqual([a.newRound, b.newRound, c.newRound], [true, false, true]);
+  const id = store.company('Serval');
+  const rounds = store.fundingByCompany().get(id);
+  assert.equal(rounds.length, 2);
+  assert.equal(rounds.find((x) => x.amount_usd === 150e6).round, 'Series C');
+  const e = store.companyRecords().find((x) => x.name === 'Serval');
+  assert.equal(e.last_raise.date, '2026-10-30'); // a repeat article does not move the raise date
+  assert.equal(e.sources.length, 3); // every article is still kept as a source
+  assert.equal(fundedLine([a, b, c]), 'Newly funded NYC companies (1): Serval ($150M, Series C, News)');
   store.close();
 });

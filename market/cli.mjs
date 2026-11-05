@@ -288,7 +288,7 @@ async function radar() {
     if (fd && Object.keys(fd.skipped).length) console.log(`    Not counted: ${Object.entries(fd.skipped).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
     if (fd) counted.push(...fd.counted);
     if (funding_news.techcrunch_feeds.length) {
-      const tc = await sourceStep(store, TECHCRUNCH_SOURCE, 'TechCrunch', async () => { const r = await runTechCrunch(store, idx, funding_news.techcrunch_feeds, { feed: (u) => fetchFeed(u) }); return { ...r, found: r.headlines }; },
+      const tc = await sourceStep(store, TECHCRUNCH_SOURCE, 'TechCrunch', async () => { const r = await runTechCrunch(store, idx, funding_news.techcrunch_feeds, { feed: (u) => fetchFeed(u), maxAgeDays: funding_news.max_age_days }); return { ...r, found: r.headlines }; },
         (r) => `${r.headlines} new headline(s), ${r.counted.length} recorded`, failures);
       if (tc) counted.push(...tc.counted);
     }
@@ -297,7 +297,7 @@ async function radar() {
     else {
       const ns = await sourceStep(store, NEWS_SEARCH_SOURCE, 'News search (Serper)', async () => {
         const key = readSerperKey(dataDir);
-        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q), pause: () => sleep(300) });
+        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
         return { ...r, found: r.headlines };
       }, (r) => `${r.searches} search(es), ${r.searches} credit(s); ${r.headlines} new headline(s), ${r.counted.length} recorded${r.stopped ? '; stopped early (the rest would fail the same way)' : ''}`, failures);
       if (ns) counted.push(...ns.counted);
