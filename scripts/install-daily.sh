@@ -5,6 +5,8 @@
 #   scripts/install-daily.sh --unload                stop and remove the job (and the helper app)
 #   scripts/install-daily.sh --run-now               start today's run now, exactly as launchd does at the set time
 #   scripts/install-daily.sh --test-message          send one test text through the helper app (checks the Messages permission)
+#   scripts/install-daily.sh --test-email            send the SAMPLE weekly email through the helper app (checks the Mail permission)
+#   --midday-at HH:MM                                time of the midday run (default 13:00, D79): scan + grade roles first seen today
 #   --kit-dir DIR                                    which kit checkout the run uses (default: this one)
 #
 # launchd starts a small helper app, not bash directly (D65): macOS blocks background bash from
@@ -18,10 +20,14 @@ APP="$HOME/Applications/$APP_NAME.app"
 APP_LOG="$HOME/Library/Logs/career-ops-daily.log"
 LABEL=com.career-ops.daily
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
-AT=07:00; MODE=print
+MID_LABEL=com.career-ops.midday
+MID_AGENT="$HOME/Library/LaunchAgents/$MID_LABEL.plist"
+AT=07:00; MID_AT=13:00; MODE=print
 while [ $# -gt 0 ]; do
   case "$1" in
     --at) AT="${2:?--at needs HH:MM}"; shift 2 ;;
+    --midday-at) MID_AT="${2:?--midday-at needs HH:MM}"; shift 2 ;;
+    --test-email) MODE=testmail; shift ;;
     --load) MODE=load; shift ;;
     --unload) MODE=unload; shift ;;
     --run-now) MODE=run; shift ;;
@@ -35,6 +41,8 @@ DATA_DIR="$(cd "$KIT_DIR/.." && pwd)/private"
 if [ "$MODE" = unload ]; then
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || echo "($LABEL was not loaded)"
   rm -f "$AGENT"; echo "Removed $AGENT"
+  launchctl bootout "gui/$(id -u)/$MID_LABEL" 2>/dev/null || echo "($MID_LABEL was not loaded)"
+  rm -f "$MID_AGENT"; echo "Removed $MID_AGENT"
   rm -rf "$APP"; echo "Removed $APP"; exit 0
 fi
 if [ "$MODE" = test ]; then
@@ -42,6 +50,12 @@ if [ "$MODE" = test ]; then
   open -g -W --env CAREER_OPS_DAILY_TEST=1 "$APP"
   echo "Test text requested. If macOS asks to let \"$APP_NAME\" control Messages, click Allow."
   echo "Result: tail -1 $APP_LOG (exit 0 = sent)"; exit 0
+fi
+if [ "$MODE" = testmail ]; then
+  [ -d "$APP" ] || { echo "install-daily.sh: $APP not found. Run with --load first." >&2; exit 1; }
+  open -g -W --env CAREER_OPS_DAILY_MODE=sample-email "$APP"
+  echo "Sample weekly email requested. If macOS asks to let \"$APP_NAME\" control Mail, click Allow."
+  echo "Result: tail -1 $APP_LOG (exit 0 = handed to Mail) · details: private/logs/daily-$(date +%F).log"; exit 0
 fi
 if [ "$MODE" = run ]; then
   launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || { echo "install-daily.sh: $LABEL is not loaded. Run with --load first." >&2; exit 1; }
@@ -52,7 +66,9 @@ fi
 
 [ -d "$DATA_DIR" ] || { echo "install-daily.sh: private data dir not found at $DATA_DIR" >&2; exit 1; }
 [[ "$AT" =~ ^([01][0-9]|2[0-3]):([0-5][0-9])$ ]] || { echo "install-daily.sh: --at must be HH:MM (24-hour)" >&2; exit 1; }
+[[ "$MID_AT" =~ ^([01][0-9]|2[0-3]):([0-5][0-9])$ ]] || { echo "install-daily.sh: --midday-at must be HH:MM (24-hour)" >&2; exit 1; }
 HOUR=$((10#${AT%%:*})); MINUTE=$((10#${AT##*:}))
+MID_HOUR=$((10#${MID_AT%%:*})); MID_MINUTE=$((10#${MID_AT##*:}))
 NODE="$(command -v node)" || { echo "install-daily.sh: node not found on PATH" >&2; exit 1; }
 CLAUDE="$(command -v claude)" || { echo "install-daily.sh: claude not found on PATH (tier-new needs it)" >&2; exit 1; }
 RUN_PATH="$(dirname "$NODE"):$(dirname "$CLAUDE"):/usr/bin:/bin:/usr/sbin:/sbin"
@@ -96,13 +112,24 @@ sed -e "s|__APP_BIN__|$(esc "$APP/Contents/MacOS/applet")|" \
     "$SRC_DIR/scripts/launchd/$LABEL.plist.template" > "$OUT"
 plutil -lint "$OUT" >/dev/null
 echo "Wrote $OUT:"; echo; cat "$OUT"
+MID_OUT="$DATA_DIR/launchd/$MID_LABEL.plist"
+sed -e "s|__APP_BIN__|$(esc "$APP/Contents/MacOS/applet")|" \
+    -e "s|__LOG_DIR__|$(esc "$DATA_DIR/logs")|g" \
+    -e "s|__HOUR__|$MID_HOUR|" -e "s|__MINUTE__|$MID_MINUTE|" \
+    "$SRC_DIR/scripts/launchd/$MID_LABEL.plist.template" > "$MID_OUT"
+plutil -lint "$MID_OUT" >/dev/null
+echo; echo "Wrote $MID_OUT (midday run at $MID_AT)"
 
 if [ "$MODE" = load ]; then
   mkdir -p "$HOME/Library/LaunchAgents"
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true   # replacing an older copy, if any
   cp "$OUT" "$AGENT"
   launchctl bootstrap "gui/$(id -u)" "$AGENT"
+  launchctl bootout "gui/$(id -u)/$MID_LABEL" 2>/dev/null || true
+  cp "$MID_OUT" "$MID_AGENT"
+  launchctl bootstrap "gui/$(id -u)" "$MID_AGENT"
   echo; echo "Loaded $LABEL: runs daily at $AT. Check with: launchctl print gui/$(id -u)/$LABEL"
+  echo "Loaded $MID_LABEL: midday run at $MID_AT (scan + grade today's new roles; texts only for a new S role or a failure)"
 else
   echo; echo "Not loaded. Re-run with --load to install it."
 fi

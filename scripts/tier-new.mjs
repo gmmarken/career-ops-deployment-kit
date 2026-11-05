@@ -3,7 +3,7 @@
 // market.sh scan). Same pipeline as tier.sh: hard facts (code) → judgment (claude, no
 // tools) → company bar → tier (code) → market database → Notion (one sync at the end).
 // A failed posting is reported and skipped; the run exits non-zero if any failed.
-// Usage: scripts/tier-new.sh [--limit N] [--per-company N] [--dry-run]
+// Usage: scripts/tier-new.sh [--limit N] [--per-company N] [--seen-since YYYY-MM-DD] [--dry-run]
 // With a limit, the most relevant role families go first, at most --per-company per company (D67).
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
@@ -14,6 +14,7 @@ import { TARGET_FAMILIES } from '../market/classify.mjs';
 import { pickBatch } from '../market/priority.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
 import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
+import { payText } from '../delivery/format.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : undefined; };
 
@@ -29,11 +30,14 @@ async function main() {
   const limit = num('--limit');
   const perCompany = num('--per-company');
   const dry = process.argv.includes('--dry-run');
+  // Midday run (D79): only roles first seen on or after this date, so the morning backlog waits for mornings.
+  const since = arg('--seen-since');
+  if (since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error('--seen-since must be a date like 2026-11-05.');
   const rules = loadRules();
   let store = openStore();
   // Target-family titles, plus borderline titles whose text passed the no-AI check (D49).
   const wanted = (p) => TARGET_FAMILIES.has(p.title_family) || (p.title_family === 'borderline' && p.text_check === 'hit');
-  const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id));
+  const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id) && (!since || p.first_seen.slice(0, 10) >= since));
   store.close();
   const batch = pickBatch(todo, { limit, perCompany });
   const caps = [limit < Infinity && `${limit} a run`, perCompany < Infinity && `${perCompany} per company`].filter(Boolean).join(', ');
@@ -57,6 +61,8 @@ async function main() {
       store.close();
       done.push({ id, company: facts.company.name, title: facts.posting.title, tier: result.tier, flags: result.flags });
       console.log(`  [${i + 1}/${batch.length}] ${result.tier.padEnd(9)} ${facts.company.name} — ${facts.posting.title}`);
+      // The daily run turns this line into its own S-tier text (D78).
+      if (result.tier === 'S') console.log(`      ⭐ alert: ${payText(facts.posting.pay)} · ${facts.posting.url ?? p.url}`);
     } catch (err) {
       // Usage limit (D68): every remaining call would fail too, so stop; the rest wait.
       if (isUsageLimit(err.message)) { paused = true; break; }

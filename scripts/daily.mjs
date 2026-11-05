@@ -1,15 +1,22 @@
 // Daily unattended run (D53): board scan → tier new roles → Company Radar (Form D, funding news,
-// company research; Phase 6) → back up market.db.
+// company research; Phase 6) → the Sunday email (Phase 7) → back up market.db.
+// A midday run (--midday, D79) only scans and grades roles first seen today.
+// Every new S-tier role gets its own text as soon as grading finishes (D78).
 // Every step runs even if an earlier one failed (one failing source must not stop the others),
 // and every failure is written to the run log AND sent to Gabriel by iMessage. No retries,
 // no substitute data. Exit code: 0 all good, 1 something failed, 2 couldn't even report.
 //
-// Usage (through scripts/daily.sh): daily.sh [--test-message]
+// Usage (through scripts/daily.sh): daily.sh [--midday | --test-message | --sample-messages | --sample-email]
 import { spawn, execFile } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backupDb, prune, iCloudRoot, KEEP } from '../market/backup.mjs';
+import { openStore } from '../market/store.mjs';
+import { weeklyData, weeklyEmail } from '../delivery/weekly.mjs';
+import { sendMail } from '../delivery/mail.mjs';
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const STEP_TIMEOUT_MS = 2 * 60 * 60 * 1000; // a hung step is reported as a failure, not waited on forever
@@ -30,6 +37,10 @@ export function loadConfig(dataDir) {
     if (!Number.isInteger(cfg[k]) || cfg[k] < 1) throw new Error(`${path}: "${k}" must be a whole number of at least 1 (D67: how many roles the daily run grades, in all and per company).`);
   }
   if (!Number.isInteger(cfg.research_per_day) || cfg.research_per_day < 0) throw new Error(`${path}: "research_per_day" must be a whole number, 0 or more (D76: how many companies the daily run researches for Company Radar).`);
+  const w = cfg.weekly_email;
+  if (!w || typeof w !== 'object') throw new Error(`${path}: "weekly_email" is missing. Add {"to": "<your email>", "day": "Sunday"} (D81).`);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(w.to ?? ''))) throw new Error(`${path}: weekly_email.to must be your email address.`);
+  if (!WEEKDAYS.includes(w.day)) throw new Error(`${path}: weekly_email.day must be a day name like "Sunday".`);
   return cfg;
 }
 
@@ -49,7 +60,7 @@ export function runCommand(cmd, args, { cwd = KIT_DIR, timeoutMs = STEP_TIMEOUT_
 /** The lines worth showing in a notice: the error block a step printed, else its last lines. */
 export function failureDetail(out) {
   const lines = String(out).trimEnd().split('\n');
-  const at = lines.findIndex((l) => /^(market|tier-new|backup|daily):|\[daily\]/.test(l));
+  const at = lines.findIndex((l) => /^(market|tier-new|backup|weekly|daily):|\[daily\]/.test(l));
   const pick = at >= 0 ? lines.slice(at) : lines.slice(-5);
   const text = pick.join('\n').trim() || '(no output)';
   return text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL)}…` : text;
@@ -63,11 +74,27 @@ export function shortDate(date) {
 
 /**
  * The failure text (D63): loud on purpose, so it can't be mistaken for the morning summary.
+ * Roles graded in this run are still listed (D78): a broken board shouldn't hide a good role.
  */
-export function summarize(date, problems, logPath) {
-  const head = `🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\n${shortDate(date)}: ${problems.length} problem${problems.length === 1 ? '' : 's'}. Action needed.`;
+export function summarize(date, problems, logPath, outputs = {}, { midday = false } = {}) {
+  const head = `🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\n${midday ? 'Midday run, ' : ''}${shortDate(date)}: ${problems.length} problem${problems.length === 1 ? '' : 's'}. Action needed.`;
   const body = problems.map((p) => `❌ ${p.step}: ${p.detail}`).join('\n');
-  return `${head}\n${body}\nFull log: ${logPath}`;
+  const top = runFacts(outputs).graded.filter((g) => g.tier === 'S' || g.tier === 'A');
+  const roles = top.length
+    ? `\nGraded this run anyway (in Notion):\n${top.slice(0, MAX_LISTED).map((g) => `${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`).join('\n')}${top.length > MAX_LISTED ? `\n…and ${top.length - MAX_LISTED} more S&A in Notion` : ''}`
+    : '';
+  return `${head}\n${body}${roles}\nFull log: ${logPath}`;
+}
+
+/** New S-tier roles a grading run found, from the "⭐ alert:" line it prints under each (D78). */
+export function sAlerts(tierOut) {
+  return [...String(tierOut).matchAll(/^\s*\[\d+\/\d+\] S\s+(.+)\n\s*⭐ alert: (.+) · (\S+)\s*$/gm)]
+    .map((m) => ({ role: m[1].trim(), pay: m[2].trim(), url: m[3] }));
+}
+
+/** One S-tier role's own text (D78). */
+export function alertText(a) {
+  return `⭐ New S-tier role: ${a.role}\n${a.pay}\n${a.url}\nApply early. It's in Notion with the full grade.`;
 }
 
 /**
@@ -85,6 +112,8 @@ export function runFacts(outputs) {
   const radar = String(outputs.radar ?? '');
   const funded = radar.match(/^Newly funded NYC companies \((\d+)\): (.+)$/m);
   const researchPaused = /^Paused: Claude usage limit reached after \d+ of \d+ researched/m.test(radar);
+  const retired = scan.match(/^Retired (\d+) job board\(s\) that no longer exist: (.+)$/m);
+  const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
@@ -95,6 +124,8 @@ export function runFacts(outputs) {
     graded,
     funded: funded ? { count: Number(funded[1]), names: funded[2].split(' · ').map((x) => x.replace(/\s*\(.*\)$/, '')) } : null,
     researchPaused,
+    retired: retired ? { count: Number(retired[1]), names: retired[2] } : null,
+    weekly,
   };
 }
 
@@ -123,6 +154,8 @@ export function successSummary(date, outputs) {
     lines.push(`🆕 ${f.funded.count} newly funded NYC compan${f.funded.count === 1 ? 'y' : 'ies'}: ${shown}${f.funded.count > 3 ? `, +${f.funded.count - 3} more` : ''} (Company Radar)`);
   }
   if (f.researchPaused) lines.push('⏳ Company research paused at the Claude usage limit; it continues next run');
+  if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
+  if (f.weekly) lines.push('📧 Weekly email sent to you');
   const wait = f.waiting + (f.paused?.left ?? 0);
   if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);
   lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
@@ -149,15 +182,36 @@ export function sendIMessage(to, text) {
   });
 }
 
-/** The four daily steps. Each returns {ok, out}. */
-export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iCloudRoot }) {
+/** Build and send the weekly email (D81). Returns the step's output line. */
+export async function sendWeekly({ dataDir, cfg, now = new Date(), send = sendMail, sample = false }) {
+  const store = openStore(join(dataDir, 'data', 'market.db'));
+  let email;
+  try { email = weeklyEmail(weeklyData(store, { now })); } finally { store.close(); }
+  const subject = sample ? `(SAMPLE) ${email.subject}` : email.subject;
+  await send(cfg.weekly_email.to, subject, email.text);
+  return `weekly: sent "${subject}" (${email.text.split('\n').length} lines)\n`;
+}
+
+/** Is today the weekly email's day? `date` is YYYY-MM-DD on this Mac's clock. */
+export function isWeeklyDay(date, day) {
+  const [y, m, d] = date.split('-').map(Number);
+  return WEEKDAYS[new Date(y, m - 1, d).getDay()] === day;
+}
+
+/** The run's steps. Each returns {ok, out}. Midday (D79): scan, then grade roles first seen today. */
+export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iCloudRoot, midday = false, weekly = sendWeekly }) {
   if (!cfg) throw new Error('defaultSteps needs the daily settings (cfg).');
-  const tierArgs = ['--limit', String(cfg.tier_per_day), '--per-company', String(cfg.tier_per_company)];
-  return [
+  const tierArgs = ['--limit', String(cfg.tier_per_day), '--per-company', String(cfg.tier_per_company), ...(midday ? ['--seen-since', date] : [])];
+  const scanAndGrade = [
     { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
     { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out }; } },
+  ];
+  if (midday) return scanAndGrade;
+  return [
+    ...scanAndGrade,
     // After grading, so grading keeps first claim on the Claude plan (D67, D76).
     { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out }; } },
+    ...(isWeeklyDay(date, cfg.weekly_email.day) ? [{ name: 'weekly-email', go: async () => ({ ok: true, out: await weekly({ dataDir, cfg }) }) }] : []),
     { name: 'backup', go: async () => {
       const dir = join(dataDir, 'backups');
       const file = backupDb(join(dataDir, 'data', 'market.db'), dir, date);
@@ -172,10 +226,11 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
  * Run every step, log everything, report any failure. Returns {problems, notified}.
  * `log(text)` appends to the run log; `notify(text)` sends the notice.
  */
-export async function runDaily({ date, steps, log, notify, logPath }) {
+export async function runDaily({ date, steps, log, notify, logPath, midday = false }) {
   const problems = [];
   const outputs = {};
-  log(`\n===== daily run ${date} started ${new Date().toISOString()} =====\n`);
+  const kind = midday ? 'midday run' : 'daily run';
+  log(`\n===== ${kind} ${date} started ${new Date().toISOString()} =====\n`);
   for (const step of steps) {
     log(`\n--- ${step.name} ---\n`);
     let res;
@@ -184,18 +239,38 @@ export async function runDaily({ date, steps, log, notify, logPath }) {
     log(res.out.endsWith('\n') ? res.out : `${res.out}\n`);
     if (!res.ok) problems.push({ step: step.name, detail: failureDetail(res.out) });
     log(`--- ${step.name}: ${res.ok ? 'ok' : 'FAILED'} ---\n`);
+    // Each new S-tier role gets its own text right away (D78). A text that can't be sent is a problem, reported below.
+    if (step.name === 'tier-new') {
+      for (const a of sAlerts(res.out)) {
+        try { await notify(alertText(a)); log(`S-tier text sent: ${a.role}\n`); } catch (err) { problems.push({ step: 'S-tier text', detail: `${a.role}: ${err.message}` }); log(`S-tier text FAILED: ${a.role}: ${err.message}\n`); }
+      }
+    }
   }
-  // Every run sends one text (D63): the loud failure notice, or the morning summary.
+  // The morning run sends one summary text (D63); the midday run texts only on a new S role or a failure (D79).
   if (problems.length) {
-    await notify(summarize(date, problems, logPath));
+    await notify(summarize(date, problems, logPath, outputs, { midday }));
     log(`\nFailure notice sent (${problems.length} problem(s)).\n`);
-  } else {
+  } else if (!midday) {
     await notify(successSummary(date, outputs));
     log('\nMorning summary sent.\n');
-  }
+  } else log('\nMidday run: nothing wrong; no summary text (S-tier texts only).\n');
   const notified = true;
-  log(`===== daily run ${date} finished ${new Date().toISOString()}: ${problems.length ? 'FAILED' : 'ok'} =====\n`);
+  log(`===== ${kind} ${date} finished ${new Date().toISOString()}: ${problems.length ? 'FAILED' : 'ok'} =====\n`);
   return { problems, notified };
+}
+
+/**
+ * One run at a time (D79): a lock file with the running process id. Returns a release
+ * function, or null if another run is still going. A lock left by a crashed run is cleared.
+ */
+export function takeLock(path, what, { alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } } } = {}) {
+  if (existsSync(path)) {
+    let held = null;
+    try { held = JSON.parse(readFileSync(path, 'utf8')); } catch { held = null; } // unreadable = stale
+    if (held && Number.isInteger(held.pid) && alive(held.pid)) return null;
+  }
+  writeFileSync(path, JSON.stringify({ pid: process.pid, what, at: new Date().toISOString() }));
+  return () => { try { unlinkSync(path); } catch (err) { if (err.code !== 'ENOENT') throw err; } };
 }
 
 async function main() {
@@ -214,6 +289,11 @@ async function main() {
     console.log('Test message sent.');
     return 0;
   }
+  if (process.argv.includes('--sample-email')) {
+    // The real weekly email from today's data, marked SAMPLE, to your own address (D81).
+    console.log(await sendWeekly({ dataDir, cfg, sample: true }));
+    return 0;
+  }
   if (process.argv.includes('--sample-messages')) {
     // Send one example of each daily text, so you can see how they look side by side.
     const sample = {
@@ -222,12 +302,22 @@ async function main() {
       radar: 'Newly funded NYC companies (2): Minerva BI ($15M, Form D) · Clark ($11M, Seed, News)\n',
     };
     await notify(`(SAMPLE, not a real run)\n${successSummary(date, sample)}`);
+    await notify(`(SAMPLE, not a real run)\n${alertText({ role: 'Pace — Deployment Strategist', pay: '$140K–$175K/yr', url: 'https://ats.rippling.com/pace/jobs/…' })}`);
     await notify(`(SAMPLE, not a real run)\n${summarize(date, [{ step: 'scan', detail: 'ashby:example: Could not reach https://api.ashbyhq.com/…: fetch failed' }], '/…/private/logs/daily-' + date + '.log')}`);
-    console.log('Two sample messages sent.');
+    console.log('Three sample messages sent.');
     return 0;
   }
-  const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg }), log, notify, logPath });
-  return problems.length ? 1 : 0;
+  const midday = process.argv.includes('--midday');
+  const release = takeLock(join(logDir, 'daily.lock'), midday ? 'midday' : 'morning');
+  if (!release) {
+    // Midday: the morning run is still going, so this one has nothing to add. Morning: something is stuck.
+    if (midday) { log(`\n[daily] midday run ${date}: another run is still going; skipped.\n`); return 0; }
+    throw new Error('another run is still going (private/logs/daily.lock). If none is, delete that file.');
+  }
+  try {
+    const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg, midday }), log, notify, logPath, midday });
+    return problems.length ? 1 : 0;
+  } finally { release(); }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

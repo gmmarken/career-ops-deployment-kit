@@ -13,6 +13,7 @@ const placeholders = (t) => [...new Set(t.match(/__[A-Z_]+__/g) || [])].sort();
 
 for (const [file, want] of [
   ['launchd/com.career-ops.daily.plist.template', ['__APP_BIN__', '__HOUR__', '__LOG_DIR__', '__MINUTE__']],
+  ['launchd/com.career-ops.midday.plist.template', ['__APP_BIN__', '__HOUR__', '__LOG_DIR__', '__MINUTE__']],
   ['launchd/CareerOpsDaily.applescript.template', ['__APP_LOG__', '__DAILY_SH__', '__IMESSAGE_TO__', '__PATH__']],
 ]) {
   test(`${file}: placeholders are the ones install-daily.sh fills in`, () => {

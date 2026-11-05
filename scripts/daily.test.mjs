@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate } from './daily.mjs';
+import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly } from './daily.mjs';
+import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
 const bad = (name, out) => ({ name, go: async () => ({ ok: false, out }) });
@@ -17,6 +18,7 @@ function harness(steps) {
   };
 }
 
+const CFG = { tier_per_day: 30, tier_per_company: 5, research_per_day: 10, weekly_email: { to: 'me@example.com', day: 'Sunday' } };
 const SCAN_OUT = 'Scanning 3 board(s)…\n  ✓ Thrive Capital (Getro): 900 job links; traced 0 new companies, 0 new board(s) to scan\n  ✓ ashby:a (A): 10 open, 2 new, 0 closed\n  ✓ rippling:pace (Pace): 13 open, 1 new, 1 closed\n';
 const TIER_OUT = '3 untiered NYC role(s) to tier; tiering 3.\n  [1/3] S         Pace — Deployment Strategist\n  [2/3] C         A — Solutions Consultant\n  [3/3] A         Stripe — GTM Strategy & Operations Analyst\n\nTiered 3: S 1 · C 1 · A 1\n';
 
@@ -133,6 +135,10 @@ test('config: missing file or field fails loudly', () => {
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5}');
   assert.throws(() => loadConfig(d), /"research_per_day" must be a whole number/);
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10}');
+  assert.throws(() => loadConfig(d), /"weekly_email" is missing/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sun"}}');
+  assert.throws(() => loadConfig(d), /day name like "Sunday"/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}}');
   assert.equal(loadConfig(d).imessage_to, 'x');
 });
 
@@ -155,7 +161,7 @@ test('default steps: non-zero exit from scan/tier-new is a failure; backup write
   db.exec('CREATE TABLE t (x); INSERT INTO t VALUES (1);'); db.close();
   const calls = [];
   const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return cmd.endsWith('market.sh') && args[0] === 'scan' ? { code: 1, out: 'market: 1 board(s) failed' } : { code: 0, out: 'ok' }; };
-  const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5, research_per_day: 10 }, run, icloud: () => '/Users/me/Documents' });
+  const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, run, icloud: () => '/Users/me/Documents' });
   const results = [];
   for (const s of steps) results.push(await s.go());
   assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10']]);
@@ -169,7 +175,7 @@ test('backup step fails (and so is reported) when the folder is not iCloud-synce
   const d = mkdtempSync(join(tmpdir(), 'daily-'));
   mkdirSync(join(d, 'data'));
   const db = new DatabaseSync(join(d, 'data', 'market.db')); db.exec('CREATE TABLE t (x)'); db.close();
-  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: { tier_per_day: 30, tier_per_company: 5, research_per_day: 10 }, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[3];
+  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[3];
   const sent = [];
   const r = await runDaily({ date: '2026-11-03', steps: [step], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
   assert.equal(r.problems.length, 1);
@@ -202,4 +208,86 @@ test('summary: newly funded NYC companies get one line; a research pause is ment
   assert.match(s, /^✅/);
   const none = successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': TIER_OUT, radar: 'Newly funded NYC companies: none new this run.\n' });
   assert.doesNotMatch(none, /🆕|research paused/);
+});
+
+// --- Phase 7: S-tier texts, failed-run roles, midday run, weekly email (D78–D82)
+const TIER_WITH_ALERT = '2 untiered NYC role(s) to tier; tiering 2.\n  [1/2] S         Pace — Deployment Strategist\n      ⭐ alert: $140K–$175K/yr · https://ats.rippling.com/pace/jobs/1\n  [2/2] A         Stripe — GTM Strategy\n\nTiered 2: S 1 · A 1\n';
+
+test('S-tier roles: read from the grading output and sent as their own text right after grading (D78)', async () => {
+  assert.deepEqual(sAlerts(TIER_WITH_ALERT), [{ role: 'Pace — Deployment Strategist', pay: '$140K–$175K/yr', url: 'https://ats.rippling.com/pace/jobs/1' }]);
+  assert.match(alertText(sAlerts(TIER_WITH_ALERT)[0]), /^⭐ New S-tier role: Pace — Deployment Strategist\n\$140K–\$175K\/yr\nhttps:\/\/ats\.rippling\.com\/pace\/jobs\/1/);
+  const sent = [];
+  const order = [];
+  const steps = [
+    { name: 'scan', go: async () => { order.push('scan'); return { ok: true, out: SCAN_OUT }; } },
+    { name: 'tier-new', go: async () => { order.push('tier'); return { ok: true, out: TIER_WITH_ALERT }; } },
+    { name: 'radar', go: async () => { order.push(`radar after ${sent.length} text(s)`); return { ok: true, out: '' }; } },
+  ];
+  await runDaily({ date: '2026-11-05', steps, log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
+  assert.deepEqual(order, ['scan', 'tier', 'radar after 1 text(s)']); // the S text goes out before research starts
+  assert.equal(sent.length, 2);
+  assert.match(sent[0], /^⭐ New S-tier role/);
+  assert.match(sent[1], /^✅ Job search: morning run done/);
+});
+
+test('a failed run still lists the S and A roles it graded; an unsendable S text is a reported problem (D78)', async () => {
+  const msg = summarize('2026-11-05', [{ step: 'scan', detail: 'ashby:x 404' }], 'L', { 'tier-new': TIER_WITH_ALERT });
+  assert.match(msg, /^🚨🚨 JOB SEARCH RUN FAILED/);
+  assert.match(msg, /Graded this run anyway \(in Notion\):\n⭐ S: Pace — Deployment Strategist\n• A: Stripe — GTM Strategy/);
+  assert.doesNotMatch(summarize('2026-11-05', [{ step: 'scan', detail: 'x' }], 'L'), /Graded this run/);
+  const sent = [];
+  const notify = async (t) => { if (t.startsWith('⭐')) throw new Error('iMessage send failed: no network'); sent.push(t); };
+  const { problems } = await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_WITH_ALERT }) }], log: () => {}, notify, logPath: 'L' });
+  assert.equal(problems[0].step, 'S-tier text');
+  assert.match(sent[0], /JOB SEARCH RUN FAILED[\s\S]*❌ S-tier text: Pace — Deployment Strategist: iMessage send failed/);
+});
+
+test('midday run: scan and grade only roles first seen today; texts only for a new S role or a failure (D79)', async () => {
+  const calls = [];
+  const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return { code: 0, out: 'ok' }; };
+  const steps = defaultSteps({ dataDir: '/x', date: '2026-11-05', cfg: CFG, run, midday: true });
+  assert.deepEqual(steps.map((s) => s.name), ['scan', 'tier-new']);
+  for (const s of steps) await s.go();
+  assert.deepEqual(calls[1], ['tier-new.sh', '--limit', '30', '--per-company', '5', '--seen-since', '2026-11-05']);
+  const quiet = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_OUT.replace(/S {9}/, 'B         ') }) }], log: () => {}, notify: async (t) => { quiet.push(t); }, logPath: 'L', midday: true });
+  assert.deepEqual(quiet, []);
+  const loud = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'scan', go: async () => ({ ok: false, out: 'market: 1 problem(s)' }) }], log: () => {}, notify: async (t) => { loud.push(t); }, logPath: 'L', midday: true });
+  assert.match(loud[0], /JOB SEARCH RUN FAILED 🚨🚨\nMidday run, Thu, Nov 5/);
+});
+
+test('one run at a time: a live lock blocks, a stale one is cleared (D79)', () => {
+  const d = mkdtempSync(join(tmpdir(), 'lock-'));
+  const path = join(d, 'daily.lock');
+  const release = takeLock(path, 'morning');
+  assert.ok(release && existsSync(path));
+  assert.equal(takeLock(path, 'midday', { alive: () => true }), null);
+  const again = takeLock(path, 'midday', { alive: () => false }); // crashed run left it behind
+  assert.ok(again);
+  again();
+  assert.equal(existsSync(path), false);
+});
+
+test('weekly email: only on its day, sent with what the week found; a send failure fails the step (D80–D81)', async () => {
+  assert.equal(isWeeklyDay('2026-11-08', 'Sunday'), true);
+  assert.equal(isWeeklyDay('2026-11-09', 'Sunday'), false);
+  const names = (date) => defaultSteps({ dataDir: '/x', date, cfg: CFG, run: async () => ({ code: 0, out: '' }), weekly: async () => 'weekly: sent "x"\n' }).map((s) => s.name);
+  assert.deepEqual(names('2026-11-08'), ['scan', 'tier-new', 'radar', 'weekly-email', 'backup']);
+  assert.deepEqual(names('2026-11-09'), ['scan', 'tier-new', 'radar', 'backup']);
+
+  const d = mkdtempSync(join(tmpdir(), 'weekly-'));
+  mkdirSync(join(d, 'data'));
+  const st = openStore(join(d, 'data', 'market.db'));
+  st.saveCompany({ name: 'Clark', status: 'unknown', nyc_presence: true, what_they_do: 'AI for auditors', fit: 'Possible', fit_reason: 'Business customers', leaders: [{ name: 'Ada Example', title: 'CEO', source_url: 's' }], sources: [{ url: 's', supports: 'x' }] }, { source: 'research', by: 'kit' });
+  st.addFundingRound(st.company('Clark'), { round: 'Seed', amount_usd: 11e6, date: '2026-11-03', source_url: 'https://n/1', found_via: 'news' }, new Date('2026-11-04T12:00:00Z'));
+  st.close();
+  const mails = [];
+  const out = await sendWeekly({ dataDir: d, cfg: CFG, now: new Date('2026-11-08T15:00:00Z'), send: async (to, subject, text) => { mails.push({ to, subject, text }); } });
+  assert.match(out, /^weekly: sent /);
+  assert.equal(mails[0].to, 'me@example.com');
+  assert.match(mails[0].subject, /1 newly funded NYC company, 0 S \+ 0 A roles/);
+  assert.match(mails[0].text, /Clark: \$11M, Seed, on 2026-11-03 \(News\)\n  Fit: Possible\. Business customers\n  What they do: AI for auditors\n  Leaders: Ada Example \(CEO\)/);
+  await assert.rejects(sendWeekly({ dataDir: d, cfg: CFG, send: async () => { throw new Error('Email send failed: Mail has no email account set up.'); } }), /Mail has no email account/);
+  assert.match(successSummary('2026-11-08', { scan: SCAN_OUT + 'Retired 1 job board(s) that no longer exist: Pryzm\n', 'tier-new': TIER_OUT, 'weekly-email': out }), /🗑 Retired 1 job board that no longer exists \(not found 3 runs in a row\): Pryzm\n📧 Weekly email sent to you/);
 });

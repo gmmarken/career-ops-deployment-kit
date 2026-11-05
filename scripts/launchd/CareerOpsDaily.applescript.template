@@ -18,6 +18,10 @@ on run
 	-- install-daily.sh --test-message opens the app with CAREER_OPS_DAILY_TEST=1: send a test text only.
 	set extra to ""
 	if (system attribute "CAREER_OPS_DAILY_TEST") is "1" then set extra to " --test-message"
+	-- The 1 PM job sets CAREER_OPS_DAILY_MODE=midday (D79); install-daily.sh --test-email sets sample-email (D81).
+	set runMode to system attribute "CAREER_OPS_DAILY_MODE"
+	if runMode is "midday" then set extra to " --midday"
+	if runMode is "sample-email" then set extra to " --sample-email"
 	try
 		do shell script "export PATH=" & quoted form of runPath & "; /bin/bash " & quoted form of dailySh & extra & " 2>&1"
 	on error errMsg number errNum
