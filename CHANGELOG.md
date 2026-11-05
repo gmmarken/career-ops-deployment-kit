@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Grading (D94): roles requiring a language you don't speak, an active security clearance, non-full-time work, or an excluded industry are now Excluded (some caught from the title with no AI). Managing people from day one and off-hours drop a tier. Vague heavy travel, "able to obtain a clearance", 5 office days, a missing required degree and agency postings are flags. New `candidate.languages` and `excluded_industries` in the tier settings (required). `tier-new.sh --regrade S,A` grades open roles again.
 - A job board answering "not found" before its 3rd run in a row no longer makes the run a failure: it's a ⚠️ line in the morning summary, and it's still retired on the 3rd (D93).
 - Prep packs: "~40 people" was blocked as a different count from "~40-person" by career-ops' fact gate (fixed in private `allow_metrics`).
 - Rippling postings with a pay range (e.g. Drivepoint's) failed grading; the range is now read (the New York one if it differs by place).

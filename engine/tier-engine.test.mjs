@@ -32,6 +32,9 @@ function sFacts(over = {}) {
       equity_substantial: { value: false, quote: null },
       pay_in_text: null,
       injection_suspected: { value: false, quote: null },
+      languages_required: [],
+      clearance: { value: 'none', quote: null },
+      travel_vague_heavy: { value: false, quote: null }, employment_type: { value: 'full_time', quote: null }, industry_flags: [], people_management: { required: false, team_size: null, quote: null }, degree_required: { value: false, met: null, quote: null }, off_hours: { value: false, quote: null }, staffing_agency: { value: false, quote: null },
     },
     company: { name: 'ExampleCo', status: 'strong', stage: 'series_d_plus', owner_categories: [], parent: null, is_mbb: false, origin: 'watchlist', verified: true, reason: 'frontier lab' },
   };
@@ -296,4 +299,55 @@ test('drift check passes when prose mentions every number, fails naming the fiel
   const prose = 'top $170K, early $140K, walk-away $120K, borderline $110K, older than 60 days';
   assert.deepEqual(findDrift(rules, prose), []);
   assert.match(findDrift(rules, prose.replace('$120K', '$125K')).join(), /pay\.walkaway_top = \$120K/);
+});
+
+// --- D94: languages, clearance, vague travel ---------------------------------------
+test('a required language the candidate does not speak → Excluded, from the text or the title', () => {
+  const byText = run({ judgment: { languages_required: [{ language: 'Portuguese', quote: 'Fluent Portuguese required' }] } });
+  assert.equal(byText.tier, 'Excluded');
+  assert.deepEqual(byText.flags, ['Requires Portuguese']);
+  assert.match(explain(byText), /1a\. Requirements: Excluded — requires Portuguese — "Fluent Portuguese required"/);
+  const byTitle = run({ posting: { title: 'Strategist, Agent Development (Brazilian Portuguese speaking)' } });
+  assert.equal(byTitle.tier, 'Excluded');
+  assert.equal(run({ judgment: { languages_required: [{ language: 'English', quote: 'Fluent English' }] } }).tier, 'S');
+});
+
+test('an active clearance → Excluded; "able to obtain" is only a flag', () => {
+  assert.equal(run({ judgment: { clearance: { value: 'active_required', quote: 'Active TS/SCI required' } } }).tier, 'Excluded');
+  assert.equal(run({ posting: { title: 'Deployment Strategist - TS/SCI' } }).tier, 'Excluded');
+  const obtain = run({ judgment: { clearance: { value: 'obtain_required', quote: 'Ability to obtain a Secret clearance' } } });
+  assert.equal(obtain.tier, 'S');
+  assert.match(obtain.flags[0], /^Clearance: must be able to obtain one/);
+});
+
+test('vague heavy travel is a flag, never a tier change', () => {
+  const r = run({ judgment: { travel_vague_heavy: { value: true, quote: 'this role will likely require significant travel' } } });
+  assert.equal(r.tier, 'S');
+  assert.deepEqual(r.flags, ['Travel: significant, amount not stated — "this role will likely require significant travel"']);
+});
+
+test('not full-time or an excluded industry → Excluded (D94)', () => {
+  assert.equal(run({ judgment: { employment_type: { value: 'contract', quote: '6-month contract' } } }).tier, 'Excluded');
+  assert.equal(run({ judgment: { employment_type: { value: 'contract_to_hire', quote: 'contract-to-hire' } } }).tier, 'Excluded');
+  assert.equal(run({ judgment: { employment_type: { value: 'unclear', quote: null } } }).tier, 'S');
+  assert.equal(run({ posting: { title: 'AI Strategist (Contract)' } }).tier, 'Excluded');
+  assert.equal(run({ posting: { title: 'Contracts Strategy Manager' } }).tier, 'S'); // managing contracts isn't a contract role
+  const crypto = run({ judgment: { industry_flags: [{ industry: 'crypto_web3', quote: 'the leading crypto exchange' }] } });
+  assert.equal(crypto.tier, 'S'); // the example settings exclude no industry
+  const r2 = decideTier(sFacts({ judgment: { industry_flags: [{ industry: 'crypto_web3', quote: 'the leading crypto exchange' }] } }), { ...rules, excluded_industries: ['crypto_web3'] }, { today: TODAY });
+  assert.equal(r2.tier, 'Excluded');
+});
+
+test('managing people or off-hours drops a tier; 5 office days, a missing degree and agencies are flags (D94)', () => {
+  const mgr = run({ judgment: { people_management: { required: true, team_size: 5, quote: 'lead a team of 5 strategists' } } });
+  assert.equal(mgr.tier, 'A');
+  assert.match(mgr.flags.join('\n'), /Manages people: team of 5/);
+  assert.equal(run({ judgment: { off_hours: { value: true, quote: 'cover APAC hours' } } }).tier, 'A');
+  const flagsOnly = run({ judgment: {
+    work_model: { value: 'onsite', office_days: 5, quote: 'in office 5 days a week' },
+    degree_required: { value: true, met: false, quote: 'MBA required' },
+    staffing_agency: { value: true, quote: 'our client, a leading AI company' },
+  } });
+  assert.equal(flagsOnly.tier, 'S');
+  assert.deepEqual(flagsOnly.flags, ['5 days in office — "in office 5 days a week"', 'Degree: required, not on your CV — "MBA required"', 'Staffing agency posting — "our client, a leading AI company"']);
 });

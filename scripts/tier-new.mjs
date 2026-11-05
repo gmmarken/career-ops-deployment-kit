@@ -3,7 +3,9 @@
 // market.sh scan). Same pipeline as tier.sh: hard facts (code) → judgment (claude, no
 // tools) → company bar → tier (code) → market database → Notion (one sync at the end).
 // A failed posting is reported and skipped; the run exits non-zero if any failed.
-// Usage: scripts/tier-new.sh [--limit N] [--per-company N] [--seen-since YYYY-MM-DD] [--dry-run]
+// Usage: scripts/tier-new.sh [--limit N] [--per-company N] [--seen-since YYYY-MM-DD] [--regrade S,A] [--dry-run]
+// --regrade S,A: grade again the open NYC roles whose latest tier is one of these (after a rules or
+// question change, D94), instead of untiered ones. Each re-grade is a new decision; history is kept.
 // With a limit, the most relevant role families go first, at most --per-company per company (D67).
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
@@ -37,11 +39,17 @@ async function main() {
   let store = openStore();
   // Target-family titles, plus borderline titles whose text passed the no-AI check (D49).
   const wanted = (p) => TARGET_FAMILIES.has(p.title_family) || (p.title_family === 'borderline' && p.text_check === 'hit');
-  const todo = store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id) && (!since || p.first_seen.slice(0, 10) >= since));
+  const regrade = arg('--regrade')?.split(',').map((t) => t.trim()).filter(Boolean) ?? null;
+  if (regrade && (!regrade.length || regrade.some((t) => !['S', 'A', 'B', 'C', 'Excluded', 'Walk-away'].includes(t)))) throw new Error('--regrade takes tiers like S,A');
+  const todo = regrade
+    ? store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && p.url && regrade.includes(p.tier))
+    : store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id) && (!since || p.first_seen.slice(0, 10) >= since));
   store.close();
   const batch = pickBatch(todo, { limit, perCompany });
   const caps = [limit < Infinity && `${limit} a run`, perCompany < Infinity && `${perCompany} per company`].filter(Boolean).join(', ');
-  console.log(`${todo.length} untiered NYC role(s) to tier (target-family titles + borderline titles that passed the text check); tiering ${batch.length}${caps ? ` (cap: ${caps})` : ''}.`);
+  console.log(regrade
+    ? `${todo.length} open NYC role(s) graded ${regrade.join('/')} to grade again; grading ${batch.length}${caps ? ` (cap: ${caps})` : ''}.`
+    : `${todo.length} untiered NYC role(s) to tier (target-family titles + borderline titles that passed the text check); tiering ${batch.length}${caps ? ` (cap: ${caps})` : ''}.`);
   if (todo.length > batch.length) console.log(`${todo.length - batch.length} role(s) wait for a later run.`);
   for (const p of batch) console.log(`  · ${p.company} — ${p.title}`);
   if (dry || !batch.length) return;

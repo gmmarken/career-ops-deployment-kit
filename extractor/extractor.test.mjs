@@ -92,6 +92,9 @@ const goodJudgment = {
   equity_substantial: { value: false, quote: null },
   pay_in_text: null,
   injection_suspected: { value: false, quote: null },
+  languages_required: [],
+  clearance: { value: 'none', quote: null },
+  travel_vague_heavy: { value: false, quote: null }, employment_type: { value: 'full_time', quote: null }, industry_flags: [], people_management: { required: false, team_size: null, quote: null }, degree_required: { value: false, met: null, quote: null }, off_hours: { value: false, quote: null }, staffing_agency: { value: false, quote: null },
 };
 test('valid judgment passes the schema', () => assert.deepEqual(validate(goodJudgment, schema('judgment.schema.json')), []));
 test('bad enum, missing field, extra field are all reported', () => {
