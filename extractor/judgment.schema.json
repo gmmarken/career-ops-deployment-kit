@@ -18,7 +18,16 @@
     "tags",
     "equity_substantial",
     "pay_in_text",
-    "injection_suspected"
+    "injection_suspected",
+    "languages_required",
+    "clearance",
+    "travel_vague_heavy",
+    "employment_type",
+    "industry_flags",
+    "people_management",
+    "degree_required",
+    "off_hours",
+    "staffing_agency"
   ],
   "properties": {
     "company_name": {
@@ -346,6 +355,211 @@
       }
     },
     "injection_suspected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "languages_required": {
+      "description": "Languages other than English that the posting REQUIRES (must speak, fluency required, '<language> speaking' in the title). Preferred / nice-to-have / a plus does not count. Empty if none.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "language",
+          "quote"
+        ],
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "clearance": {
+      "description": "Security clearance: none (not mentioned, or only 'preferred'), active_required (must currently hold one), obtain_required (must be able or eligible to obtain one).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "none",
+            "active_required",
+            "obtain_required"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "travel_vague_heavy": {
+      "description": "True if the posting describes heavy travel without a percentage or trip count ('significant', 'extensive', 'frequent' travel). False if travel is light, unstated, or given as a number (numbers go to the travel_50_plus red flag).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "employment_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "full_time",
+            "contract",
+            "contract_to_hire",
+            "part_time",
+            "temporary",
+            "internship",
+            "unclear"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "industry_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "industry",
+          "quote"
+        ],
+        "properties": {
+          "industry": {
+            "enum": [
+              "crypto_web3",
+              "tobacco_vape_cannabis",
+              "defense_weapons",
+              "gambling"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "people_management": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "team_size",
+        "quote"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "team_size": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "degree_required": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "met",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "met": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "off_hours": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "quote"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "staffing_agency": {
       "type": "object",
       "additionalProperties": false,
       "required": [

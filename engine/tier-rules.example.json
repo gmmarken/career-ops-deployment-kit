@@ -6,6 +6,9 @@
     "home_metro_aliases": [
       "EXC",
       "Example Borough"
+    ],
+    "languages": [
+      "English"
     ]
   },
   "families": [
@@ -52,5 +55,6 @@
     "crypto_first",
     "staffing_outsourcing",
     "big4"
-  ]
+  ],
+  "excluded_industries": []
 }

@@ -14,6 +14,7 @@ Real settings live in `<data dir>/config/tier-rules.json` and are never committe
 
 ## Order of steps
 1. **Exclusions** by ownership (`company.owner_categories` ∩ `excluded_categories`) → Excluded
+1a. **Requirements** (D94): a required language not in `candidate.languages`, an active security clearance, not permanent full-time, or an industry in `excluded_industries` → Excluded (language, clearance and contract also read from the title). Flags only: vague heavy travel, "able to obtain a clearance", 5 office days, a required degree not on the CV, staffing agency. Managing people and off-hours are drops in step 6.
 2. **Walk-away pay**: top of a yearly range in your currency ≤ `walkaway_top` → Walk-away, unless ≥ `borderline_floor_top` with substantial equity (then capped at `caps.borderline_equity`)
 3. **Location**: no location matching `home_metro` or `home_metro_aliases` (whole words; in "City, State" only the city counts) and not remote → `location.outside_home_metro` (a tier or `Excluded`)
 4. **Traps** → C

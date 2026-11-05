@@ -11,6 +11,23 @@ const lower = (tier, n = 1) => TIERS[Math.min(TIERS.indexOf(tier) + n, TIERS.len
 const capAt = (tier, cap) => (TIERS.indexOf(tier) < TIERS.indexOf(cap) ? cap : tier);
 const q = (quote) => (quote ? ` — "${quote}"` : '');
 
+// Requirements the candidate can't meet, read straight from the title as well, so a miss by the
+// model can't let them through (D94). "Portuguese Speaking", "Bilingual Spanish", "TS/SCI".
+const LANGUAGES = ['Spanish', 'Portuguese', 'French', 'German', 'Italian', 'Dutch', 'Japanese', 'Mandarin', 'Chinese', 'Cantonese', 'Korean', 'Arabic', 'Hebrew', 'Russian', 'Hindi', 'Polish', 'Turkish', 'Vietnamese', 'Swedish', 'Norwegian', 'Danish', 'Finnish', 'Greek', 'Thai', 'Indonesian', 'Tagalog', 'Ukrainian', 'Czech', 'Romanian', 'Hungarian'];
+const LANG_RE = new RegExp(`\\b(?:bilingual\\s+(?:\\w+\\s+)?(${LANGUAGES.join('|')})|(${LANGUAGES.join('|')})[\\s-]+(?:speaking|speaker|fluent|native))\\b`, 'i');
+const NOT_FULL_TIME_RE = /\b(part[- ]time|contract[- ]to[- ]hire|contractor|temporary|fixed[- ]term|internship|intern)\b|\((?:contract|temp)\)|[-–] (?:contract|temp)\b/i;
+const CLEARANCE_RE = /\b(TS\/SCI|top secret|secret clearance|security clearance|cleared)\b/i;
+
+/** Languages a title requires ("AI Strategist - Portuguese Speaking" → ["Portuguese"]). */
+export function titleLanguages(title) {
+  const m = String(title ?? '').match(LANG_RE);
+  return m ? [m[1] ?? m[2]].map((l) => l[0].toUpperCase() + l.slice(1).toLowerCase()) : [];
+}
+/** True if the title itself asks for a clearance. */
+export const titleClearance = (title) => CLEARANCE_RE.test(String(title ?? ''));
+/** True if the title says the role isn't permanent full-time ("Contractor", "Part-time", "(Contract)"). */
+export const titleNotFullTime = (title) => NOT_FULL_TIME_RE.test(String(title ?? ''));
+
 /** Whole years of experience on `today`, from the start date in the settings. */
 export function yearsOfExperience(startIso, today) {
   const start = new Date(startIso);
@@ -62,6 +79,43 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
     return done('Excluded');
   }
   step('1. Exclusions', 'none', `${company.name}: no excluded owner category`);
+
+  // Step 1a — requirements the candidate can't meet (D94): a language he doesn't speak, or an
+  // active security clearance. Excluded, from the posting's text or its title.
+  const speaks = new Set(rules.candidate.languages.map((l) => l.toLowerCase()));
+  const langs = [
+    ...(j.languages_required || []).map((l) => ({ language: l.language, quote: l.quote })),
+    ...titleLanguages(posting.title).map((language) => ({ language, quote: posting.title })),
+  ].filter((l) => !speaks.has(String(l.language).toLowerCase().replace(/^(brazilian|european|latin american|mexican|castilian)\s+/, '')));
+  if (langs.length) {
+    flags.push(`Requires ${langs[0].language}`);
+    step('1a. Requirements', 'Excluded', `requires ${[...new Set(langs.map((l) => l.language))].join(', ')}${q(langs[0].quote)}`);
+    return done('Excluded');
+  }
+  if (j.clearance?.value === 'active_required' || titleClearance(posting.title)) {
+    flags.push('Requires security clearance');
+    step('1a. Requirements', 'Excluded', `active security clearance required${q(j.clearance?.quote ?? posting.title)}`);
+    return done('Excluded');
+  }
+  const empType = j.employment_type?.value;
+  if ((empType && !['full_time', 'unclear'].includes(empType)) || titleNotFullTime(posting.title)) {
+    const what = empType && !['full_time', 'unclear'].includes(empType) ? empType.replace(/_/g, '-') : 'not full-time (title)';
+    flags.push(`Not full-time: ${what}`);
+    step('1a. Requirements', 'Excluded', `${what}${q(j.employment_type?.quote ?? posting.title)}`);
+    return done('Excluded');
+  }
+  const badIndustry = (j.industry_flags || []).filter((f) => rules.excluded_industries.includes(f.industry));
+  if (badIndustry.length) {
+    flags.push(`Excluded industry: ${badIndustry[0].industry}`);
+    step('1a. Requirements', 'Excluded', `${badIndustry.map((f) => f.industry).join(', ')}${q(badIndustry[0].quote)}`);
+    return done('Excluded');
+  }
+  if (j.clearance?.value === 'obtain_required') flags.push(`Clearance: must be able to obtain one${q(j.clearance.quote)}`);
+  if (j.travel_vague_heavy?.value) flags.push(`Travel: significant, amount not stated${q(j.travel_vague_heavy.quote)}`);
+  if ((j.work_model?.office_days ?? 0) >= 5) flags.push(`5 days in office${q(j.work_model.quote)}`);
+  if (j.degree_required?.value && j.degree_required.met === false) flags.push(`Degree: required, not on your CV${q(j.degree_required.quote)}`);
+  if (j.staffing_agency?.value) flags.push(`Staffing agency posting${q(j.staffing_agency.quote)}`);
+  step('1a. Requirements', 'none', '');
 
   // Step 1b — walk-away pay.
   const pay = posting.pay;
@@ -188,6 +242,8 @@ export function decideTier(facts, rules, { today = new Date() } = {}) {
   const drops = [];
   if (workModel === 'remote') drops.push('Remote role');
   if (j.back_office?.value) drops.push(`Back office${q(j.back_office.quote)}`);
+  if (j.people_management?.required) drops.push(`Manages people${j.people_management.team_size ? `: team of ${j.people_management.team_size}` : ''}${q(j.people_management.quote)}`);
+  if (j.off_hours?.value) drops.push(`Off-hours or another region's hours${q(j.off_hours.quote)}`);
   // One drop per red-flag TYPE, however many quotes back it up.
   const byFlag = new Map();
   for (const rf of j.red_flags || []) byFlag.set(rf.flag, [...(byFlag.get(rf.flag) || []), rf.quote]);

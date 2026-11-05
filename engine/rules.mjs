@@ -40,6 +40,7 @@ export function validateRules(r, where = 'tier settings') {
   if (r.candidate?.experience_start && Number.isNaN(Date.parse(r.candidate.experience_start))) problems.push('candidate.experience_start must be a date (YYYY-MM-DD)');
   str(r.candidate?.home_metro, 'candidate.home_metro');
   list(r.candidate?.home_metro_aliases, 'candidate.home_metro_aliases');
+  list(r.candidate?.languages, 'candidate.languages (the languages you speak, e.g. ["English"]; D94)');
   list(r.families, 'families');
   str(r.priority_family, 'priority_family');
   str(r.pay?.currency, 'pay.currency');
@@ -54,6 +55,8 @@ export function validateRules(r, where = 'tier settings') {
   if (![...TIERS, 'Excluded'].includes(r.location?.outside_home_metro)) problems.push('location.outside_home_metro must be one of S/A/B/C/Excluded');
   num(r.old_posting_days, 'old_posting_days');
   list(r.excluded_categories, 'excluded_categories');
+  list(r.excluded_industries, 'excluded_industries (crypto_web3, tobacco_vape_cannabis, defense_weapons, gambling; [] for none; D94)');
+  for (const i of r.excluded_industries || []) if (!['crypto_web3', 'tobacco_vape_cannabis', 'defense_weapons', 'gambling'].includes(i)) problems.push(`excluded_industries: unknown industry "${i}"`);
   if (r.pay && r.pay.borderline_floor_top > r.pay.walkaway_top) problems.push('pay.borderline_floor_top must be ≤ pay.walkaway_top');
 
   if (problems.length) throw new Error(`${where} has problems:\n  - ${problems.join('\n  - ')}`);

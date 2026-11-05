@@ -525,3 +525,14 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **Options:** (A) a line in the ✅ summary; (B) keep the 🚨.
 **Decision:** A, the candidate's call. The scan prints "Not found (retired after 3 runs in a row): <board> n/3 · …" and doesn't count those boards as failures; the morning text says "⚠️ N job boards not found (retired after 3 runs in a row): …". Any other board error (a server error, a reader that broke) is still a failure and a 🚨.
 **Trade-off:** a board that's really gone stays quiet for up to 3 runs, which was already true for its postings.
+
+## D94 — Requirements the candidate can't meet, vague travel, and other edge cases (2026-11-05)
+**Context:** Three open roles requiring Portuguese or Spanish were graded S, because the grading never asked about languages. A role saying "will likely require significant travel" got no flag, because the travel rule only knew stated percentages. The candidate then answered a short interview about other edge cases.
+**Decisions (all the candidate's calls):**
+- **Excluded:** a required language he doesn't speak (`candidate.languages` in the tier settings; also caught from the title, e.g. "Portuguese Speaking", with no AI); an *active* security clearance (also from the title, e.g. "TS/SCI"); anything that isn't permanent full-time (contract, contract-to-hire, part-time, temporary, internship; also from the title, cautiously); an excluded industry (`excluded_industries`: crypto/web3 and tobacco/vape/cannabis for him; defense and gambling are allowed).
+- **One tier down:** must manage people from day one; regular nights or weekends, or another region's working hours.
+- **Flag only:** heavy travel with no number ("significant travel"); must be able to obtain a clearance; 5 days in the office; a required degree he doesn't have; a staffing-agency posting.
+- **Nothing:** citizenship or sponsorship lines (he's a US citizen).
+**How:** eight new questions in the extraction prompt and schema (the model reports, with quotes); `engine/tier-engine.mjs` step 1a decides. "Preferred" or "a plus" never counts as required.
+**Re-grade:** open S and A roles are graded again once with `tier-new.sh --regrade S,A` (about 84 AI calls), after the calibration set passes.
+**Small call:** "able to obtain a clearance" is a flag, not an exclusion, because many government-facing roles say it and the candidate may be eligible.
