@@ -31,6 +31,7 @@ export function checkRadarConfig(cfg, where = 'sources.json') {
   if (!Number.isInteger(f.lookback_days) || f.lookback_days < 1 || f.lookback_days > 90) throw new Error(`${where}: form_d.lookback_days must be a whole number from 1 to 90.`);
   const n = cfg?.funding_news;
   if (!n || typeof n !== 'object') throw new Error(`${where}: "funding_news" settings are missing. See market/sources.example.json.`);
+  if (!Number.isInteger(n.max_age_days) || n.max_age_days < 1 || n.max_age_days > 90) throw new Error(`${where}: funding_news.max_age_days must be a whole number from 1 to 90 (older news is not counted as newly funded).`);
   if (!Array.isArray(n.techcrunch_feeds) || n.techcrunch_feeds.some((u) => !/^https:\/\/techcrunch\.com\//.test(u))) throw new Error(`${where}: funding_news.techcrunch_feeds must be a list of https://techcrunch.com/… feed links (it may be empty).`);
   const s = n.serper;
   if (!s || !Number.isInteger(s.every_days) || s.every_days < 1 || !Array.isArray(s.queries) || !s.queries.length) {
@@ -71,15 +72,16 @@ export function recordFunded(store, idx, f, at = new Date()) {
   const e = hit?.entry ? structuredClone(hit.entry) : newRecord(name, hit ? null : f.found_via);
   if (f.legal_name && normalizeName(f.legal_name) !== normalizeName(name) && !(e.aliases ?? []).includes(f.legal_name)) e.aliases = [...(e.aliases ?? []), f.legal_name];
   const round = { round: f.round ?? null, amount_usd: f.amount_usd ?? null, date: f.date ?? null, source_url: f.source_url, found_via: f.source };
+  const id = store.company(name, at);
+  // Another article about a round already on file is a source for it, not a new round.
+  const newRound = store.addFundingRound(id, round, at);
   const last = e.last_raise;
-  if (!last || (round.date && (!last.date || round.date >= last.date))) e.last_raise = round;
+  if (newRound && (!last || (round.date && (!last.date || round.date >= last.date)))) e.last_raise = round;
   if ((!e.stage || e.stage === 'unknown') && f.stage) e.stage = f.stage;
   if (f.nyc && e.nyc_presence !== true) { e.nyc_presence = true; if (!e.nyc_evidence) e.nyc_evidence = f.nyc_evidence ?? null; }
   if (!(e.leaders ?? []).length && f.leaders?.length) e.leaders = f.leaders;
   e.sources = e.sources ?? [];
   if (!e.sources.some((s) => s.url === f.source_url)) e.sources.push({ url: f.source_url, supports: f.supports });
-  const id = store.company(name, at);
-  const newRound = store.addFundingRound(id, round, at);
   store.saveCompany(e, { source: f.source, by: 'kit', at });
   idx.set(companyKey(name), { name, entry: e });
   return { name, isNewCompany: !hit, newRound, nyc: e.nyc_presence === true };
@@ -137,11 +139,15 @@ export async function runFormD(store, idx, cfg, { fetchImpl = fetch, pause = () 
  * One news item → recorded, or why not. A headline is recorded when it names a company and
  * either places it in NYC or the company is one we already track (its new round is news to us).
  */
-export function considerNews(store, idx, item, { source, label, now = new Date() }) {
+export function considerNews(store, idx, item, { source, label, maxAgeDays, now = new Date() }) {
+  if (!Number.isInteger(maxAgeDays) || maxAgeDays < 1) throw new Error('considerNews: maxAgeDays (funding_news.max_age_days) must be a whole number of days.');
   const h = readHeadline(item.title);
   const nyc = isNyc(`${item.title} ${item.text ?? ''}`);
   const base = { url: item.link, source, title: item.title, published: item.published ?? null, nyc };
   if (!h) { store.recordNews({ ...base, outcome: 'not a company-raised-money headline' }, now); return null; }
+  // Feeds also carry old stories; only recent news counts as "newly funded". No date, no count.
+  if (!item.published) { store.recordNews({ ...base, company: h.company, outcome: 'no publish date; not counted' }, now); return null; }
+  if (item.published < day(new Date(now) - maxAgeDays * DAY_MS)) { store.recordNews({ ...base, company: h.company, outcome: `older than ${maxAgeDays} days; not counted` }, now); return null; }
   const known = idx.get(companyKey(h.company));
   if (!nyc && !known) { store.recordNews({ ...base, company: h.company, outcome: 'not NYC, company not tracked' }, now); return null; }
   const r = recordFunded(store, idx, {
@@ -153,7 +159,7 @@ export function considerNews(store, idx, item, { source, label, now = new Date()
 }
 
 /** TechCrunch feeds, every run. feed(url) → RSS items. Returns { headlines, counted, errors }. */
-export async function runTechCrunch(store, idx, feeds, { feed, now = new Date() }) {
+export async function runTechCrunch(store, idx, feeds, { feed, maxAgeDays, now = new Date() }) {
   const out = { headlines: 0, counted: [], errors: [] };
   const seen = store.newsSeen();
   for (const url of feeds) {
@@ -163,7 +169,7 @@ export async function runTechCrunch(store, idx, feeds, { feed, now = new Date() 
       if (seen.has(it.link)) continue;
       seen.add(it.link);
       out.headlines++;
-      const r = considerNews(store, idx, it, { source: TECHCRUNCH_SOURCE, label: 'TechCrunch', now });
+      const r = considerNews(store, idx, it, { source: TECHCRUNCH_SOURCE, label: 'TechCrunch', maxAgeDays, now });
       if (r) out.counted.push(r);
     }
   }
@@ -181,7 +187,7 @@ export function newsSearchDue(lastOkAt, everyDays, now = new Date()) {
  * Serper news search (weekly). search(q) → [{ title, link, snippet, date, source }].
  * A bad key or no credits stops the remaining searches. Returns { searches, headlines, counted, errors, stopped }.
  */
-export async function runNewsSearch(store, idx, queries, { search, now = new Date(), pause = () => Promise.resolve() }) {
+export async function runNewsSearch(store, idx, queries, { search, maxAgeDays, now = new Date(), pause = () => Promise.resolve() }) {
   const out = { searches: 0, headlines: 0, counted: [], errors: [], stopped: false };
   const seen = store.newsSeen();
   for (const q of queries) {
@@ -196,7 +202,7 @@ export async function runNewsSearch(store, idx, queries, { search, now = new Dat
       seen.add(n.link);
       out.headlines++;
       const it = { title: n.title, link: n.link, text: n.snippet, published: relativeDate(n.date, now) };
-      const r = considerNews(store, idx, it, { source: NEWS_SEARCH_SOURCE, label: `${n.source ?? 'News'} (via Google News)`, now });
+      const r = considerNews(store, idx, it, { source: NEWS_SEARCH_SOURCE, label: `${n.source ?? 'News'} (via Google News)`, maxAgeDays, now });
       if (r) out.counted.push(r);
     }
     await pause();
