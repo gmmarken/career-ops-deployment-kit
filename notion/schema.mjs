@@ -30,8 +30,26 @@ export function radarProperties() {
     'First seen': { date: {} },
     'Open postings': { number: {} },
     'Open deployment postings': { number: {} },
+    ...RADAR_V6,
   };
 }
+
+// Phase 6 (D73): funding, leaders, NYC presence and deployment fit. Added to an existing
+// Company Radar by ensureRadarColumns; all written by the kit, none are yours to edit.
+export const FIT_OPTIONS = ['Strong', 'Possible', 'Unlikely', 'Unclear'];
+export const FOUND_VIA = ['Form D', 'News', 'Job board', 'You'];
+export const RADAR_V6 = {
+  'Deployment fit': { select: opts(FIT_OPTIONS, (n) => ({ Strong: 'green', Possible: 'yellow', Unlikely: 'gray', Unclear: 'default' })[n]) },
+  'Fit reason': { rich_text: {} },
+  'Funding amount': { number: { format: 'dollar' } },
+  'Funding date': { date: {} },
+  'Funding source': { url: {} },
+  'Found via': { select: opts(FOUND_VIA, (n) => ({ 'Form D': 'blue', News: 'purple', 'Job board': 'default', You: 'green' })[n]) },
+  Leaders: { rich_text: {} },
+  'NYC presence': { select: opts(['Yes', 'No', 'Unknown'], (n) => ({ Yes: 'green', No: 'gray', Unknown: 'default' })[n]) },
+  'NYC evidence': { rich_text: {} },
+  'Careers page': { url: {} },
+};
 
 export function jobsProperties(radarDataSourceId) {
   return {

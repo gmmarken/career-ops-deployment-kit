@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily unattended run: board scan, tier new roles, back up market.db. Sends one iMessage every run:
+# Daily unattended run: board scan, tier new roles, Company Radar (Form D, funding news, research), back up market.db. Sends one iMessage every run:
 # a morning summary when all went well, a loud failure notice otherwise (D63).
 # Usage: scripts/daily.sh [--test-message | --sample-messages]   (launchd runs it with no arguments)
 set -euo pipefail

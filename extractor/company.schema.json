@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Company research result",
-  "description": "Filled by the company-research step from the company name only (web search allowed, no posting text). Every factual claim needs a source URL; unknown stays null.",
+  "description": "Filled by the company-research step from the company name only (web search allowed, no posting text). Every factual claim needs a source URL; unknown stays null. Leaders are names and titles only, from public sources; never contact details.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,11 @@
     "parent",
     "is_mbb",
     "nyc_presence",
-    "sources"
+    "sources",
+    "leaders",
+    "careers_url",
+    "nyc_evidence",
+    "fit_facts"
   ],
   "properties": {
     "name": {
@@ -136,6 +140,119 @@
           },
           "supports": {
             "type": "string"
+          }
+        }
+      }
+    },
+    "leaders": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "title",
+          "source_url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "careers_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nyc_evidence": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fit_facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sells_to_businesses",
+        "enterprise_customers",
+        "hands_on_rollout"
+      ],
+      "properties": {
+        "sells_to_businesses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "evidence"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "evidence": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "enterprise_customers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "evidence"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "evidence": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "hands_on_rollout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "evidence"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "evidence": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         }
       }

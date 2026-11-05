@@ -1,4 +1,5 @@
-// Daily unattended run (D53): board scan → tier new roles → back up market.db.
+// Daily unattended run (D53): board scan → tier new roles → Company Radar (Form D, funding news,
+// company research; Phase 6) → back up market.db.
 // Every step runs even if an earlier one failed (one failing source must not stop the others),
 // and every failure is written to the run log AND sent to Gabriel by iMessage. No retries,
 // no substitute data. Exit code: 0 all good, 1 something failed, 2 couldn't even report.
@@ -28,6 +29,7 @@ export function loadConfig(dataDir) {
   for (const k of ['tier_per_day', 'tier_per_company']) {
     if (!Number.isInteger(cfg[k]) || cfg[k] < 1) throw new Error(`${path}: "${k}" must be a whole number of at least 1 (D67: how many roles the daily run grades, in all and per company).`);
   }
+  if (!Number.isInteger(cfg.research_per_day) || cfg.research_per_day < 0) throw new Error(`${path}: "research_per_day" must be a whole number, 0 or more (D76: how many companies the daily run researches for Company Radar).`);
   return cfg;
 }
 
@@ -80,6 +82,9 @@ export function runFacts(outputs) {
   const queued = tier.match(/^(\d+) untiered NYC role/m);
   const waiting = tier.match(/^(\d+) role\(s\) wait for a later run/m);
   const paused = tier.match(/^Paused: Claude usage limit reached after (\d+) of (\d+) graded; (\d+) left/m);
+  const radar = String(outputs.radar ?? '');
+  const funded = radar.match(/^Newly funded NYC companies \((\d+)\): (.+)$/m);
+  const researchPaused = /^Paused: Claude usage limit reached after \d+ of \d+ researched/m.test(radar);
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
@@ -88,6 +93,8 @@ export function runFacts(outputs) {
     waiting: waiting ? Number(waiting[1]) : 0,
     paused: paused ? { graded: Number(paused[1]), of: Number(paused[2]), left: Number(paused[3]) } : null,
     graded,
+    funded: funded ? { count: Number(funded[1]), names: funded[2].split(' · ').map((x) => x.replace(/\s*\(.*\)$/, '')) } : null,
+    researchPaused,
   };
 }
 
@@ -111,6 +118,11 @@ export function successSummary(date, outputs) {
     for (const g of top.slice(0, MAX_LISTED)) lines.push(`${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`);
     if (top.length > MAX_LISTED) lines.push(`…and ${top.length - MAX_LISTED} more S&A in Notion`);
   }
+  if (f.funded) {
+    const shown = f.funded.names.slice(0, 3).join(', ');
+    lines.push(`🆕 ${f.funded.count} newly funded NYC compan${f.funded.count === 1 ? 'y' : 'ies'}: ${shown}${f.funded.count > 3 ? `, +${f.funded.count - 3} more` : ''} (Company Radar)`);
+  }
+  if (f.researchPaused) lines.push('⏳ Company research paused at the Claude usage limit; it continues next run');
   const wait = f.waiting + (f.paused?.left ?? 0);
   if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);
   lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
@@ -137,13 +149,15 @@ export function sendIMessage(to, text) {
   });
 }
 
-/** The three daily steps. Each returns {ok, out}. */
+/** The four daily steps. Each returns {ok, out}. */
 export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iCloudRoot }) {
   if (!cfg) throw new Error('defaultSteps needs the daily settings (cfg).');
   const tierArgs = ['--limit', String(cfg.tier_per_day), '--per-company', String(cfg.tier_per_company)];
   return [
     { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
     { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out }; } },
+    // After grading, so grading keeps first claim on the Claude plan (D67, D76).
+    { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out }; } },
     { name: 'backup', go: async () => {
       const dir = join(dataDir, 'backups');
       const file = backupDb(join(dataDir, 'data', 'market.db'), dir, date);
@@ -205,6 +219,7 @@ async function main() {
     const sample = {
       scan: 'Scanning 52 board(s)…\n  ✓ rippling:pace (Pace): 13 open, 1 new, 0 closed\n  ✓ ashby:sierra (Sierra): 219 open, 3 new, 0 closed\n',
       'tier-new': '4 untiered NYC role(s) to tier; tiering 4.\n  [1/4] S         Pace — Deployment Strategist\n  [2/4] A         Stripe — GTM Strategy & Operations Analyst\n  [3/4] C         Notion — Commercial Solutions Consultant\n  [4/4] B         Plaid — Business Operations\n',
+      radar: 'Newly funded NYC companies (2): Minerva BI ($15M, Form D) · Clark ($11M, Seed, News)\n',
     };
     await notify(`(SAMPLE, not a real run)\n${successSummary(date, sample)}`);
     await notify(`(SAMPLE, not a real run)\n${summarize(date, [{ step: 'scan', detail: 'ashby:example: Could not reach https://api.ashbyhq.com/…: fetch failed' }], '/…/private/logs/daily-' + date + '.log')}`);

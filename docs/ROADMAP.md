@@ -48,9 +48,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] ~~Built In NYC reader~~: dropped, its terms don't clearly allow it (D64)
 
 ## Phase 6 — Company Radar + Form D
-- [ ] SEC Form D provider (NY filings flagged)
-- [ ] NYC tech funding news (newly funded startups, before they post jobs); moved from Phase 5 (D66)
-- [ ] Radar enrichment: funding, what they do, leaders (public sources), NYC presence, open roles, deployment-fit read
+- [x] SEC Form D reader: NYC tech and health-tech filings, $1M+, funds and vehicles screened out (D70–D71)
+- [x] NYC tech funding news: TechCrunch feeds daily, Serper news search weekly; AlleyWatch not read (D66, D72)
+- [x] Radar enrichment: funding, what they do, leaders (public sources), NYC presence, careers page, deployment-fit read; 10 companies a day, newly funded first (D73–D76)
+- [ ] Later: SF Series A–C AI companies (D73); refine how the *Verified* tick works
 
 ## Phase 7 — Delivery
 - [ ] iMessage alert on new S-tier role

@@ -14,6 +14,14 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Company Radar + Form D (Phase 6, D70–D76). New daily step `market.sh radar --research N`, run after grading:
+  - **SEC Form D:** NYC tech and health-tech filings of $1M+ since the last run; funds, amendments and investment vehicles screened out; officers and directors kept as leaders (names and roles only). Needs `form_d` (with the contact email the SEC requires) in `private/config/sources.json`.
+  - **Funding news:** TechCrunch funding feeds every run, Serper news search every 7 days (4 credits). NYC companies are added; companies we already track get their new round wherever they are. Needs `funding_news` in `sources.json`.
+  - **Research:** 10 companies a day (`research_per_day` in `private/config/daily.json`, required), newly funded first. Adds leaders (public sources, never contact details), careers page (a readable job board joins the scan), NYC evidence, and three facts for the new **Deployment fit** (Strong / Possible / Unlikely / Unclear, decided by `engine/fit.mjs`).
+  - **Notion:** ten new Company Radar columns (Deployment fit, Fit reason, Funding amount / date / source, Found via, Leaders, NYC presence, NYC evidence, Careers page) and a "🆕 Newly funded (last 30 days)" view.
+  - **Morning text:** "🆕 N newly funded NYC companies: …".
+- `market.sh enrich` uses the same research queue and questions.
+- Market database schema v5: `formd_filings`, `funding_news`, new company columns, `funding_rounds.found_via`.
 - Usage-limit pause (D68): if grading hits the Claude usage limit, `tier-new` stops and keeps what it graded, and the morning text reads "🚨 ⏳ Job search: grading PAUSED" instead of listing every remaining role as failed. The rest are graded on the next run.
 - Daily grading cap (D67): the daily run grades at most `tier_per_day` (30) new roles, at most `tier_per_company` (5) per company, deployment / AI strategist roles first, then forward-deployed PM, chief of staff, BizOps and borderline. The rest wait for later runs, and the morning text says how many (⏳). Both settings are required in `private/config/daily.json`. `tier-new.sh --per-company N`.
 - Search-engine discovery (D52, D66): once a week `market.sh scan` searches Google through Serper for the target titles on Ashby, Greenhouse, Lever and Rippling boards in New York (NYC, Brooklyn), and adds each company board found to the scan. 32 searches, capped at 50 credits a run. `market.sh discover --dry-run` lists the searches. Needs `SERPER_API_KEY` in `private/.env` and a `serper` block in `private/config/sources.json`.

@@ -9,7 +9,7 @@ The long-term market dataset: every posting the kit sees, when it was open, and 
 | `boards.mjs` | Which job boards the scan reads: boards seen on recorded postings, plus boards found on investor job boards or added by hand; watched companies with no board |
 | `record.mjs` | Records one tiered posting plus fingerprints of the settings and extraction instructions |
 | `metrics.mjs` | Monthly open/new counts per company and family, rankings, CSV |
-| `cli.mjs` | `scripts/market.sh backfill · scan · discover · relabel · add-board · metrics · stats · recall · enrich` |
+| `cli.mjs` | `scripts/market.sh backfill · scan · discover · relabel · add-board · metrics · stats · recall · enrich · radar` |
 | `sources.example.json` | Template for `private/config/sources.json`: the investor job boards (Getro, a16z) the scan reads |
 
 ## How time works
@@ -52,7 +52,8 @@ Nothing is overwritten without the old value being kept:
 scripts/market.sh backfill                              # load already-tiered roles, no AI calls
 scripts/market.sh metrics --from 2026-11 --to 2027-10   # NYC + target families; add --all-locations / --all-families
 scripts/market.sh recall linkedin-2026-11.txt
-scripts/market.sh enrich --limit 10                     # research companies with no researched info
+scripts/market.sh enrich --limit 10                     # research companies not yet asked the Phase 6 questions
+scripts/market.sh radar --research 10 [--no-notion]     # Form D + funding news + research + fit (the daily Radar step)
 scripts/market.sh stats                                 # refresh provisional months, freeze finished ones
 scripts/market.sh scan                                  # investor boards → known boards → text check (all no AI)
 scripts/market.sh relabel --dry-run                     # show what the current title classifier would change

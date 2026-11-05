@@ -5,7 +5,10 @@
 //                                write monthly + ranking CSVs to <data dir>/exports/
 //   recall <file> [--source linkedin]
 //                                check a hand-collected list ("Company | Title" per line) against the database
-//   enrich [--limit N]           research companies with no researched info yet (fills empty fields only)
+//   enrich [--limit N]           research companies not yet researched with the Phase 6 questions (fills empty fields only)
+//   radar --research N [--no-notion]
+//                                Company Radar (Phase 6): SEC Form D filings + funding news -> newly funded NYC companies,
+//                                then research N companies (newly funded first), recompute deployment fit, sync to Notion
 //   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
 //   scan [board ...]             find boards (investor Getro boards, Watch), read every open posting on known
 //                                job boards, text-check borderline NYC titles (all no AI); log scans; close gone postings
@@ -17,11 +20,14 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
 import { decideTier } from '../engine/tier-engine.mjs';
-import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, fillFromResearch, needsEnrichment } from '../extractor/research.mjs';
+import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, applyResearch, needsEnrichment } from '../extractor/research.mjs';
+import { isUsageLimit } from '../extractor/claude.mjs';
+import { fetchFeed, serperNews } from '../extractor/funding-news.mjs';
+import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, newsSearchDue, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore } from './store.mjs';
 import { recordTiered, rulesHash } from './record.mjs';
-import { syncAll } from '../notion/sync.mjs';
+import { syncAll, pullCompanyEdits } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
@@ -165,34 +171,152 @@ function recall() {
   }
 }
 
+/**
+ * Research up to `limit` companies in the Radar's order (D76): newly funded first, then
+ * companies hiring for target roles in NYC, then the rest. Fills empty fields only (your
+ * calls are kept). A careers page on a board we read joins the daily scan. Stops at the
+ * Claude usage limit (like grading, D68); the rest wait. Returns { done, failures, paused }.
+ */
+async function researchCompanies(limit) {
+  const path = watchlistPath(dataDir);
+  const wl = loadWatchlist(path);
+  let st = openStore();
+  let order, known;
+  try {
+    order = researchOrder(st.companyRecords(), st.postings());
+    known = new Set(knownBoards(st.postings(), st.boards()).boards.keys());
+  } finally { st.close(); }
+  const todo = needsEnrichment(wl, order);
+  const batch = todo.slice(0, limit);
+  console.log(`Company research: ${todo.length} compan${todo.length === 1 ? 'y' : 'ies'} to research; ${batch.length} now (newly funded first).`);
+  const out = { done: [], failures: [], paused: false };
+  const calls = [];
+  for (const [i, { name, entry }] of batch.entries()) {
+    let res;
+    try { res = await researchCompany(name); } catch (err) {
+      if (isUsageLimit(err.message)) { out.paused = true; break; }
+      const msg = `research ${name}: ${err.message.split('\n')[0]}`;
+      out.failures.push(msg);
+      console.log(`  [${i + 1}/${batch.length}] FAILED ${msg}`);
+      continue;
+    }
+    calls.push({ step: `research ${name}`, ...res.usage });
+    let e = entry;
+    if (e) { applyResearch(e, res.company); saveWatchlist(wl, { source: 'research', by: 'kit', path }); }
+    else e = saveResearch(path, wl, res.company, [name]);
+    let note = '';
+    const board = e.careers_url ? boardFromUrl(e.careers_url) : null;
+    if (board && !known.has(board)) {
+      try {
+        await listBoard(board);
+        st = openStore();
+        try { st.addBoard(board, e.name, 'radar', e.careers_url); } finally { st.close(); }
+        known.add(board);
+        note = `; job board ${board} added to the scan`;
+      } catch (err) { note = `; job board ${board} not readable now (${err.message.split('\n')[0]})`; }
+    } else if (e.careers_url && !board) {
+      let host = e.careers_url;
+      try { host = new URL(e.careers_url).hostname; } catch { /* not a full link: show it as given */ }
+      note = `; posts jobs somewhere we can't read yet (${host})`;
+    }
+    console.log(`  [${i + 1}/${batch.length}] ${e.name}: ${e.status}, ${e.stage ?? 'unknown'}${e.nyc_presence ? ', NYC' : ''}${note}`);
+    if (res.dropped.length) console.log(`      left out ${res.dropped.length} leader entr${res.dropped.length === 1 ? 'y' : 'ies'}: ${res.dropped.map((d) => `${d.name} (${d.why})`).join(', ')}`);
+    out.done.push(e.name);
+  }
+  if (calls.length) console.log(`AI calls: ${calls.length}, ~$${calls.reduce((t, c) => t + (c.cost_usd_equivalent ?? 0), 0).toFixed(2)} API-equivalent`);
+  if (out.paused) console.log(`Paused: Claude usage limit reached after ${out.done.length} of ${batch.length} researched; the rest wait for the next run.`);
+  const left = todo.length - out.done.length;
+  if (left > 0) console.log(`${left} compan${left === 1 ? 'y waits' : 'ies wait'} for research on later runs.`);
+  return out;
+}
+
+/** Recompute every researched company's deployment fit (no AI). Returns the names that changed. */
+function refitAll() {
+  const st = openStore();
+  let changed;
+  try { changed = refit(st.companyRecords(), st.postings()); } finally { st.close(); }
+  if (changed.length) saveWatchlist({ companies: changed }, { source: 'fit-rule', by: 'kit' });
+  console.log(`Deployment fit: ${changed.length} compan${changed.length === 1 ? 'y' : 'ies'} changed.`);
+  return changed.map((e) => e.name);
+}
+
 async function enrich() {
   const limit = Number(arg('--limit') ?? 10);
   if (!Number.isInteger(limit) || limit < 1) throw new Error('--limit must be a positive whole number.');
-  const path = watchlistPath(dataDir);
-  const wl = loadWatchlist(path);
-  const store = openStore();
-  const names = [...store.companies().map((c) => c.name), ...wl.companies.map((c) => c.name)];
-  store.close();
-  const todo = needsEnrichment(wl, names);
-  if (!todo.length) { console.log('Every company already has researched info. Nothing to do.'); return; }
-  const batch = todo.slice(0, limit);
-  console.log(`${todo.length} compan${todo.length === 1 ? 'y needs' : 'ies need'} research; doing ${batch.length} now.`);
-  const calls = [];
-  for (const { name, entry } of batch) {
-    const { company, usage } = await researchCompany(name);
-    calls.push({ step: `research ${name}`, ...usage });
-    if (entry) {
-      const filled = fillFromResearch(entry, company);
-      console.log(`  ${name}: filled ${filled.length ? filled.join(', ') : 'nothing new'} (your calls kept: status=${entry.status}, ai_native=${Boolean(entry.ai_native)})`);
-    } else {
-      saveResearch(path, wl, company, [name]);
-      console.log(`  ${name}: added — ${company.status}, ${company.stage}${company.investors.length ? `, investors: ${company.investors.slice(0, 4).join(', ')}` : ''}`);
-    }
-    saveWatchlist(wl, { source: 'research', by: 'kit' });
-  }
-  console.log(`AI calls: ${describeCalls(calls)}`);
-  if (todo.length > batch.length) console.log(`${todo.length - batch.length} left; run again to continue.`);
+  const r = await researchCompanies(limit);
+  refitAll();
   console.log('Run scripts/notion.sh sync to show the new info in Company Radar.');
+  if (r.failures.length) throw new Error(`${r.failures.length} compan${r.failures.length === 1 ? 'y' : 'ies'} failed and were skipped:\n  ${r.failures.join('\n  ')}`);
+}
+
+const millions = (n) => (n == null ? 'amount not given' : n >= 1e9 ? `$${+(n / 1e9).toFixed(1)}B` : `$${+(n / 1e6).toFixed(1)}M`);
+
+/** One logged source step: runs `go`, records the scan, prints `line(result)`, collects errors. */
+async function sourceStep(store, source, label, go, line, failures) {
+  const id = store.startScan(source);
+  try {
+    const r = await go();
+    store.finishScan(id, r.errors.length ? { status: 'error', found: r.found ?? null, error: r.errors.join(' | ') } : { status: 'ok', found: r.found ?? null });
+    console.log(`  ✓ ${label}: ${line(r)}`);
+    for (const c of r.counted) console.log(`    + ${c.name}${c.isNewCompany ? ' (new)' : ''}: ${[millions(c.amount_usd), c.round, c.nyc ? 'NYC' : 'not NYC'].filter(Boolean).join(', ')}`);
+    for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
+    return r;
+  } catch (err) {
+    store.finishScan(id, { status: 'error', error: err.message });
+    failures.push(`${label}: ${err.message}`);
+    console.log(`  ✗ ${label}: ${err.message}`);
+    return null;
+  }
+}
+
+/** market.sh radar --research N [--no-notion]: the Company Radar step of the daily run. */
+async function radar() {
+  const n = Number(arg('--research'));
+  if (arg('--research') === undefined || !Number.isInteger(n) || n < 0) throw new Error('Usage: market.sh radar --research N [--no-notion]   (N = companies to research this run; 0 = none)');
+  const noNotion = process.argv.includes('--no-notion');
+  const sources = loadSources();
+  const { form_d, funding_news } = checkRadarConfig(sources, join(dataDir, 'config', 'sources.json'));
+  const failures = [];
+  const counted = [];
+  const touched = new Set();
+  const store = openStore();
+  try {
+    const idx = companyIndex(store);
+    console.log('Funding sources:');
+    const fd = await sourceStep(store, FORM_D_SOURCE, 'Form D (SEC)', async () => { const r = await runFormD(store, idx, form_d); return { ...r, found: r.listed }; },
+      (r) => `${r.listed} ${form_d.state} filing(s) since ${r.start}; ${r.opened} opened, ${r.counted.length} counted (${r.counted.filter((c) => c.isNewCompany).length} new to the Radar)`, failures);
+    if (fd && Object.keys(fd.skipped).length) console.log(`    Not counted: ${Object.entries(fd.skipped).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
+    if (fd) counted.push(...fd.counted);
+    if (funding_news.techcrunch_feeds.length) {
+      const tc = await sourceStep(store, TECHCRUNCH_SOURCE, 'TechCrunch', async () => { const r = await runTechCrunch(store, idx, funding_news.techcrunch_feeds, { feed: (u) => fetchFeed(u) }); return { ...r, found: r.headlines }; },
+        (r) => `${r.headlines} new headline(s), ${r.counted.length} recorded`, failures);
+      if (tc) counted.push(...tc.counted);
+    }
+    const { due, nextInDays } = newsSearchDue(store.lastOkScan(NEWS_SEARCH_SOURCE), funding_news.serper.every_days);
+    if (!due) console.log(`  · News search (Serper): not due; next run in ${nextInDays} day(s)`);
+    else {
+      const ns = await sourceStep(store, NEWS_SEARCH_SOURCE, 'News search (Serper)', async () => {
+        const key = readSerperKey(dataDir);
+        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q), pause: () => sleep(300) });
+        return { ...r, found: r.headlines };
+      }, (r) => `${r.searches} search(es), ${r.searches} credit(s); ${r.headlines} new headline(s), ${r.counted.length} recorded${r.stopped ? '; stopped early (the rest would fail the same way)' : ''}`, failures);
+      if (ns) counted.push(...ns.counted);
+    }
+  } finally { store.close(); }
+  for (const c of counted) touched.add(c.name);
+  console.log(fundedLine(counted) ?? 'Newly funded NYC companies: none new this run.');
+
+  if (n > 0) {
+    if (!noNotion) await pullCompanyEdits(dataDir);
+    const r = await researchCompanies(n);
+    for (const name of r.done) touched.add(name);
+    failures.push(...r.failures);
+  }
+  for (const name of refitAll()) touched.add(name);
+
+  if (noNotion) console.log(`Notion: skipped (--no-notion); ${touched.size} compan${touched.size === 1 ? 'y' : 'ies'} not synced.`);
+  else if (touched.size) await syncAll(dataDir, { companyNames: [...touched] });
+  if (failures.length) throw new Error(`${failures.length} problem(s); the other sources still ran:\n  ${failures.join('\n  ')}`);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -498,7 +622,8 @@ try {
   else if (cmd === 'retier') await retier();
   else if (cmd === 'add-board') addBoard();
   else if (cmd === 'discover') await discover();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME] | discover [--dry-run] [--force]');
+  else if (cmd === 'radar') await radar();
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME] | discover [--dry-run] [--force] | radar --research N [--no-notion]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);

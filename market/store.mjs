@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -80,6 +80,8 @@ const COMPANY_COLUMNS = {
   stage: 'TEXT', last_raise: 'TEXT', investors: "TEXT NOT NULL DEFAULT '[]'", what_they_do: 'TEXT', parent: 'TEXT',
   nyc_presence: 'INTEGER', owner_categories: "TEXT NOT NULL DEFAULT '[]'", is_mbb: 'INTEGER', reason: 'TEXT',
   sources: "TEXT NOT NULL DEFAULT '[]'", origin: 'TEXT', researched_at: 'TEXT', notion_pushed: 'TEXT',
+  // v5 (Phase 6, D70–D76): Company Radar enrichment and how a company was found.
+  leaders: "TEXT NOT NULL DEFAULT '[]'", careers_url: 'TEXT', nyc_evidence: 'TEXT', fit_facts: 'TEXT', fit: 'TEXT', fit_reason: 'TEXT', found_via: 'TEXT',
 };
 const SCHEMA_V2 = `
 CREATE TABLE IF NOT EXISTS company_snapshots (
@@ -132,6 +134,19 @@ CREATE TABLE IF NOT EXISTS portfolio_pages (
 );
 `;
 
+// v5 (Phase 6): Form D filings and funding news already looked at, and where each funding round came from.
+const SCHEMA_V5 = `
+CREATE TABLE IF NOT EXISTS formd_filings (
+  accession TEXT PRIMARY KEY, cik TEXT NOT NULL, entity TEXT NOT NULL, filed TEXT NOT NULL, city TEXT,
+  industry TEXT, amount_sold REAL, offering REAL, first_sale TEXT, qualifies INTEGER NOT NULL, why TEXT,
+  company_id INTEGER REFERENCES companies(id), checked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS funding_news (
+  url TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL, published TEXT, company TEXT, nyc INTEGER NOT NULL,
+  outcome TEXT NOT NULL, company_id INTEGER REFERENCES companies(id), seen_at TEXT NOT NULL
+);
+`;
+
 function migrate(db, from) {
   if (from < 2) {
     const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
@@ -144,6 +159,13 @@ function migrate(db, from) {
     db.exec(SCHEMA_V3);
   }
   if (from < 4) db.exec(SCHEMA_V4);
+  if (from < 5) {
+    const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
+    for (const [col, type] of Object.entries(COMPANY_COLUMNS)) if (!have.has(col)) db.exec(`ALTER TABLE companies ADD COLUMN ${col} ${type}`);
+    const fr = new Set(db.prepare('PRAGMA table_info(funding_rounds)').all().map((c) => c.name));
+    if (!fr.has('found_via')) db.exec('ALTER TABLE funding_rounds ADD COLUMN found_via TEXT');
+    db.exec(SCHEMA_V5);
+  }
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
@@ -188,8 +210,10 @@ export function openStore(path = defaultDbPath()) {
 
 const TRACKED_POSTING_FIELDS = ['title', 'pay_min', 'pay_max', 'pay_currency', 'pay_interval', 'locations', 'workplace'];
 const OWNED = ['status', 'verified', 'watch', 'ai_native'];
-const FACT_FIELDS = ['aliases', 'stage', 'last_raise', 'investors', 'what_they_do', 'parent', 'nyc_presence', 'owner_categories', 'is_mbb', 'reason', 'sources', 'origin'];
-const JSON_COLS = ['aliases', 'last_raise', 'investors', 'owner_categories', 'sources', 'notion_pushed'];
+const FACT_FIELDS = ['aliases', 'stage', 'last_raise', 'investors', 'what_they_do', 'parent', 'nyc_presence', 'owner_categories', 'is_mbb', 'reason', 'sources', 'origin',
+  'leaders', 'careers_url', 'nyc_evidence', 'fit_facts', 'fit', 'fit_reason', 'found_via'];
+const JSON_COLS = ['aliases', 'last_raise', 'investors', 'owner_categories', 'sources', 'notion_pushed', 'leaders', 'fit_facts'];
+const LIST_COLS = ['aliases', 'investors', 'owner_categories', 'sources', 'leaders'];
 const BOOL_COLS = ['verified', 'watch', 'ai_native', 'nyc_presence', 'is_mbb'];
 const ownedValue = (e, f) => (f === 'status' ? e.status ?? 'unknown' : f === 'verified' ? e.verified !== false : Boolean(e[f]));
 const factsOf = (e) => Object.fromEntries(FACT_FIELDS.map((k) => [k, e[k] ?? null]));
@@ -208,7 +232,7 @@ function entryToRow(e) {
   const out = {};
   for (const k of Object.keys(COMPANY_COLUMNS)) {
     let v = e[k];
-    if (JSON_COLS.includes(k)) v = v == null ? (['aliases', 'investors', 'owner_categories', 'sources'].includes(k) ? '[]' : null) : JSON.stringify(v);
+    if (JSON_COLS.includes(k)) v = v == null ? (LIST_COLS.includes(k) ? '[]' : null) : JSON.stringify(v);
     else if (BOOL_COLS.includes(k)) v = v == null ? null : Number(Boolean(v));
     else v = v ?? null;
     out[k] = v;
@@ -382,8 +406,8 @@ class Store {
     }
     const r = next.last_raise;
     if (r && (r.amount_usd != null || r.date || r.round)) {
-      const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(row.id, r.round ?? null, r.amount_usd ?? null, r.date ?? null, JSON.stringify(next.investors ?? []), next.sources?.[0]?.url ?? null, iso);
+      const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at, found_via)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, r.round ?? null, r.amount_usd ?? null, r.date ?? null, JSON.stringify(next.investors ?? []), r.source_url ?? next.sources?.[0]?.url ?? null, iso, r.found_via ?? source);
       if (res.changes) changed = true;
     }
     return { id: row.id, changed };
@@ -535,6 +559,43 @@ class Store {
       relevant == null ? null : Number(Boolean(relevant)), JSON.stringify(unreadable ?? []), error, network, slug);
   }
   portfolioPages(network) { return this.db.prepare('SELECT * FROM portfolio_pages WHERE network = ? ORDER BY slug').all(network); }
+
+  // --- Company Radar sources (Phase 6) ------------------------------------------------
+
+  /** Accession numbers of Form D filings already looked at. */
+  formDSeen() { return new Set(this.db.prepare('SELECT accession FROM formd_filings').all().map((r) => r.accession)); }
+
+  /** Record one Form D filing we looked at, whether or not it counted (so it is read once). */
+  recordFormD(f, at = new Date()) {
+    this.db.prepare(`INSERT OR REPLACE INTO formd_filings (accession, cik, entity, filed, city, industry, amount_sold, offering, first_sale, qualifies, why, company_id, checked_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(f.accession, f.cik, f.entity, f.filed, f.city ?? null, f.industry ?? null, f.amount_sold ?? null,
+      f.offering ?? null, f.first_sale ?? null, Number(Boolean(f.qualifies)), f.why ?? null, f.company_id ?? null, new Date(at).toISOString());
+  }
+
+  /** URLs of funding news items already looked at. */
+  newsSeen() { return new Set(this.db.prepare('SELECT url FROM funding_news').all().map((r) => r.url)); }
+
+  recordNews(n, at = new Date()) {
+    this.db.prepare(`INSERT OR IGNORE INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
+  }
+
+  /** Record a funding round seen in a Form D or the news. Returns true if it is new (not already recorded). */
+  addFundingRound(companyId, r, at = new Date()) {
+    const res = this.db.prepare(`INSERT OR IGNORE INTO funding_rounds (company_id, round, amount_usd, announced, investors, source_url, recorded_at, found_via)
+      VALUES (?, ?, ?, ?, '[]', ?, ?, ?)`).run(companyId, r.round ?? null, r.amount_usd ?? null, r.date ?? null, r.source_url ?? null, new Date(at).toISOString(), r.found_via ?? null);
+    return res.changes > 0;
+  }
+
+  /** Funding rounds per company (newest announced first), for the Radar. */
+  fundingByCompany() {
+    const by = new Map();
+    for (const r of this.db.prepare('SELECT * FROM funding_rounds ORDER BY COALESCE(announced, recorded_at) DESC, id DESC').all()) {
+      if (!by.has(r.company_id)) by.set(r.company_id, []);
+      by.get(r.company_id).push({ ...r, investors: JSON.parse(r.investors) });
+    }
+    return by;
+  }
 
   companyHistory(name) {
     const row = this.db.prepare('SELECT id FROM companies WHERE name = ?').get(name);
