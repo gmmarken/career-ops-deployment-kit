@@ -5,6 +5,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- A job board answering "not found" before its 3rd run in a row no longer makes the run a failure: it's a ⚠️ line in the morning summary, and it's still retired on the 3rd (D93).
+- Prep packs: "~40 people" was blocked as a different count from "~40-person" by career-ops' fact gate (fixed in private `allow_metrics`).
 - Rippling postings with a pay range (e.g. Drivepoint's) failed grading; the range is now read (the New York one if it differs by place).
 - Funding news (D77): stories older than `funding_news.max_age_days` (30, now required in `sources.json`) or with no date are logged but no longer counted as newly funded; several articles about one raise, or a Form D and an article, now stay one round.
 - Morning text says "S&A" instead of "S/A" for the top roles.

@@ -327,3 +327,10 @@ test('packs: hitting the usage limit shows as paused, not failed', () => {
   const out = 'Prep packs: 2 waiting · 0 built today (cap 3) · 0 in the last 7 days (cap 5) · building 2\nPaused: Claude usage limit reached after 0 of 2 packs; the rest stay queued.\nPrep packs done: 0 ready · 0 blocked · 0 failed · 2 queued\n';
   assert.match(successSummary('2026-11-05', { packs: out }), /⏳ Prep packs paused at the Claude usage limit/);
 });
+
+test('not-found boards still counting toward retirement are a summary line, not a failure (D93)', () => {
+  const scan = 'Scanning 2 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ⚠ ashby:pryzm: not found (2 of 3 runs in a row; retired after 3): HTTP 404\nNot found (retired after 3 runs in a row): pryzm 2/3 · whatnot 1/3\n';
+  assert.deepEqual(runFacts({ scan }).notFound, ['pryzm 2/3', 'whatnot 1/3']);
+  assert.match(successSummary('2026-11-05', { scan }), /⚠️ 2 job boards not found \(retired after 3 runs in a row\): pryzm 2\/3, whatnot 1\/3/);
+  assert.doesNotMatch(successSummary('2026-11-05', { scan: 'Scanning 1 board(s)…\n' }), /not found/);
+});

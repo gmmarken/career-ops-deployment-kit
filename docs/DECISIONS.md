@@ -519,3 +519,9 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 ## D92 — Follower count locked as a fact instead of banned numbers; "an estimated" is a hedge (2026-11-04)
 **Context:** `cv-facts.json` banned other follower counts ("50K", "45K", "42K"…) so the side project's audience could only read "40,000+". Banned phrases match inside longer text, and one of them blocked a true figure. career-ops' own fact gate doesn't check counts of things like followers, which is why the bans had been added.
 **Decision:** The candidate's call. "40,000+" is the locked figure (recorded in `allow_facts`) unless he says otherwise. The number bans are gone: the kit's line checks (D84, D88) block any number that isn't in cv.md, so another follower count can't get through. The migration kit's time savings now read "an estimated", which the line checks treat as a hedge like "~", so a tailored CV can't drop it.
+
+## D93 — A job board that's "not found" but not yet retired is a summary line, not a failure (2026-11-05)
+**Context:** On 2026-11-05 the morning text was a 🚨 partly because three boards answered "not found" (1 or 2 runs of the 3 that retire a board, D82). There was nothing to do; the retirement rule handles it.
+**Options:** (A) a line in the ✅ summary; (B) keep the 🚨.
+**Decision:** A, the candidate's call. The scan prints "Not found (retired after 3 runs in a row): <board> n/3 · …" and doesn't count those boards as failures; the morning text says "⚠️ N job boards not found (retired after 3 runs in a row): …". Any other board error (a server error, a reader that broke) is still a failure and a 🚨.
+**Trade-off:** a board that's really gone stays quiet for up to 3 runs, which was already true for its postings.

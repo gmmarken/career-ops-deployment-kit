@@ -120,6 +120,7 @@ export function runFacts(outputs) {
   const funded = radar.match(/^Newly funded NYC companies \((\d+)\): (.+)$/m);
   const researchPaused = /^Paused: Claude usage limit reached after \d+ of \d+ researched/m.test(radar);
   const retired = scan.match(/^Retired (\d+) job board\(s\) that no longer exist: (.+)$/m);
+  const notFound = scan.match(/^Not found \(retired after \d+ runs in a row\): (.+)$/m);
   const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
   const packs = String(outputs.packs ?? '');
   const packsReady = [...packs.matchAll(/^📦 Prep pack ready: (.+?) · /gm)].map((m) => m[1]);
@@ -136,6 +137,7 @@ export function runFacts(outputs) {
     funded: funded ? { count: Number(funded[1]), names: funded[2].split(' · ').map((x) => x.replace(/\s*\(.*\)$/, '')) } : null,
     researchPaused,
     retired: retired ? { count: Number(retired[1]), names: retired[2] } : null,
+    notFound: notFound ? notFound[1].split(' · ') : [],
     weekly,
     packsReady,
     packsQueued: packsQueued ? Number(packsQueued[1]) : null,
@@ -168,6 +170,7 @@ export function successSummary(date, outputs) {
     lines.push(`🆕 ${f.funded.count} newly funded NYC compan${f.funded.count === 1 ? 'y' : 'ies'}: ${shown}${f.funded.count > 3 ? `, +${f.funded.count - 3} more` : ''} (Company Radar)`);
   }
   if (f.researchPaused) lines.push('⏳ Company research paused at the Claude usage limit; it continues next run');
+  if (f.notFound.length) lines.push(`⚠️ ${f.notFound.length} job board${f.notFound.length === 1 ? '' : 's'} not found (retired after 3 runs in a row): ${f.notFound.join(', ')}`);
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
   if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
