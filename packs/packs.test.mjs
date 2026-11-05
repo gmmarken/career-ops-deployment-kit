@@ -1,0 +1,277 @@
+// Phase 8 prep packs: CV reading, line checks, queue order and pace, project map, Notion text.
+// Uses a made-up CV; never the real one.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseCv, sourceLines } from './cvsource.mjs';
+import { numbers, numberProblems, checkTailored } from './check.mjs';
+import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mjs';
+import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
+import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
+import { markdownBlocks, rich, packBlocks } from './notion.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug } from './build.mjs';
+import { openStore } from '../market/store.mjs';
+import { refreshQueue } from '../scripts/packs.mjs';
+
+const CV = `# CV -- Pat Example
+
+**Location:** Brooklyn, NY
+**Email:** pat@example.com
+**Phone:** 555-0100
+**LinkedIn:** linkedin.com/in/pat-example
+
+## Professional Summary
+
+Operator with 4+ years in consulting and operations.
+
+## Work Experience
+
+### Acme -- New York, NY
+
+**Analyst, Strategy & Operations**
+Sep 2025 - Present
+
+Analytics partner to 10+ leaders.
+
+- Built an AI agent that maps files, a task each analyst repeats 2-4 times a month.
+- Rolled out a migration kit to the ~40-person team, projected to save ~40 minutes each.
+- Uncovered nearly 300 bad codes and $200K+ in revenue.
+
+### Beta Co -- Seattle, WA
+
+**Consultant**
+Jun 2022 - Sep 2025
+
+- Cut a daily report from ~3 hours to under 30 minutes.
+
+## Projects
+
+- **Side tool** (personal, 2026) -- Built a small tool for one user.
+
+## Education
+
+- B.A., Business -- Example University (2022). GPA 3.80
+
+## Skills
+
+- **AI:** context engineering, Claude
+- **Data:** SQL, Python
+
+## Interests
+
+- Skiing and golf.
+`;
+
+const cv = parseCv(CV);
+const lines = sourceLines(cv);
+
+test('cv.md is read into numbered lines; an unknown section fails loudly', () => {
+  assert.equal(cv.candidate.name, 'Pat Example');
+  assert.deepEqual(cv.experience.map((j) => [j.id, j.company, j.role, j.period, j.bullets.length]), [['e1', 'Acme', 'Analyst, Strategy & Operations', 'Sep 2025 - Present', 3], ['e2', 'Beta Co', 'Consultant', 'Jun 2022 - Sep 2025', 1]]);
+  assert.equal(cv.experience[0].context, 'Analytics partner to 10+ leaders.');
+  assert.equal(lines.get('e1b2').entry, 'e1');
+  assert.equal(lines.get('e1c').text, 'Analytics partner to 10+ leaders.');
+  assert.deepEqual(cv.skills[0], { category: 'AI', items: ['context engineering', 'Claude'] });
+  assert.equal(cv.interests[0].text, 'Skiing and golf.');
+  assert.throws(() => parseCv(CV.replace('## Projects', '## Hobbies')), /unknown section "Hobbies"/);
+  assert.throws(() => parseCv(CV.replace('**Email:** pat@example.com', '')), /no \*\*Email:\*\* line/);
+});
+
+test('numbers: approximations and "+" are read, and units don\'t swallow words', () => {
+  assert.deepEqual(numbers('~40 minutes, $200K+, nearly 300, 30%, 3 million').map((n) => [n.key, n.hedged, n.plus]),
+    [['40', true, false], ['200K', false, true], ['300', true, false], ['30%', false, false], ['3M', false, false]]);
+});
+
+test('numberProblems: a new number, a dropped "~" or "nearly", and an added "+" are all caught (D10 gap)', () => {
+  const src = 'saves ~40 minutes; nearly 300 codes; 6+ programs; 2-4 times';
+  assert.deepEqual(numberProblems('saves about 40 minutes, nearly 300 codes, 6 programs, 2-4 times', src), []);
+  const p = numberProblems('saves 40 minutes, 300 codes, 4+ times, 12 hours', src);
+  assert.equal(p.length, 4);
+  assert.match(p[0], /drops the source's approximation/);
+  assert.match(p[2], /adds a "\+"/);
+  assert.match(p[3], /"12" is not in the source/);
+});
+
+const good = {
+  headline: 'AI Deployment Strategist',
+  summary: 'Operator with 4+ years in consulting and operations.',
+  experience: [
+    { entry_id: 'e1', bullets: [{ text: 'Built an AI agent that maps files, used 2-4 times a month by each analyst.', source_ids: ['e1b1'] }, { text: 'Rolled out a kit to a ~40-person team.', source_ids: ['e1b2'] }] },
+    { entry_id: 'e2', bullets: [{ text: 'Cut a daily report from ~3 hours to under 30 minutes.', source_ids: ['e2b1'] }] },
+  ],
+  skills: [{ category: 'AI', items: ['Claude', 'context engineering'] }],
+  changes: [],
+};
+
+test('checkTailored: a faithful rewrite passes', () => {
+  assert.deepEqual(checkTailored(cv, lines, good).problems, []);
+});
+
+test('checkTailored: dropped jobs, wrong sources, new numbers, new skills and long headlines block', () => {
+  const bad = structuredClone(good);
+  bad.experience[0].bullets[0] = { text: 'Built an AI agent used by 50 analysts.', source_ids: ['e1b1'] };
+  bad.experience[0].bullets[1] = { text: 'Cut a report to 30 minutes.', source_ids: ['e2b1'] }; // another job's line
+  bad.experience[1].bullets.push({ text: 'Led everything.', source_ids: [] });
+  bad.skills = [{ category: 'AI', items: ['Kubernetes'] }, { category: 'Cloud', items: ['AWS'] }];
+  bad.headline = 'The Very Best AI Deployment Strategist In Town';
+  const p = checkTailored(cv, lines, bad).problems.join('\n');
+  assert.match(p, /Acme bullet 1: "50" is not in the source line/);
+  assert.match(p, /source e2b1 is not a Acme line/);
+  assert.match(p, /Beta Co bullet 2: names no cv\.md line/);
+  assert.match(p, /"Kubernetes" is not listed under AI/);
+  assert.match(p, /"Cloud" is not a cv\.md skills category/);
+  assert.match(p, /headline is over 6 words/);
+  const missing = { ...good, experience: [good.experience[0]] };
+  assert.match(checkTailored(cv, lines, missing).problems[0], /jobs must be e1, e2 in that order/);
+});
+
+test('render: career-ops payload keeps job headers, projects, education and interests word for word', () => {
+  const p = cvPayload(cv, good);
+  assert.equal(p.candidate.title, 'AI Deployment Strategist');
+  assert.deepEqual(p.candidate.linkedin, { url: 'https://linkedin.com/in/pat-example', display: 'linkedin.com/in/pat-example' });
+  assert.equal(p.experience[0].role, 'Analyst, Strategy & Operations');
+  assert.equal(p.experience[1].bullets.length, 1);
+  assert.deepEqual(p.projects[0], { name: 'Side tool', badge: 'personal, 2026', description: 'Built a small tool for one user.' });
+  assert.deepEqual(p.education[0], { title: 'B.A., Business', org: 'Example University', year: '2022', description: 'GPA 3.80' });
+  assert.deepEqual(p.interests, ['Skiing and golf']);
+  assert.match(cvMarkdown(cv, p), /## Interests\n\n- Skiing and golf\./);
+  assert.throws(() => projectEntry('no format'), /project line should look like/);
+  assert.throws(() => educationEntry('no year here'), /education line should look like/);
+});
+
+test('queue order: your ticks, then role family, then pay, then newest (D85)', () => {
+  const row = (id, o) => ({ posting_id: id, reason: 'auto', title_family: 'bizops_so', pay_max: null, pay_interval: 'year', first_seen: '2026-11-01', ...o });
+  const order = rankQueue([
+    row(1, { title_family: 'deployment_ai_strategist', pay_max: 200000 }),
+    row(2, { title_family: 'deployment_ai_strategist', pay_max: 250000 }),
+    row(3, { reason: 'you' }),
+    row(4, { title_family: 'deployment_ai_strategist', pay_max: null, first_seen: '2026-11-04' }),
+    row(5, { title_family: 'deployment_ai_strategist', pay_max: 200000, first_seen: '2026-11-03' }),
+  ]).map((r) => r.posting_id);
+  assert.deepEqual(order, [3, 2, 5, 1, 4]);
+});
+
+test('pace: 1 a day, up to 3 when 2+ want one that day, never more than 5 in 7 days (D85)', () => {
+  const cfg = { per_day: 1, max_per_day: 3, max_per_week: 5 };
+  const now = new Date(2026, 10, 10, 13, 0);
+  const q = (n) => Array.from({ length: n }, () => ({ status: 'queued' }));
+  const built = (daysAgo) => ({ status: 'ready', built_at: new Date(now.getTime() - daysAgo * 86400000).toISOString() });
+  assert.equal(allowance(q(1), cfg, now).build, 1);
+  assert.equal(allowance(q(4), cfg, now).build, 3);
+  assert.equal(allowance([built(0), ...q(1)], cfg, now).build, 1); // midday: one built this morning + one new → cap rises to 3
+  assert.equal(allowance([built(0), ...q(1)], cfg, now).dayCap, 3);
+  assert.equal(allowance([built(0)], cfg, now).build, 0);
+  assert.equal(allowance([built(0), built(0), built(0), ...q(3)], cfg, now).build, 0);
+  assert.equal(allowance([built(1), built(2), built(3), built(4), ...q(4)], cfg, now).build, 1); // weekly cap
+  assert.equal(allowance([built(1), built(2), built(3), built(4), built(8), ...q(4)], cfg, now).build, 1);
+  assert.equal(allowance([{ status: 'blocked', built_at: now.toISOString() }, ...q(1)], cfg, now).builtToday, 1); // a blocked pack used a slot
+  assert.throws(() => checkPackConfig(undefined), /needs a "packs" block/);
+  assert.throws(() => checkPackConfig({ per_day: 1, max_per_day: 3 }), /max_per_week must be a whole number/);
+});
+
+test('queue refresh: new S roles from the start date, your ticks, and closed roles dropped (D83)', () => {
+  const store = openStore(':memory:');
+  const since = store.getMeta('packs_auto_since');
+  assert.ok(since);
+  const add = (url, tier, at, extra = {}) => {
+    const { id } = store.seePosting({ url, company: 'Acme', title: `Role ${url.slice(-1)}`, locations: ['New York, NY'], in_home_metro: true, ...extra });
+    store.recordTier(id, { tier, flags: [], steps: [] }, { judgment: {} }, { at });
+    return id;
+  };
+  const old = add('https://jobs.ashbyhq.com/acme/1', 'S', '2026-01-01T00:00:00Z');
+  const fresh = add('https://jobs.ashbyhq.com/acme/2', 'S', new Date(Date.now() + 1000));
+  const aRole = add('https://jobs.ashbyhq.com/acme/3', 'A', new Date(Date.now() + 1000));
+  const notes = refreshQueue(store, [{ key: 'jobs.ashbyhq.com/acme/3' }, { key: 'jobs.ashbyhq.com/acme/9' }]);
+  assert.equal(store.pack(old), null); // graded S before Phase 8: only if you tick it
+  assert.equal(store.pack(fresh).reason, 'auto');
+  assert.equal(store.pack(aRole).reason, 'you');
+  assert.match(notes.join('\n'), /the database doesn't know \(jobs\.ashbyhq\.com\/acme\/9\)/);
+  store.db.prepare('UPDATE postings SET closed_at = ? WHERE id = ?').run('2026-11-10', fresh);
+  refreshQueue(store, []);
+  assert.equal(store.pack(fresh).status, 'dropped');
+  assert.throws(() => store.queuePack(old, 'whim'), /reason must be auto or you/);
+  store.close();
+});
+
+const NOTES = `# The projects behind my CV lines
+
+## AI agent
+Line: Built an AI agent that maps files
+Was on: Both old resumes
+Project: File-mapping agent, 2026
+What I did: Wrote it in Python
+  and tested it on real files.
+Who I worked with:
+What I'd say in an interview: Saves the team repeated work.
+
+## Migration kit
+Line: Rolled out a migration kit
+Was on: Operator resume only
+Project:
+What I did:
+`;
+
+test('project map: each bullet → cv.md line → your project notes; empty notes are flagged (D90)', () => {
+  const notes = parseProjectNotes(NOTES);
+  assert.equal(notes[0].fields['What I did'], 'Wrote it in Python and tested it on real files.');
+  assert.equal(notes[0].filled, true);
+  assert.equal(notes[1].filled, false);
+  assert.equal(notesFor(lines.get('e1b1').text, notes).title, 'AI agent');
+  const { markdown, missing } = mapMarkdown('Acme — Role', cv, lines, good, notes);
+  assert.equal(missing, 2); // migration kit (empty) and Beta Co's line (none)
+  assert.match(markdown, /\*\*Project:\*\* AI agent/);
+  assert.match(markdown, /No project notes yet\.\*\* Add them to private\/cv-projects\.md\. \(Was on: Operator resume only\)/);
+  assert.throws(() => parseProjectNotes('## No line here\nProject: x'), /has no "Line:"/);
+});
+
+test('project notes file: missing sections are added once, and empty ones listed', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'notes-')), 'cv-projects.md');
+  writeFileSync(path, NOTES);
+  const added = addMissingSections(path, lines, loadProjectNotes(path));
+  assert.equal(added, 4); // e1b3, e1c, e2b1, project p1
+  assert.equal(addMissingSections(path, lines, loadProjectNotes(path)), 0);
+  assert.match(readFileSync(path, 'utf8'), /## Cut a daily report from ~3 hours to\nLine: Cut a daily report/);
+  assert.equal(linesWithoutNotes(lines, loadProjectNotes(path)).length, 5);
+});
+
+test('draft checks: invented numbers, unknown leaders, long letters and unknown CV lines block (D86–D88)', () => {
+  const docs = {
+    cover_letter: 'Dear Hiring Team, I cut a report from ~3 hours to under 30 minutes. Sincerely, Pat',
+    interview_prep: { role_in_one_line: 'x', company_brief: [], likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'Saved ~40 minutes each.', cv_source_ids: ['e1b2'] }], gaps: [{ gap: 'g', posting_quote: 'q', how_to_address: 'Learn it.' }], questions_to_ask: [] },
+    outreach: { leader_name: 'Jane Doe', leader_title: 'CEO', leader_note: 'Congrats on the $15M raise.', hiring_manager_note: 'Hi, can we chat?' },
+  };
+  const ctx = { lines, cvText: CV, companyText: '- **Last raise:** Series A, $15M', jdText: '', leaders: [{ name: 'Jane Doe', title: 'CEO' }] };
+  assert.deepEqual(checkDocs(docs, ctx), []);
+  const bad = structuredClone(docs);
+  bad.cover_letter = `${'word '.repeat(320)} I saved 12 hours.`;
+  bad.outreach.leader_name = 'John Smith';
+  bad.outreach.hiring_manager_note = 'Could we talk for 15 minutes?';
+  bad.interview_prep.likely_questions[0].cv_source_ids = ['e9b9'];
+  const p = checkDocs(bad, ctx).join('\n');
+  assert.match(p, /cover letter is 324 words/);
+  assert.match(p, /cover letter: "12" is not in the source/);
+  assert.match(p, /"John Smith" is not a leader in Company Radar/);
+  assert.match(p, /hiring manager note: "15 minutes"|hiring manager note: "15" is not in the source/);
+  assert.match(p, /unknown CV line e9b9/);
+  assert.equal(prepClaims(docs.interview_prep), '- Saved ~40 minutes each.\n- Learn it.\n');
+});
+
+test('company research as markdown: missing stays "unknown", never filled in', () => {
+  assert.match(companyMarkdown('Nope', null), /No Company Radar research yet/);
+  const md = companyMarkdown('Acme', { name: 'Acme', what_they_do: 'Widgets', leaders: [], investors: [], sources: [] });
+  assert.match(md, /What they do:\*\* Widgets/);
+  assert.match(md, /Leaders:\*\* unknown/);
+  assert.equal(slug('Ode with Anthropic — AI Strategist (NY)'), 'ode-with-anthropic-ai-strategist-ny');
+});
+
+test('Notion text: markdown becomes blocks under the 2000-character limit; a blocked pack shows only why', () => {
+  const b = markdownBlocks('# T\n## H\n- **Bold:** item\n1. one\n> quote\ntext\n```\ncode\n```');
+  assert.deepEqual(b.map((x) => x.type), ['heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'paragraph', 'code']);
+  assert.deepEqual(b[2].bulleted_list_item.rich_text.map((r) => [r.text.content, Boolean(r.annotations?.bold)]), [['Bold:', true], [' item', false]]);
+  assert.ok(rich('x'.repeat(5000)).every((r) => r.text.content.length <= 1900));
+  const blocked = packBlocks({ folder: '/f', status: 'blocked', date: '2026-11-05', detail: 'CV line check: x' });
+  assert.equal(blocked.length, 3);
+  assert.match(blocked[2].callout.rich_text[0].text.content, /CV line check: x/);
+});

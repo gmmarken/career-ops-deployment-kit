@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tailored CV (D84)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["headline", "summary", "experience", "skills", "changes"],
+  "properties": {
+    "headline": { "type": "string", "description": "Target-role headline under the name, at most 6 words, no numbers." },
+    "summary": { "type": "string", "description": "2-3 sentences, at most 60 words, every claim from the CV source." },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entry_id", "bullets"],
+        "properties": {
+          "entry_id": { "type": "string" },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "source_ids"],
+              "properties": {
+                "text": { "type": "string" },
+                "source_ids": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "items"],
+        "properties": { "category": { "type": "string" }, "items": { "type": "array", "items": { "type": "string" } } }
+      }
+    },
+    "changes": { "type": "array", "items": { "type": "string" }, "description": "Short notes on what was tailored and why, for the candidate's review." }
+  }
+}

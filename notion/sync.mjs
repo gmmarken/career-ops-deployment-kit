@@ -58,7 +58,7 @@ export function postingProps(p, decision, companyPageId, { create }) {
     URL: url(p.url),
     Key: text(p.url_key),
   };
-  if (create) Object.assign(props, { Status: select('To review'), Favorite: check(false), Notes: text('') });
+  if (create) Object.assign(props, { Status: select('To review'), Favorite: check(false), Notes: text(''), 'Make pack': check(false) });
   return props;
 }
 
