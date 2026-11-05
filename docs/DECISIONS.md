@@ -536,3 +536,13 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **How:** eight new questions in the extraction prompt and schema (the model reports, with quotes); `engine/tier-engine.mjs` step 1a decides. "Preferred" or "a plus" never counts as required.
 **Re-grade:** open S and A roles are graded again once with `tier-new.sh --regrade S,A` (about 84 AI calls), after the calibration set passes.
 **Small call:** "able to obtain a clearance" is a flag, not an exclusion, because many government-facing roles say it and the candidate may be eligible.
+
+## D95 — Alerts also arrive as reminders, because texts to yourself never notify (2026-11-05)
+**Context:** The daily texts go from the Mac to the candidate's own number, so the iPhone treats them as messages he sent: they arrive, but with no notification. He found the three "📦 Prep pack ready" texts in Messages but was never alerted.
+**Options:** (A) also create a reminder, due now, in a "Job Search Alerts" list that iCloud syncs to the phone; (B) a push-notification app such as ntfy (a new outside service); (C) a second Apple ID for the Mac's Messages; (D) email.
+**Decision:** A, the candidate's call. A new S role, a pack ready, a failed run, or a paused run each also create a reminder; the calm ✅ summary stays a text only. The list is `reminders_list` in `private/config/daily.json` (required). A reminder that can't be created is a reported problem. `install-daily.sh --test-message` now also creates a test reminder, which is how the one-time Reminders permission is granted; the helper app isn't rebuilt, so no new Documents permission is needed.
+**Trade-off:** alerts collect in the list until ticked off.
+
+## D96 — "Years in a field" isn't a hard gate, and an "or" list is met by any one item (2026-11-05)
+**Context:** Re-grading after D94 dropped Context's Forward Deployed Strategist from S to C. The model read "2+ years of hands-on experience in investment banking, private equity, hardware engineering, management consulting, or a similar knowledge-intensive field" as an unmet hard gate, though the candidate has years of consulting.
+**Decision:** The candidate's call. The extraction prompt now says years of experience in a field go in `years_required.min` and are not a hard gate, and a requirement listing options joined by "or" is met if the CV shows any one. Checked on the calibration set before merging.

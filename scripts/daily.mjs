@@ -42,6 +42,7 @@ export function loadConfig(dataDir) {
   if (!w || typeof w !== 'object') throw new Error(`${path}: "weekly_email" is missing. Add {"to": "<your email>", "day": "Sunday"} (D81).`);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(w.to ?? ''))) throw new Error(`${path}: weekly_email.to must be your email address.`);
   if (!WEEKDAYS.includes(w.day)) throw new Error(`${path}: weekly_email.day must be a day name like "Sunday".`);
+  if (typeof cfg.reminders_list !== 'string' || !cfg.reminders_list.trim()) throw new Error(`${path}: "reminders_list" is missing. Add "reminders_list": "Job Search Alerts" (D95: the Reminders list that makes alerts pop up on your phone).`);
   try { checkPackConfig(cfg.packs); } catch (e) { throw new Error(`${path}: ${e.message.replace(/^private\/config\/daily\.json /, '')}`); }
   return cfg;
 }
@@ -202,6 +203,32 @@ export function sendIMessage(to, text) {
   });
 }
 
+/**
+ * Add a reminder, due now, to a Reminders list (D95). Texts to your own number never notify,
+ * so the alerts that matter (⭐ S role, 🚨 failure, 📦 pack) also become a reminder, which iCloud
+ * syncs to the phone with a notification. The list is created if it doesn't exist.
+ */
+export function addReminder(list, text) {
+  const [title, ...rest] = String(text).split('\n');
+  const script = [
+    'on run argv',
+    'set listName to item 1 of argv',
+    'tell application "Reminders"',
+    'if not (exists list listName) then make new list with properties {name:listName}',
+    'make new reminder at end of list listName with properties {name:(item 2 of argv), body:(item 3 of argv), remind me date:(current date)}',
+    'end tell',
+    'end run',
+  ];
+  const args = script.flatMap((l) => ['-e', l]).concat(['--', list, title, rest.join('\n')]);
+  return new Promise((resolve, reject) => {
+    execFile('osascript', args, { timeout: 60000 }, (err, _o, stderr) => {
+      if (err?.killed) reject(new Error('Reminder not created: Reminders did not answer within 60 s. If macOS is asking to let the app control Reminders, click Allow (System Settings → Privacy & Security → Automation).'));
+      else if (err) reject(new Error(`Reminder not created: ${(stderr || `osascript exited with code ${err.code}`).trim()}`));
+      else resolve();
+    });
+  });
+}
+
 /** Build and send the weekly email (D81). Returns the step's output line. */
 export async function sendWeekly({ dataDir, cfg, now = new Date(), send = sendMail, sample = false }) {
   const store = openStore(join(dataDir, 'data', 'market.db'));
@@ -249,7 +276,13 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
  * Run every step, log everything, report any failure. Returns {problems, notified}.
  * `log(text)` appends to the run log; `notify(text)` sends the notice.
  */
-export async function runDaily({ date, steps, log, notify, logPath, midday = false }) {
+export async function runDaily({ date, steps, log, notify, logPath, midday = false, remind = null }) {
+  // An alert that should pop up on the phone: a reminder as well as the text (D95). A reminder that
+  // can't be created is a reported problem, never a quiet one.
+  const popUp = async (text, what) => {
+    if (!remind) return;
+    try { await remind(text); log(`Reminder added: ${what}\n`); } catch (err) { problems.push({ step: 'reminder', detail: `${what}: ${err.message}` }); log(`Reminder FAILED: ${what}: ${err.message}\n`); }
+  };
   const problems = [];
   const outputs = {};
   const kind = midday ? 'midday run' : 'daily run';
@@ -266,20 +299,28 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
     if (step.name === 'tier-new') {
       for (const a of sAlerts(res.out)) {
         try { await notify(alertText(a)); log(`S-tier text sent: ${a.role}\n`); } catch (err) { problems.push({ step: 'S-tier text', detail: `${a.role}: ${err.message}` }); log(`S-tier text FAILED: ${a.role}: ${err.message}\n`); }
+        await popUp(alertText(a), `S-tier ${a.role}`);
       }
     }
-    if (step.name === 'packs' && midday) {
+    if (step.name === 'packs') {
       for (const role of runFacts({ packs: res.out }).packsReady) {
-        try { await notify(packText(role)); log(`Pack text sent: ${role}\n`); } catch (err) { problems.push({ step: 'pack text', detail: `${role}: ${err.message}` }); log(`Pack text FAILED: ${role}: ${err.message}\n`); }
+        // The morning summary lists the morning's packs; the midday run texts each one (D89).
+        if (midday) { try { await notify(packText(role)); log(`Pack text sent: ${role}\n`); } catch (err) { problems.push({ step: 'pack text', detail: `${role}: ${err.message}` }); log(`Pack text FAILED: ${role}: ${err.message}\n`); } }
+        await popUp(packText(role), `pack ${role}`);
       }
     }
   }
   // The morning run sends one summary text (D63); the midday run texts only on a new S role or a failure (D79).
   if (problems.length) {
-    await notify(summarize(date, problems, logPath, outputs, { midday }));
+    const notice = summarize(date, problems, logPath, outputs, { midday });
+    await notify(notice);
     log(`\nFailure notice sent (${problems.length} problem(s)).\n`);
+    if (remind) { try { await remind(notice); log('Reminder added: failure notice\n'); } catch (err) { log(`Reminder FAILED: failure notice: ${err.message}\n`); } }
   } else if (!midday) {
-    await notify(successSummary(date, outputs));
+    const summary = successSummary(date, outputs);
+    // A paused run starts with 🚨: worth a pop-up too.
+    if (summary.startsWith('🚨')) await popUp(summary, 'paused notice');
+    await notify(summary);
     log('\nMorning summary sent.\n');
   } else log('\nMidday run: nothing wrong; no summary text (S-tier texts only).\n');
   const notified = true;
@@ -311,10 +352,13 @@ async function main() {
   const log = (t) => { appendFileSync(logPath, t); process.stdout.write(t); };
   const cfg = loadConfig(dataDir);
   const notify = (text) => sendIMessage(cfg.imessage_to, text);
+  const remind = (text) => addReminder(cfg.reminders_list, text);
 
   if (process.argv.includes('--test-message')) {
     await notify(`career-ops daily run: test message (${date}). If you see this, the daily texts will reach you.`);
     console.log('Test message sent.');
+    await remind(`career-ops test alert (${date})\nIf this popped up on your phone, alerts will reach you. You can delete it.`);
+    console.log(`Test reminder added to "${cfg.reminders_list}".`);
     return 0;
   }
   if (process.argv.includes('--sample-email')) {
@@ -343,7 +387,7 @@ async function main() {
     throw new Error('another run is still going (private/logs/daily.lock). If none is, delete that file.');
   }
   try {
-    const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg, midday }), log, notify, logPath, midday });
+    const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg, midday }), log, notify, logPath, midday, remind });
     return problems.length ? 1 : 0;
   } finally { release(); }
 }

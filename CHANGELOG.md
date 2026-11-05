@@ -5,6 +5,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Alerts now pop up on the phone (D95): a ⭐ new S role, a 📦 pack, or a 🚨 failed or paused run also creates a reminder in the "Job Search Alerts" list (`reminders_list` in `daily.json`, required), because texts to your own number never notify. `install-daily.sh --test-message` also sends a test reminder (grants the Reminders permission once).
+- Grading (D96): "N years in a field" is no longer read as a hard requirement, and a list of options joined by "or" counts as met if the CV shows any one.
 - Grading (D94): roles requiring a language you don't speak, an active security clearance, non-full-time work, or an excluded industry are now Excluded (some caught from the title with no AI). Managing people from day one and off-hours drop a tier. Vague heavy travel, "able to obtain a clearance", 5 office days, a missing required degree and agency postings are flags. New `candidate.languages` and `excluded_industries` in the tier settings (required). `tier-new.sh --regrade S,A` grades open roles again.
 - A job board answering "not found" before its 3rd run in a row no longer makes the run a failure: it's a ⚠️ line in the morning summary, and it's still retired on the 3rd (D93).
 - Prep packs: "~40 people" was blocked as a different count from "~40-person" by career-ops' fact gate (fixed in private `allow_metrics`).
