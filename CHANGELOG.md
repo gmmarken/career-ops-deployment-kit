@@ -16,6 +16,14 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Prep packs (Phase 8, D83–D90). New step `scripts/packs.sh build` in the 7 AM and 1 PM runs:
+  - **What's in a pack:** a tailored CV (PDF through career-ops), a cover letter draft, interview prep, outreach drafts (you send them), and "research next" with a ready-to-paste prompt for a Claude research session. Saved in `private/output/packs/<date>-<company>-<role>/`, and the text goes into the role's Notion page.
+  - **Checks:** every CV bullet names the cv.md line it came from; code checks numbers, "~"/"nearly"/"under" hedges, "+", skills and job order; career-ops' fact gate checks the CV and the drafts. Any failure blocks the pack (no retry) and the text says why.
+  - **Project map:** `cv-map.md` shows each bullet → cv.md line → the project behind it, from `private/cv-projects.md`. `scripts/packs.sh notes` lists lines still missing notes.
+  - **Queue:** new S roles automatically; any role you tick **Make pack** on in Notion. Order: your ticks, role family, posted pay, newest. Pace: 1 a day, up to 3 when 2+ are waiting, at most 5 in 7 days (`packs` in `private/config/daily.json`, required). Closed roles drop out. `scripts/packs.sh status | requeue <link>`.
+  - **Notion:** Job Postings gets **Make pack** (yours) and **Prep pack** (status).
+  - **Texts:** "📦 N prep pack(s) ready" in the morning summary, its own text for a pack built at 1 PM, and blocked or failed packs in the 🚨 text.
+  - Database schema v7 (`prep_packs`); older code refuses it.
 - Delivery (Phase 7, D78–D82):
   - **S-tier text:** each new S role gets its own iMessage (role, pay, link) right after grading. A failed run's text now also lists the S/A roles it graded.
   - **Midday run** at 1 PM (`com.career-ops.midday`, `install-daily.sh --midday-at`): scan, then grade only roles first seen today; texts only for a new S role or a failure. Runs never overlap (`private/logs/daily.lock`).

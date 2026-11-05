@@ -471,3 +471,43 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **Options:** (A) retire after 3 runs in a row; (B) by hand only; (C) on the first "not found".
 **Decision:** A, the candidate's call. Each board scan is already logged. When a board answers 404 and its previous two finished scans did too, it's added to `retired_boards` (schema v6), its open postings close on the day they were last seen, and the scan reports it as retired, not as a failure. The morning text says "🗑 Retired N job board(s) that no longer exist". Until then, each 404 is reported with the count ("not found 2 runs in a row; retired after 3"). Any other error breaks the streak. `market.sh unretire <board>` scans it again. If research later finds the company's new careers page, that new board is added as usual.
 **Also fixed in this phase:** Rippling pay ranges (`[{location, currency, frequency, rangeStart, rangeEnd}]`, first seen 2026-11-04) are now read. If ranges differ by place, the New York one is used; if there isn't exactly one New York range, it's reported, not guessed.
+
+## D83 — Prep packs: new S roles automatically, older ones only when ticked (2026-11-04)
+**Context:** When Phase 8 started, 39 open roles were already graded S, at 23 companies. At 5 packs a week that backlog alone would take about 8 weeks, and many roles would close first.
+**Options:** (A) queue all 39 at the normal pace; (B) a one-time burst of 3 a day for about 2 weeks; (C) new S roles queue automatically, and older roles only when the candidate ticks a new **Make pack** box in Notion (which works on any role, A tier included).
+**Decision:** C, the candidate's call. The database upgrade to v7 records `packs_auto_since` (the upgrade time). A role first graded S on or after it is queued automatically; a ticked role is queued as "you" and goes first.
+**Trade-off:** S roles graded before Phase 8 get no pack unless ticked. What would change it: if the candidate would really apply to most of them, run the burst (B) once.
+
+## D84 — The tailored CV may reword bullets, checked line by line; the candidate reviews it before applying (2026-11-04)
+**Options:** (A) pick and reorder cv.md bullets word for word, with only the summary written; (B) reword bullets toward the posting, each naming the cv.md line(s) it came from, with code checks.
+**Decision:** B, the candidate's call, on the condition that he reads every CV before applying.
+**How it works:** The model gets cv.md as numbered lines (`packs/cvsource.mjs`) and returns a headline, a summary, bullets with `source_ids`, and skills. Code then checks each line (`packs/check.mjs`): every job kept, in order; each bullet names lines from its own job; every number in a bullet is in its source line; a number the source hedges ("~N", "nearly N", "under N") stays hedged, which closes D10's "~" gap; a "+" may be dropped, never added; skills only from cv.md's own list; a headline of 6 words or fewer, with no numbers. Then career-ops' fact gate (`verify-cv-facts.mjs`) checks the whole document, and career-ops renders it (`build-cv-html.mjs`, `generate-pdf.mjs`, which runs the gate a second time). Job headers, projects, education and interests are copied from cv.md by code.
+**Trade-off:** a reworded bullet can still shift meaning in ways no check catches. That's why the candidate's own read, with the project map (D90), is the last check.
+
+## D85 — Pack queue order and pace (2026-11-04)
+**Options:** (A) a fixed rank in code; (B) newest first; (C) add a numeric score to the grading engine.
+**Decision:** A, the candidate's call. Order: ticked roles first, then role family (the D67 order), then highest posted yearly pay (pay not posted last), then newest. Pace: 1 a day, rising to 3 on a day when 2 or more wanted a pack (built today plus waiting), and never more than 5 in any 7 days. These are `packs.per_day / max_per_day / max_per_week` in `private/config/daily.json` (required, checked at start). A blocked pack used a slot and counts; a failed one doesn't. A queued role that closes is dropped and reported.
+**Trade-off:** posted pay stands in for a score.
+
+## D86 — Packs are built in the 7 AM run and the 1 PM run (2026-11-04)
+**Options:** (A) in the 7 AM run, after company research; (B) a separate evening job; (C) on demand only.
+**Decision:** A, plus the 1 PM run builds packs too (the candidate's call), from the same daily allowance. The step is `scripts/packs.sh build`. The morning text lists packs built ("📦 N prep pack(s) ready", "🗂 N more queued"). The midday run sends each pack built its own "📦 Prep pack ready" text. Hitting the Claude usage limit pauses packs like grading (D68); the rest stay queued. A blocked or failed pack fails the step, so the 🚨 text names it.
+**Cost, measured 2026-11-04:** 2 model calls per pack (Sonnet), about 1.5-2 minutes, about $0.21 API-equivalent.
+
+## D87 — Where packs live: a folder on the Mac, and the text in the role's Notion page (2026-11-04)
+**Options:** (A) a folder in `private/output/packs/` plus the text in the role's Notion page; (B) A plus the CV PDF uploaded to Notion; (C) the folder only.
+**Decision:** A, the candidate's call. The folder (iCloud-synced, D58) holds `cv.pdf`, `cv.md`, `cv-map.md`, `cv-changes.md`, `cover-letter.md`, `interview-prep.md`, `outreach.md`, `research-next.md`, plus `posting.md` and `company.md` (what it was built from) and a README. Two new Job Postings columns: **Make pack** (checkbox, yours, never overwritten) and **Prep pack** (Queued / Ready / Blocked / Failed / Dropped, written only by the pack step). A built pack appends its text to the role's page. The CV PDF and the project map stay on the Mac.
+
+## D88 — A failed fact check blocks the pack, with no retry (2026-11-04)
+**Options:** (A) block and report; (B) one automatic retry with the reasons fed back.
+**Decision:** A, the candidate's call. A blocked pack keeps its files and a README saying why; `scripts/packs.sh requeue <link>` builds it again once the cause is fixed. What would change it: more than 1 pack in 5 blocked → consider B.
+**Found in the first live builds:** the banned-phrase list matches inside words (career-ops checks substrings), so a short banned figure blocked a longer true figure that contains it (narrowed with a leading space in `cv-facts.json`), and a banned word matched inside a software name quoted from a posting. The interview prep is gated only on what the candidate would say (answer outlines and how he'd address each gap), not on posting quotes or his questions for them. The banned phrases are given to the model up front.
+
+## D89 — Drafts use only what the kit already has, plus a "research next" page (2026-11-04)
+**Options:** (A) the posting, cv.md and the Company Radar research; (B) A plus fresh web research per pack (search credits, more untrusted text); (C) also look up email addresses (a paid service).
+**Decision:** A, with the candidate's addition: each pack's `research-next.md` lists what the research doesn't say yet, and gives a ready-to-paste prompt for a separate Claude (Cowork) research session with web search. Outreach notes go to a leader named in Company Radar (checked by code) and to the hiring manager; at most 120 words, with no number in the ask; the candidate sends them himself.
+
+## D90 — A project map with every tailored CV (2026-11-04)
+**Context:** The candidate wants to be sure he can speak to every line, including ones carried over from an older resume that he no longer remembers in detail.
+**Decision:** The candidate asked for it. `private/cv-projects.md` (private, never in the repo or Notion) has one section per cv.md line: the project, what he did, who he worked with, what he'd say, and which old resume it was on. `scripts/packs.sh notes` adds empty sections for new cv.md lines and lists the ones still empty. Each pack's `cv-map.md` shows every tailored bullet → its cv.md line(s) → the notes. Empty notes are flagged in the map and in the pack README, but don't block the pack.
+**Also changed at the candidate's request:** cv.md now says "context engineering" (not "prompt and context engineering") and "AI agent" (not "AI tool"), with the old wording added to the banned phrases. GabesGridTalk moved under Projects, and "Additional" became "Interests".
