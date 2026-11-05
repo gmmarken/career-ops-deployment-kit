@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prep pack documents (D86-D87)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cover_letter", "interview_prep", "outreach", "research_next"],
+  "properties": {
+    "cover_letter": { "type": "string", "description": "Plain text, at most 250 words." },
+    "interview_prep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_in_one_line", "company_brief", "likely_questions", "gaps", "questions_to_ask"],
+      "properties": {
+        "role_in_one_line": { "type": "string" },
+        "company_brief": { "type": "array", "items": { "type": "string" } },
+        "likely_questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question", "posting_quote", "answer_outline", "cv_source_ids"],
+            "properties": {
+              "question": { "type": "string" },
+              "posting_quote": { "type": ["string", "null"] },
+              "answer_outline": { "type": "string" },
+              "cv_source_ids": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gap", "posting_quote", "how_to_address"],
+            "properties": { "gap": { "type": "string" }, "posting_quote": { "type": "string" }, "how_to_address": { "type": "string" } }
+          }
+        },
+        "questions_to_ask": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "outreach": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leader_name", "leader_title", "leader_note", "hiring_manager_note"],
+      "properties": {
+        "leader_name": { "type": ["string", "null"], "description": "Exactly as listed under Leaders in the company research, or null." },
+        "leader_title": { "type": ["string", "null"] },
+        "leader_note": { "type": ["string", "null"], "description": "At most 120 words." },
+        "hiring_manager_note": { "type": "string", "description": "At most 120 words." }
+      }
+    },
+    "research_next": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing", "cowork_prompt"],
+      "properties": {
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "cowork_prompt": { "type": "string" }
+      }
+    }
+  }
+}

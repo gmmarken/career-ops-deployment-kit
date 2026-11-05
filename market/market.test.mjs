@@ -220,7 +220,7 @@ test('a v1 database upgrades to the current version in place, keeping its data',
     INSERT INTO companies (name, first_seen, updated_at) VALUES ('OldCo', '2026-01-01', '2026-01-01');`);
   v1.close();
   const s = openStore(path);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '6');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '7');
   assert.equal(s.companies()[0].name, 'OldCo');
   s.saveCompany({ name: 'OldCo', status: 'strong' }, { source: 'x', by: 'kit' });
   assert.equal(s.companyRecords()[0].status, 'strong');
@@ -260,7 +260,7 @@ test('a v2 database upgrades to v3 in place, keeping its postings', async () => 
   assert.equal(s.postings().length, 1);
   assert.equal(s.postings()[0].text_check, null);
   assert.equal(s.boards().length, 0);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '6');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '7');
   assert.deepEqual(s.portfolioPages('a16z'), []);
   s.close();
 });

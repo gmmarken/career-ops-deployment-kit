@@ -15,6 +15,7 @@ import { backupDb, prune, iCloudRoot, KEEP } from '../market/backup.mjs';
 import { openStore } from '../market/store.mjs';
 import { weeklyData, weeklyEmail } from '../delivery/weekly.mjs';
 import { sendMail } from '../delivery/mail.mjs';
+import { checkPackConfig } from '../packs/queue.mjs';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -41,6 +42,7 @@ export function loadConfig(dataDir) {
   if (!w || typeof w !== 'object') throw new Error(`${path}: "weekly_email" is missing. Add {"to": "<your email>", "day": "Sunday"} (D81).`);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(w.to ?? ''))) throw new Error(`${path}: weekly_email.to must be your email address.`);
   if (!WEEKDAYS.includes(w.day)) throw new Error(`${path}: weekly_email.day must be a day name like "Sunday".`);
+  try { checkPackConfig(cfg.packs); } catch (e) { throw new Error(`${path}: ${e.message.replace(/^private\/config\/daily\.json /, '')}`); }
   return cfg;
 }
 
@@ -92,6 +94,11 @@ export function sAlerts(tierOut) {
     .map((m) => ({ role: m[1].trim(), pay: m[2].trim(), url: m[3] }));
 }
 
+/** A prep pack built by the midday run gets its own text (D89); the morning summary lists the morning's. */
+export function packText(role) {
+  return `📦 Prep pack ready: ${role}\nIt's in Notion (open the role's page) and in private/output/packs on your Mac. Read the tailored CV line by line before applying.`;
+}
+
 /** One S-tier role's own text (D78). */
 export function alertText(a) {
   return `⭐ New S-tier role: ${a.role}\n${a.pay}\n${a.url}\nApply early. It's in Notion with the full grade.`;
@@ -114,6 +121,10 @@ export function runFacts(outputs) {
   const researchPaused = /^Paused: Claude usage limit reached after \d+ of \d+ researched/m.test(radar);
   const retired = scan.match(/^Retired (\d+) job board\(s\) that no longer exist: (.+)$/m);
   const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
+  const packs = String(outputs.packs ?? '');
+  const packsReady = [...packs.matchAll(/^📦 Prep pack ready: (.+?) · /gm)].map((m) => m[1]);
+  const packsQueued = packs.match(/^Prep packs done: .* (\d+) queued$/m);
+  const packsPaused = /^Paused: Claude usage limit reached after \d+ of \d+ packs/m.test(packs);
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
@@ -126,6 +137,9 @@ export function runFacts(outputs) {
     researchPaused,
     retired: retired ? { count: Number(retired[1]), names: retired[2] } : null,
     weekly,
+    packsReady,
+    packsQueued: packsQueued ? Number(packsQueued[1]) : null,
+    packsPaused,
   };
 }
 
@@ -155,6 +169,9 @@ export function successSummary(date, outputs) {
   }
   if (f.researchPaused) lines.push('⏳ Company research paused at the Claude usage limit; it continues next run');
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
+  if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
+  if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
+  if (f.packsQueued) lines.push(`🗂 ${f.packsQueued} more prep pack${f.packsQueued === 1 ? '' : 's'} queued`);
   if (f.weekly) lines.push('📧 Weekly email sent to you');
   const wait = f.waiting + (f.paused?.left ?? 0);
   if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);
@@ -206,11 +223,14 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
     { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
     { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out }; } },
   ];
-  if (midday) return scanAndGrade;
+  // Prep packs (D85, D89): after grading and research, in both runs, sharing one daily allowance.
+  const packs = { name: 'packs', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'packs.sh'), ['build']); return { ok: r.code === 0, out: r.out }; } };
+  if (midday) return [...scanAndGrade, packs];
   return [
     ...scanAndGrade,
     // After grading, so grading keeps first claim on the Claude plan (D67, D76).
     { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out }; } },
+    packs,
     ...(isWeeklyDay(date, cfg.weekly_email.day) ? [{ name: 'weekly-email', go: async () => ({ ok: true, out: await weekly({ dataDir, cfg }) }) }] : []),
     { name: 'backup', go: async () => {
       const dir = join(dataDir, 'backups');
@@ -243,6 +263,11 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
     if (step.name === 'tier-new') {
       for (const a of sAlerts(res.out)) {
         try { await notify(alertText(a)); log(`S-tier text sent: ${a.role}\n`); } catch (err) { problems.push({ step: 'S-tier text', detail: `${a.role}: ${err.message}` }); log(`S-tier text FAILED: ${a.role}: ${err.message}\n`); }
+      }
+    }
+    if (step.name === 'packs' && midday) {
+      for (const role of runFacts({ packs: res.out }).packsReady) {
+        try { await notify(packText(role)); log(`Pack text sent: ${role}\n`); } catch (err) { problems.push({ step: 'pack text', detail: `${role}: ${err.message}` }); log(`Pack text FAILED: ${role}: ${err.message}\n`); }
       }
     }
   }

@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -153,6 +153,17 @@ CREATE TABLE IF NOT EXISTS retired_boards (
   board TEXT PRIMARY KEY, retired_at TEXT NOT NULL, reason TEXT NOT NULL, closed INTEGER NOT NULL
 );
 `;
+// v7 (Phase 8, D83–D89): prep packs, one per posting. status: queued → ready | blocked | failed,
+// or dropped (the role closed while it waited). reason: auto (a new S role) or you (Make pack in Notion).
+const SCHEMA_V7 = `
+CREATE TABLE IF NOT EXISTS prep_packs (
+  posting_id INTEGER PRIMARY KEY REFERENCES postings(id), reason TEXT NOT NULL, status TEXT NOT NULL,
+  queued_at TEXT NOT NULL, built_at TEXT, folder TEXT, detail TEXT, notion_status TEXT, notion_content_at TEXT
+);
+`;
+/** Statuses that used a build slot (they count toward the daily and weekly caps, D85). */
+export const PACK_BUILT = ['ready', 'blocked'];
+
 /** A board that answers "not found" this many runs in a row is retired (D82). */
 export const RETIRE_AFTER = 3;
 
@@ -176,6 +187,11 @@ function migrate(db, from) {
     db.exec(SCHEMA_V5);
   }
   if (from < 6) db.exec(SCHEMA_V6);
+  if (from < 7) {
+    db.exec(SCHEMA_V7);
+    // New S roles are packed automatically from today; older ones only when you tick Make pack (D83).
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('packs_auto_since', ?)").run(new Date().toISOString());
+  }
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
@@ -537,6 +553,44 @@ class Store {
       .run(board, new Date(at).toISOString(), reason, open.length);
     return open.length;
   }
+  // --- Prep packs (Phase 8) ---------------------------------------------------------
+
+  /** Every pack row, joined with its posting, company and latest tier. */
+  packs() {
+    return this.db.prepare(`SELECT k.*, p.title, p.url, p.url_key, p.closed_at, p.first_seen, p.title_family, p.pay_max, p.pay_interval, c.name AS company,
+      (SELECT tier FROM tier_decisions t WHERE t.posting_id = p.id ORDER BY decided_at DESC, id DESC LIMIT 1) AS tier
+      FROM prep_packs k JOIN postings p ON p.id = k.posting_id JOIN companies c ON c.id = p.company_id`).all();
+  }
+  pack(postingId) { return this.db.prepare('SELECT * FROM prep_packs WHERE posting_id = ?').get(postingId) ?? null; }
+
+  /** Queue a pack for a posting (no-op if it already has one). Returns true if newly queued. */
+  queuePack(postingId, reason, at = new Date()) {
+    if (!['auto', 'you'].includes(reason)) throw new Error(`queuePack: reason must be auto or you, got ${reason}`);
+    return this.db.prepare("INSERT OR IGNORE INTO prep_packs (posting_id, reason, status, queued_at) VALUES (?, ?, 'queued', ?)")
+      .run(postingId, reason, new Date(at).toISOString()).changes > 0;
+  }
+  /** Put a pack back in the queue (by hand, after a block or failure is fixed). */
+  requeuePack(postingId, at = new Date()) {
+    const n = this.db.prepare("UPDATE prep_packs SET status = 'queued', queued_at = ?, built_at = NULL, detail = NULL WHERE posting_id = ?")
+      .run(new Date(at).toISOString(), postingId).changes;
+    if (!n) throw new Error(`No prep pack for posting ${postingId}.`);
+  }
+  /** Update a pack's fields (status, built_at, folder, detail, notion_status, notion_content_at). */
+  setPack(postingId, fields) {
+    const allowed = ['status', 'built_at', 'folder', 'detail', 'notion_status', 'notion_content_at'];
+    const cols = Object.keys(fields);
+    for (const c of cols) if (!allowed.includes(c)) throw new Error(`setPack: unknown field ${c}`);
+    this.db.prepare(`UPDATE prep_packs SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE posting_id = ?`).run(...cols.map((c) => fields[c] ?? null), postingId);
+  }
+  /** S roles first graded S on or after `since` (ISO), with no pack yet: the automatic queue (D83). */
+  newSRolesWithoutPack(since) {
+    return this.db.prepare(`SELECT p.id FROM postings p
+      WHERE NOT EXISTS (SELECT 1 FROM prep_packs k WHERE k.posting_id = p.id)
+        AND (SELECT tier FROM tier_decisions t WHERE t.posting_id = p.id ORDER BY decided_at DESC, id DESC LIMIT 1) = 'S'
+        AND (SELECT MIN(decided_at) FROM tier_decisions t WHERE t.posting_id = p.id AND t.tier = 'S') >= ?`).all(since).map((r) => r.id);
+  }
+  postingByKey(urlKey) { return this.db.prepare('SELECT id FROM postings WHERE url_key = ?').get(urlKey)?.id ?? null; }
+
   retiredBoards() { return new Set(this.db.prepare('SELECT board FROM retired_boards').all().map((r) => r.board)); }
   /** Scan a retired board again (its closed postings reopen if it lists them). True if it was retired. */
   unretireBoard(board) { return this.db.prepare('DELETE FROM retired_boards WHERE board = ?').run(board).changes > 0; }

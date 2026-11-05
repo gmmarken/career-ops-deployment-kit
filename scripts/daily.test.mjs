@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly } from './daily.mjs';
+import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText } from './daily.mjs';
 import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
@@ -18,7 +18,7 @@ function harness(steps) {
   };
 }
 
-const CFG = { tier_per_day: 30, tier_per_company: 5, research_per_day: 10, weekly_email: { to: 'me@example.com', day: 'Sunday' } };
+const CFG = { tier_per_day: 30, tier_per_company: 5, research_per_day: 10, weekly_email: { to: 'me@example.com', day: 'Sunday' }, packs: { per_day: 1, max_per_day: 3, max_per_week: 5 } };
 const SCAN_OUT = 'Scanning 3 board(s)…\n  ✓ Thrive Capital (Getro): 900 job links; traced 0 new companies, 0 new board(s) to scan\n  ✓ ashby:a (A): 10 open, 2 new, 0 closed\n  ✓ rippling:pace (Pace): 13 open, 1 new, 1 closed\n';
 const TIER_OUT = '3 untiered NYC role(s) to tier; tiering 3.\n  [1/3] S         Pace — Deployment Strategist\n  [2/3] C         A — Solutions Consultant\n  [3/3] A         Stripe — GTM Strategy & Operations Analyst\n\nTiered 3: S 1 · C 1 · A 1\n';
 
@@ -139,6 +139,10 @@ test('config: missing file or field fails loudly', () => {
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sun"}}');
   assert.throws(() => loadConfig(d), /day name like "Sunday"/);
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}}');
+  assert.throws(() => loadConfig(d), /needs a "packs" block/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "packs": {"per_day": 4, "max_per_day": 3, "max_per_week": 5}}');
+  assert.throws(() => loadConfig(d), /per_day can't be more than packs.max_per_day/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "packs": {"per_day": 1, "max_per_day": 3, "max_per_week": 5}}');
   assert.equal(loadConfig(d).imessage_to, 'x');
 });
 
@@ -164,18 +168,18 @@ test('default steps: non-zero exit from scan/tier-new is a failure; backup write
   const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, run, icloud: () => '/Users/me/Documents' });
   const results = [];
   for (const s of steps) results.push(await s.go());
-  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10']]);
-  assert.deepEqual(results.map((r) => r.ok), [false, true, true, true]);
+  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10'], ['packs.sh', 'build']]);
+  assert.deepEqual(results.map((r) => r.ok), [false, true, true, true, true]);
   assert.ok(existsSync(join(d, 'backups', 'market-2026-11-03.db')));
   assert.deepEqual(readdirSync(join(d, 'backups')), ['market-2026-11-03.db']);
-  assert.match(results[3].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
+  assert.match(results[4].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
 });
 
 test('backup step fails (and so is reported) when the folder is not iCloud-synced', async () => {
   const d = mkdtempSync(join(tmpdir(), 'daily-'));
   mkdirSync(join(d, 'data'));
   const db = new DatabaseSync(join(d, 'data', 'market.db')); db.exec('CREATE TABLE t (x)'); db.close();
-  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[3];
+  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[4];
   const sent = [];
   const r = await runDaily({ date: '2026-11-03', steps: [step], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
   assert.equal(r.problems.length, 1);
@@ -246,9 +250,10 @@ test('midday run: scan and grade only roles first seen today; texts only for a n
   const calls = [];
   const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return { code: 0, out: 'ok' }; };
   const steps = defaultSteps({ dataDir: '/x', date: '2026-11-05', cfg: CFG, run, midday: true });
-  assert.deepEqual(steps.map((s) => s.name), ['scan', 'tier-new']);
+  assert.deepEqual(steps.map((s) => s.name), ['scan', 'tier-new', 'packs']);
   for (const s of steps) await s.go();
   assert.deepEqual(calls[1], ['tier-new.sh', '--limit', '30', '--per-company', '5', '--seen-since', '2026-11-05']);
+  assert.deepEqual(calls[2], ['packs.sh', 'build']);
   const quiet = [];
   await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_OUT.replace(/S {9}/, 'B         ') }) }], log: () => {}, notify: async (t) => { quiet.push(t); }, logPath: 'L', midday: true });
   assert.deepEqual(quiet, []);
@@ -273,8 +278,8 @@ test('weekly email: only on its day, sent with what the week found; a send failu
   assert.equal(isWeeklyDay('2026-11-08', 'Sunday'), true);
   assert.equal(isWeeklyDay('2026-11-09', 'Sunday'), false);
   const names = (date) => defaultSteps({ dataDir: '/x', date, cfg: CFG, run: async () => ({ code: 0, out: '' }), weekly: async () => 'weekly: sent "x"\n' }).map((s) => s.name);
-  assert.deepEqual(names('2026-11-08'), ['scan', 'tier-new', 'radar', 'weekly-email', 'backup']);
-  assert.deepEqual(names('2026-11-09'), ['scan', 'tier-new', 'radar', 'backup']);
+  assert.deepEqual(names('2026-11-08'), ['scan', 'tier-new', 'radar', 'packs', 'weekly-email', 'backup']);
+  assert.deepEqual(names('2026-11-09'), ['scan', 'tier-new', 'radar', 'packs', 'backup']);
 
   const d = mkdtempSync(join(tmpdir(), 'weekly-'));
   mkdirSync(join(d, 'data'));
@@ -290,4 +295,35 @@ test('weekly email: only on its day, sent with what the week found; a send failu
   assert.match(mails[0].text, /Clark: \$11M, Seed, on 2026-11-03 \(News\)\n  Fit: Possible\. Business customers\n  What they do: AI for auditors\n  Leaders: Ada Example \(CEO\)/);
   await assert.rejects(sendWeekly({ dataDir: d, cfg: CFG, send: async () => { throw new Error('Email send failed: Mail has no email account set up.'); } }), /Mail has no email account/);
   assert.match(successSummary('2026-11-08', { scan: SCAN_OUT + 'Retired 1 job board(s) that no longer exist: Pryzm\n', 'tier-new': TIER_OUT, 'weekly-email': out }), /🗑 Retired 1 job board that no longer exists \(not found 3 runs in a row\): Pryzm\n📧 Weekly email sent to you/);
+});
+
+// --- Phase 8: prep packs in the daily texts (D85, D89) --------------------------------
+const PACKS_OUT = `Prep packs: 3 waiting · 0 built today (cap 3) · 0 in the last 7 days (cap 5) · building 2
+📦 Prep pack ready: Pace — Deployment Strategist · /x/private/output/packs/2026-11-05-pace-deployment-strategist
+🚫 Prep pack BLOCKED: Sierra — AI Strategist: CV line check: summary: "12" is not in the source line
+Prep packs done: 1 ready · 1 blocked · 0 failed · 1 queued
+`;
+
+test('packs: the morning summary lists ready packs and the queue; the midday run texts each ready pack', async () => {
+  const f = runFacts({ packs: PACKS_OUT });
+  assert.deepEqual(f.packsReady, ['Pace — Deployment Strategist']);
+  assert.equal(f.packsQueued, 1);
+  const text = successSummary('2026-11-05', { packs: PACKS_OUT });
+  assert.match(text, /📦 1 prep pack ready: Pace — Deployment Strategist \(Notion → Prep pack\)/);
+  assert.match(text, /🗂 1 more prep pack queued/);
+  assert.doesNotMatch(successSummary('2026-11-05', {}), /prep pack/);
+  const sent = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: true, out: PACKS_OUT }) }], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', midday: true });
+  assert.deepEqual(sent, [packText('Pace — Deployment Strategist')]);
+});
+
+test('packs: a blocked pack fails the step, so the failure text names it', async () => {
+  const sent = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: false, out: `${PACKS_OUT}packs: 1 prep pack(s) need a look:\n  BLOCKED Sierra — AI Strategist: CV line check\n` }) }], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
+  assert.match(sent[0], /JOB SEARCH RUN FAILED[\s\S]*❌ packs:[\s\S]*BLOCKED Sierra/);
+});
+
+test('packs: hitting the usage limit shows as paused, not failed', () => {
+  const out = 'Prep packs: 2 waiting · 0 built today (cap 3) · 0 in the last 7 days (cap 5) · building 2\nPaused: Claude usage limit reached after 0 of 2 packs; the rest stay queued.\nPrep packs done: 0 ready · 0 blocked · 0 failed · 2 queued\n';
+  assert.match(successSummary('2026-11-05', { packs: out }), /⏳ Prep packs paused at the Claude usage limit/);
 });

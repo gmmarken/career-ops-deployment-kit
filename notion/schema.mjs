@@ -2,6 +2,8 @@
 // sync; candidate-owned ones (OWNED_BY_YOU) are set only when a page is created and
 // never touched again. Company Radar's editable fields are read back (D26).
 
+import { JOBS_V7 } from '../packs/notion.mjs';
+
 const opts = (names, color = 'default') => ({ options: names.map((name) => ({ name, color: typeof color === 'function' ? color(name) : color })) });
 const tierColor = { S: 'purple', A: 'blue', B: 'green', C: 'gray', Excluded: 'red', 'Walk-away': 'brown' };
 
@@ -82,11 +84,13 @@ export function jobsProperties(radarDataSourceId) {
     Status: { select: opts(STATUS_OPTIONS) },
     Favorite: { checkbox: {} },
     Notes: { rich_text: {} },
+    ...JOBS_V7,
   };
 }
 
 /** Properties the candidate owns: set on create, never overwritten by sync. */
 export const OWNED_BY_YOU = {
-  jobs: ['Status', 'Favorite', 'Notes'],
+  // 'Prep pack' is the kit's, but written only by scripts/packs.mjs, never by the posting sync.
+  jobs: ['Status', 'Favorite', 'Notes', 'Make pack'],
   radar: ['Status', 'Verified', 'Watch', 'AI-native'],
 };
