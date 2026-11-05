@@ -177,13 +177,35 @@ export function ripplingPageData(html, what = 'Rippling page') {
 
 const RIPPLING_WORKPLACE = { ON_SITE: 'onsite', HYBRID: 'hybrid', REMOTE: 'remote' };
 
+const RIPPLING_FREQ = { YEAR: 'year', MONTH: 'month', HOUR: 'hour' };
+const RIPPLING_NYC = /new york|nyc|brooklyn|manhattan/i;
+
 /**
- * Rippling pay. Every posting seen so far has none ([]). Any other shape is reported, not
- * guessed, so the reader can be taught it with a real example.
+ * Rippling pay: [] (none) or a list of ranges, one per location:
+ * [{location, currency, frequency: "YEAR", rangeStart, rangeEnd, isRemote}].
+ * One range (or all the same) → that range. Different ranges by place → the New York one;
+ * if there isn't exactly one, it's reported, not guessed. Any other shape is reported too.
  */
 export function ripplingPay(details, what) {
   if (details == null || (Array.isArray(details) && !details.length)) return null;
-  throw new Error(`${what}: Rippling pay details are in a format the kit doesn't read yet: ${JSON.stringify(details).slice(0, 300)}`);
+  const unread = () => new Error(`${what}: Rippling pay details are in a format the kit doesn't read yet: ${JSON.stringify(details).slice(0, 300)}`);
+  if (!Array.isArray(details)) throw unread();
+  const ranges = details.map((d) => {
+    if (!d || typeof d !== 'object' || !RIPPLING_FREQ[d.frequency] || typeof d.currency !== 'string'
+      || !(typeof d.rangeStart === 'number' || typeof d.rangeEnd === 'number')) throw unread();
+    return { min: d.rangeStart ?? null, max: d.rangeEnd ?? null, currency: d.currency, interval: RIPPLING_FREQ[d.frequency], kind: 'unknown', source: 'ats', location: String(d.location ?? '') };
+  });
+  const same = (x, y) => x.min === y.min && x.max === y.max && x.currency === y.currency && x.interval === y.interval;
+  let pick = ranges.every((r) => same(r, ranges[0])) ? ranges[0] : null;
+  if (!pick) {
+    const nyc = ranges.filter((r) => RIPPLING_NYC.test(r.location));
+    if (nyc.length !== 1 && !(nyc.length > 1 && nyc.every((r) => same(r, nyc[0])))) {
+      throw new Error(`${what}: Rippling lists different pay by location and not one clear New York range: ${ranges.map((r) => `${r.location || '?'} ${r.min}–${r.max}`).join('; ')}`);
+    }
+    pick = nyc[0];
+  }
+  const { location, ...pay } = pick;
+  return pay;
 }
 
 /** A Rippling job page → hard facts + JD text. */

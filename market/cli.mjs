@@ -16,6 +16,7 @@
 //   retier [--dry-run]           re-decide open tiered postings from their saved facts with the current rules (no AI)
 //   add-board <job or board link> [--company NAME]
 //                                add a company's job board by hand (e.g. for a company you Watch)
+//   unretire <board>             scan a board again that was retired after 3 "not found" runs in a row (D82)
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRules } from '../engine/rules.mjs';
@@ -25,7 +26,7 @@ import { isUsageLimit } from '../extractor/claude.mjs';
 import { fetchFeed, serperNews } from '../extractor/funding-news.mjs';
 import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, newsSearchDue, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
-import { openStore } from './store.mjs';
+import { openStore, RETIRE_AFTER } from './store.mjs';
 import { recordTiered, rulesHash } from './record.mjs';
 import { syncAll, pullCompanyEdits } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
@@ -499,7 +500,9 @@ async function scan() {
 
     // 2. Read every known job board in full.
     const { boards, unreadable } = knownBoards(store.postings(), store.boards());
-    const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards];
+    const retired = store.retiredBoards();
+    const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards].filter(([b]) => !retired.has(b));
+    const gone = [];
     if (!list.length) throw new Error('No known job boards yet. Tier a role from an Ashby, Greenhouse or Lever link first, or pass a board like lever:palantir.');
     console.log(`Scanning ${list.length} board(s)…`);
     for (const [board, company] of list) {
@@ -520,11 +523,22 @@ async function scan() {
         store.finishScan(scanId, { status: 'ok', found: postings.length });
         console.log(`  ✓ ${board} (${name}): ${postings.length} open, ${added} new, ${closed} closed`);
       } catch (err) {
+        // "Not found" RETIRE_AFTER runs in a row: the board is gone (D82). Once is just an error.
+        const notFound = /HTTP 404\b/.test(err.message);
+        const streak = notFound ? store.notFoundStreak(board) + 1 : 0;
         store.finishScan(scanId, { status: 'error', error: err.message });
-        failures.push(`${board}: ${err.message}`);
-        console.log(`  ✗ ${board}: ${err.message}`);
+        if (notFound && streak >= RETIRE_AFTER) {
+          const closed = store.retireBoard(board, err.message);
+          gone.push(company ?? board);
+          console.log(`  🗑 ${board}: not found ${streak} runs in a row, so it was retired; ${closed} open posting(s) closed. To scan it again: scripts/market.sh unretire ${board}`);
+          continue;
+        }
+        const note = notFound ? ` (not found ${streak} run${streak === 1 ? '' : 's'} in a row; retired after ${RETIRE_AFTER})` : '';
+        failures.push(`${board}: ${err.message}${note}`);
+        console.log(`  ✗ ${board}: ${err.message}${note}`);
       }
     }
+    if (gone.length) console.log(`Retired ${gone.length} job board(s) that no longer exist: ${gone.join(', ')}`);
     if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
 
     if (!wanted.length) {
@@ -596,6 +610,16 @@ async function retier() {
   }
 }
 
+function unretire() {
+  const board = process.argv[3];
+  if (!board) throw new Error('Usage: market.sh unretire <board, e.g. ashby:pryzm>');
+  const store = openStore();
+  try {
+    if (!store.unretireBoard(board)) throw new Error(`${board} is not retired.`);
+    console.log(`${board} will be scanned again from the next run.`);
+  } finally { store.close(); }
+}
+
 function addBoard() {
   const link = process.argv[3];
   if (!link) throw new Error('Usage: market.sh add-board <job or board link> [--company NAME]');
@@ -621,9 +645,10 @@ try {
   else if (cmd === 'relabel') relabel();
   else if (cmd === 'retier') await retier();
   else if (cmd === 'add-board') addBoard();
+  else if (cmd === 'unretire') unretire();
   else if (cmd === 'discover') await discover();
   else if (cmd === 'radar') await radar();
-  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME] | discover [--dry-run] [--force] | radar --research N [--no-notion]');
+  else throw new Error('Usage: market.sh backfill | metrics [--from YYYY-MM --to YYYY-MM] | recall <file> | enrich [--limit N] | stats | scan [board ...] | relabel [--dry-run] | retier [--dry-run] | add-board <link> [--company NAME] | unretire <board> | discover [--dry-run] [--force] | radar --research N [--no-notion]');
 } catch (err) {
   console.error(`market: ${err.message}`);
   process.exit(1);

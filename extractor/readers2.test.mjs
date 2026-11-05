@@ -44,6 +44,13 @@ test('Rippling job page: hard facts and description text', () => {
 test('Rippling pay in an unknown format is reported, never guessed', () => {
   assert.equal(ripplingPay([], 'x'), null);
   assert.throws(() => ripplingPay([{ min: 1 }], 'x'), /format the kit doesn't read yet/);
+  // The format first seen on 2026-11-04 (Drivepoint).
+  const ny = { location: 'New York, NY', currency: 'USD', frequency: 'YEAR', rangeStart: 140000, rangeEnd: 175000, isRemote: false };
+  assert.deepEqual(ripplingPay([ny], 'x'), { min: 140000, max: 175000, currency: 'USD', interval: 'year', kind: 'unknown', source: 'ats' });
+  const sf = { ...ny, location: 'San Francisco, CA', rangeStart: 150000, rangeEnd: 190000 };
+  assert.equal(ripplingPay([sf, ny], 'x').min, 140000); // different by place → the New York range
+  assert.throws(() => ripplingPay([sf, { ...sf, location: 'Austin, TX', rangeStart: 120000 }], 'x'), /not one clear New York range/);
+  assert.throws(() => ripplingPay([{ ...ny, frequency: 'WEEK' }], 'x'), /format the kit doesn't read yet/);
 });
 test('Rippling job page with no job fails loudly', () => {
   assert.throws(() => fromRippling(nextPage({ apiData: {} }), 'u'), /no job on it/);

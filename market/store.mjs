@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { titleFamily, TITLE_CLASSIFIER_VERSION } from './classify.mjs';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const CLOSE_AFTER_MISSES = 2;
 
 const SCHEMA = `
@@ -147,6 +147,15 @@ CREATE TABLE IF NOT EXISTS funding_news (
 );
 `;
 
+// v6 (Phase 7, D82): job boards that no longer exist ("not found" RETIRE_AFTER runs in a row).
+const SCHEMA_V6 = `
+CREATE TABLE IF NOT EXISTS retired_boards (
+  board TEXT PRIMARY KEY, retired_at TEXT NOT NULL, reason TEXT NOT NULL, closed INTEGER NOT NULL
+);
+`;
+/** A board that answers "not found" this many runs in a row is retired (D82). */
+export const RETIRE_AFTER = 3;
+
 function migrate(db, from) {
   if (from < 2) {
     const have = new Set(db.prepare('PRAGMA table_info(companies)').all().map((c) => c.name));
@@ -166,6 +175,7 @@ function migrate(db, from) {
     if (!fr.has('found_via')) db.exec('ALTER TABLE funding_rounds ADD COLUMN found_via TEXT');
     db.exec(SCHEMA_V5);
   }
+  if (from < 6) db.exec(SCHEMA_V6);
   db.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION));
 }
 
@@ -509,6 +519,27 @@ class Store {
     return { added: Boolean(res.changes) };
   }
   boards() { return this.db.prepare('SELECT * FROM boards ORDER BY board').all(); }
+
+  // --- Boards that no longer exist (D82) -------------------------------------------
+  /** How many of this board's latest finished scans in a row said "not found" (HTTP 404). */
+  notFoundStreak(board) {
+    let n = 0;
+    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
+      if (s.status === 'error' && /HTTP 404\b/.test(s.error ?? '')) n++; else break;
+    }
+    return n;
+  }
+  /** Stop scanning a board; its open postings close on the day they were last seen. Returns how many closed. */
+  retireBoard(board, reason, at = new Date()) {
+    const open = this.db.prepare('SELECT id FROM postings WHERE board = ? AND closed_at IS NULL').all(board);
+    this.db.prepare('UPDATE postings SET closed_at = last_seen WHERE board = ? AND closed_at IS NULL').run(board);
+    this.db.prepare('INSERT INTO retired_boards (board, retired_at, reason, closed) VALUES (?, ?, ?, ?) ON CONFLICT(board) DO UPDATE SET retired_at = excluded.retired_at, reason = excluded.reason, closed = excluded.closed')
+      .run(board, new Date(at).toISOString(), reason, open.length);
+    return open.length;
+  }
+  retiredBoards() { return new Set(this.db.prepare('SELECT board FROM retired_boards').all().map((r) => r.board)); }
+  /** Scan a retired board again (its closed postings reopen if it lists them). True if it was retired. */
+  unretireBoard(board) { return this.db.prepare('DELETE FROM retired_boards WHERE board = ?').run(board).changes > 0; }
 
   // --- Investor job boards on Getro (D50–D51) ---------------------------------------
 

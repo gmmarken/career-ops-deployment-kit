@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard } from './boards.mjs';
 import { DatabaseSync } from 'node:sqlite';
-import { openStore, urlKey, CLOSE_AFTER_MISSES } from './store.mjs';
+import { openStore, urlKey, CLOSE_AFTER_MISSES, RETIRE_AFTER } from './store.mjs';
 import { monthRange, openInMonth, monthlyByCompany, ranking, toCsv } from './metrics.mjs';
 
 // --- title classifier
@@ -220,7 +220,7 @@ test('a v1 database upgrades to the current version in place, keeping its data',
     INSERT INTO companies (name, first_seen, updated_at) VALUES ('OldCo', '2026-01-01', '2026-01-01');`);
   v1.close();
   const s = openStore(path);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '5');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '6');
   assert.equal(s.companies()[0].name, 'OldCo');
   s.saveCompany({ name: 'OldCo', status: 'strong' }, { source: 'x', by: 'kit' });
   assert.equal(s.companyRecords()[0].status, 'strong');
@@ -260,7 +260,7 @@ test('a v2 database upgrades to v3 in place, keeping its postings', async () => 
   assert.equal(s.postings().length, 1);
   assert.equal(s.postings()[0].text_check, null);
   assert.equal(s.boards().length, 0);
-  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '5');
+  assert.equal(s.db.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, '6');
   assert.deepEqual(s.portfolioPages('a16z'), []);
   s.close();
 });
@@ -341,4 +341,23 @@ test('the rules fingerprint changes when any nested setting changes', () => {
   const b = { pay: { s_bar_top: 180000 }, caps: { pay_not_posted: 'A', reach: 'B' } };
   assert.equal(rulesHash(a), rulesHash(b)); // key order doesn't matter
   assert.notEqual(rulesHash(a), rulesHash({ ...a, caps: { ...a.caps, pay_not_posted: 'B' } }));
+});
+
+test('a board "not found" 3 runs in a row is retired and its postings close; other errors never count (D82)', () => {
+  const s = openStore(':memory:');
+  s.seePosting(P(), '2026-11-01');
+  const board = P().board;
+  const run = (status, error) => { const id = s.startScan(board); s.finishScan(id, { status, error }); };
+  run('error', 'https://x returned HTTP 404. The posting may be closed');
+  run('error', 'Could not reach https://x: fetch failed'); // breaks the streak
+  run('error', 'https://x returned HTTP 404.');
+  run('error', 'https://x returned HTTP 404.');
+  assert.equal(s.notFoundStreak(board), 2);
+  assert.equal(RETIRE_AFTER, 3);
+  assert.equal(s.retireBoard(board, 'HTTP 404'), 1);
+  assert.ok(s.retiredBoards().has(board));
+  assert.ok(s.postings().every((p) => p.closed_at === '2026-11-01'));
+  assert.equal(s.unretireBoard(board), true);
+  assert.equal(s.unretireBoard(board), false);
+  s.close();
 });
