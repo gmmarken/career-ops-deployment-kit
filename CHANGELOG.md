@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Rippling postings with a pay range (e.g. Drivepoint's) failed grading; the range is now read (the New York one if it differs by place).
 - Funding news (D77): stories older than `funding_news.max_age_days` (30, now required in `sources.json`) or with no date are logged but no longer counted as newly funded; several articles about one raise, or a Form D and an article, now stay one round.
 - Morning text says "S&A" instead of "S/A" for the top roles.
 - Rippling links that start with a language code (`ats.rippling.com/es-419/<company>/…`) were read as a board named after the language; the code is now skipped.
@@ -15,6 +16,11 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Delivery (Phase 7, D78–D82):
+  - **S-tier text:** each new S role gets its own iMessage (role, pay, link) right after grading. A failed run's text now also lists the S/A roles it graded.
+  - **Midday run** at 1 PM (`com.career-ops.midday`, `install-daily.sh --midday-at`): scan, then grade only roles first seen today; texts only for a new S role or a failure. Runs never overlap (`private/logs/daily.lock`).
+  - **Weekly email** on Sundays through Apple Mail: newly funded NYC companies (funding, fit, what they do, leaders, NYC evidence, open roles, careers page), the week's S/A roles, and a market line. Needs `weekly_email` (`to`, `day`) in `private/config/daily.json`. Try it with `install-daily.sh --test-email` (or `daily.sh --sample-email`).
+  - **Dead job boards** are retired after 3 "not found" runs in a row and their postings closed; `market.sh unretire <board>` undoes it. Database schema v6.
 - Company Radar + Form D (Phase 6, D70–D76). New daily step `market.sh radar --research N`, run after grading:
   - **SEC Form D:** NYC tech and health-tech filings of $1M+ since the last run; funds, amendments and investment vehicles screened out; officers and directors kept as leaders (names and roles only). Needs `form_d` (with the contact email the SEC requires) in `private/config/sources.json`.
   - **Funding news:** TechCrunch funding feeds every run, Serper news search every 7 days (4 credits). NYC companies are added; companies we already track get their new round wherever they are. Needs `funding_news` in `sources.json`.
