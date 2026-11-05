@@ -54,9 +54,10 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [ ] Later: SF Series A–C AI companies (D73); refine how the *Verified* tick works
 
 ## Phase 7 — Delivery
-- [ ] iMessage alert on new S-tier role
-- [ ] Weekly email: newly funded NYC companies + roles roundup
-- [x] Daily runner via launchd (minimal form built early in Phase 5, D53; this phase adds the S-tier alert and weekly email to it)
+- [x] iMessage alert on new S-tier role: its own text right after grading, from the 7 AM run and a new 1 PM run; failed runs still list S/A roles (D78–D79)
+- [x] Weekly email: newly funded NYC companies + roles roundup, Sundays through Apple Mail (D80–D81)
+- [x] Daily runner via launchd (minimal form built early in Phase 5, D53)
+- [x] Fixes from the first Phase 6 live run: Rippling pay ranges read; dead job boards retired after 3 "not found" runs (D82)
 
 ## Phase 8 — Prep packs
 - [ ] Auto pack for S roles: tailored CV, cover letter, interview prep, outreach draft

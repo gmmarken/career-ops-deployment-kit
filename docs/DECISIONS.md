@@ -441,3 +441,33 @@ Short records of meaningful design choices: context, decision, why, trade-off.
 - *Same round:* a round is another report of one on file when it's the same company, the amounts are within 10% (or neither has an amount and the round names match), and the dates are within 45 days. It then adds a source but no new round, doesn't move the raise date, and only fills in a missing round name. This applies to every way a round is saved (Form D, news, research), so a Form D and a news story about one raise are also one round.
 **Options considered:** exact amount match only (misses "$13.2M" in a Form D vs "$13M" in the news); asking the model whether two articles are one raise (an AI call for a rule that code can decide, against D4).
 **Trade-off:** two genuinely different raises of about the same size within 45 days would merge. That's rare at seed–Series C, and the second article still appears as a source.
+
+## D78 — Each new S-tier role gets its own text, and a failed run still lists the roles it graded (2026-11-04)
+**Context:** S roles reached the candidate only inside the morning summary, and a run with any failure sent only the 🚨 failure text, which named no roles. The 2026-11-04 test run graded 2 S roles that the failure text didn't mention.
+**Options (alert):** (A) its own ⭐ text per S role right after grading; (B) A plus a midday run (D79); (C) keep S roles inside the summary. **(Failed runs):** (A) the failure text also lists S/A roles graded; (B) leave it as is.
+**Decision:** 1B and 2A, the candidate's calls. Grading prints "⭐ alert: <pay> · <link>" under each S role. The run sends that role's text before company research starts: "⭐ New S-tier role: Company — Title", pay (or "pay not posted"), link. The failure text keeps its 🚨 heading and problem list first, then "Graded this run anyway (in Notion):" with up to six S/A roles. An S text that can't be sent is itself a reported problem.
+**Trade-off:** an S role is mentioned twice on a good morning, in its own text and in the summary.
+
+## D79 — A 1 PM run for roles posted during the day (2026-11-04)
+**Decision (card 1B):** a second launchd job (`com.career-ops.midday`, `install-daily.sh --midday-at`, default 13:00) starts the same helper app in midday mode. It scans every board, then grades only roles first seen today (`tier-new --seen-since`), within the same 30-a-run and 5-per-company caps. It sends a text only for a new S role or a failure; a quiet midday sends nothing. No research, email or backup. A lock file (`private/logs/daily.lock`) keeps runs from overlapping: a midday run that finds the morning run still going skips and logs it, and a morning run that finds a run still going fails loudly. A lock left behind by a crashed run is cleared.
+**Cost:** scanning is free. Grading uses the Claude plan only when roles appeared since the morning.
+**Trade-off:** the morning backlog is never graded at midday, so a role first seen yesterday but still waiting is graded only by a morning run.
+
+## D80 — The weekly email goes out through Apple Mail on the Mac (2026-11-04)
+**Options:** (A) Resend: a new account and key, a third party sees the content; (B) Apple Mail through AppleScript, like the iMessage; (C) Gmail with an app password in `.env`.
+**Decision:** B, the candidate's call. No new service or key; the email goes from the account Mail sends with by default, to `weekly_email.to` in `private/config/daily.json`. The subject, body and address are passed as arguments, never pasted into the script. A missing Mail account, a refused send, or no answer within 2 minutes is an error, reported like any failed step. `install-daily.sh --test-email` sends the SAMPLE email through the helper app, so the one-time "allow control of Mail" prompt is answered while the candidate is there.
+**Trade-off:** Mail reports "sent" once the message leaves Mail, so a later delivery problem would show only in Mail. To revisit for the public release (Resend then works for anyone).
+
+## D81 — Sunday 7 AM, plain text: the funded-company outreach list, then the week's roles (2026-11-04)
+**Decision:** A, the candidate's call. A `weekly-email` step runs in the morning run on `weekly_email.day` ("Sunday"), after research and before the backup. Built from market.db by code, no AI (`delivery/weekly.mjs`):
+1. **Newly funded NYC companies**: a round first recorded in the last 7 days from Form D or the news, NYC presence Yes. Best deployment fit first, then by amount. Each shows funding (amount, round, date, source), fit and its reason, what they do, leaders (public sources only), NYC evidence, open roles and the best one, the careers page and the source link. Facts not found say so ("not researched yet").
+2. **New roles graded this week**: counts by tier, every S role and up to 15 A roles with pay and link, marked if closed since.
+3. **Market**: postings opened and closed, open now, NYC target-family roles graded.
+Plain text (Mail's support for formatted email from scripts is unreliable). `daily.sh --sample-email` sends it now, subject marked (SAMPLE).
+**Trade-off:** no formatting or clickable buttons; links are plain URLs.
+
+## D82 — Job boards that no longer exist are retired after 3 "not found" runs in a row (2026-11-04)
+**Context:** Pryzm's and Pomelo Care's boards started answering "not found" (HTTP 404), which made every run a failure.
+**Options:** (A) retire after 3 runs in a row; (B) by hand only; (C) on the first "not found".
+**Decision:** A, the candidate's call. Each board scan is already logged. When a board answers 404 and its previous two finished scans did too, it's added to `retired_boards` (schema v6), its open postings close on the day they were last seen, and the scan reports it as retired, not as a failure. The morning text says "🗑 Retired N job board(s) that no longer exist". Until then, each 404 is reported with the count ("not found 2 runs in a row; retired after 3"). Any other error breaks the streak. `market.sh unretire <board>` scans it again. If research later finds the company's new careers page, that new board is added as usual.
+**Also fixed in this phase:** Rippling pay ranges (`[{location, currency, frequency, rangeStart, rangeEnd}]`, first seen 2026-11-04) are now read. If ranges differ by place, the New York one is used; if there isn't exactly one New York range, it's reported, not guessed.

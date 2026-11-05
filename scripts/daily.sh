@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Daily unattended run: board scan, tier new roles, Company Radar (Form D, funding news, research), back up market.db. Sends one iMessage every run:
 # a morning summary when all went well, a loud failure notice otherwise (D63).
-# Usage: scripts/daily.sh [--test-message | --sample-messages]   (launchd runs it with no arguments)
+# Usage: scripts/daily.sh [--midday | --test-message | --sample-messages | --sample-email]   (launchd: no arguments at 7 AM, --midday at 1 PM via the helper app)
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="$(cd "$KIT_DIR/.." && pwd)/private"

@@ -9,7 +9,7 @@ Built on [career-ops](https://github.com/santifer/career-ops) (MIT, pinned at v1
 | Upstream | career-ops, unmodified, pinned version | `career-ops/` | upstream only |
 | Kit (this repo) | rules pack, plugins, scripts, evals, docs | `career-ops-deployment-kit/` | this repo |
 | Private data | `cv.md`, real profile, tracker, reports, JDs | `private/` (`CAREER_OPS_DATA_DIR`) | never |
-| Keys | `.env` (Notion, Resend, Serper…) | `private/.env` + password manager | never |
+| Keys | `.env` (Notion, Serper…) | `private/.env` + password manager | never |
 | Market data | Every posting seen (first/last seen, closed), companies, scans, tier history; source of truth for monthly hiring metrics. Notion is a working view synced from it (D30) | `private/data/market.db` | never |
 
 ## 2. Design principle: the model extracts, code decides the tier
@@ -34,8 +34,8 @@ Why: rules are testable and versioned, the eval set can pinpoint whether a miss 
 | 7 | **Discovery**: Serper job-board search (D66) + funding news: TechCrunch RSS, Serper news (D72). AlleyWatch and Built In are not read (terms) | kit readers | RSS pattern |
 | 8 | **Company Radar** — `market.sh radar`: funded companies in, research (funding, what they do, leaders from public sources, NYC presence, careers page), deployment fit by rule (`engine/fit.mjs`) | script + Notion DB | — |
 | 9 | **Notion: new Job Postings DB** (every role, date added, market-tracking fields) + **Company Radar DB** | export plugin | `plugins/notion` client code |
-| 10 | **iMessage S-tier alert** (macOS `osascript` → Messages) | notify plugin | notify hook |
-| 11 | **Weekly email** (Resend): funded NYC companies + new roles roundup | notify plugin | — (new) |
+| 10 | **iMessage S-tier alert** (macOS `osascript` → Messages): its own text per new S role, from the 7 AM and 1 PM runs (D78–D79) | `scripts/daily.mjs` | notify hook |
+| 11 | **Weekly email** (Apple Mail on the Mac, D80): funded NYC companies + new roles roundup, Sundays (D81) | `delivery/weekly.mjs`, `delivery/mail.mjs` | — (new) |
 | 12 | **Prep packs** for S roles: CV, cover, interview prep, outreach draft — ~1/day, ≤3/day, ≤5/week, queue overflow | orchestrator script | `pdf`, `cover`, `interview-prep`, `contacto` modes; `verify-cv-facts.mjs` |
 | 13 | **Daily runner** (launchd on the Mac) | shell + Node | `install-scan-schedule.sh`, liveness checks |
 | 14 | **Evals**: 8–10 real roles with my confirmed tier | harness + CI | `eval-golden.mjs` pattern |
@@ -43,16 +43,16 @@ Why: rules are testable and versioned, the eval set can pinpoint whether a miss 
 ## 4. Daily run
 
 ```
-launchd (daily) → run-daily.sh
-  1. scan: known boards + investor boards + weekly Serper job-board search (market.sh scan)
-  2. tier-new: grade up to 30 new NYC target roles
+launchd 7:00 → CareerOps Daily.app → scripts/daily.sh
+  1. scan: known boards + investor boards + weekly Serper job-board search (market.sh scan);
+     a board "not found" 3 runs in a row is retired (D82)
+  2. tier-new: grade up to 30 new NYC target roles → each new S role gets its own iMessage now (D78)
   3. radar: Form D + TechCrunch + weekly news search → newly funded NYC companies → research 10 → fit → Notion
-  3. liveness check (static "filled" = provisional)
-  4. extract (claude -p, new postings only) → JSON
-  5. tier engine → S/A/B/C + reasons
-  6. Notion: upsert every role (date added) + Radar updates
-  7. new S role → iMessage + queue prep pack (pace limits)
-Weekly (Sun): Resend email — newly funded NYC companies + roles roundup
+  4. weekly-email (Sundays): newly funded NYC companies + roles roundup, sent through Apple Mail (D80–D81)
+  5. backup
+  → one summary iMessage (or the failure text, which still lists S/A roles graded)
+launchd 13:00 → same app, midday mode (D79): scan + grade roles first seen today → S texts; text only on S or failure
+(Phase 8: new S role → queue prep pack, pace limits)
 ```
 
 ## 5. Safety and security
@@ -73,7 +73,7 @@ Claude Job Search Tool/
 │   ├── rules/             # _profile.template.md, _custom.md
 │   ├── extractor/         # prompt + JSON schema
 │   ├── engine/            # tier-engine.mjs + tests
-│   ├── plugins/           # sec-form-d, discovery, notion-job-search, imessage-alert, resend-weekly
+│   ├── delivery/          # weekly email (build + send through Apple Mail), shared text formats
 │   ├── scripts/           # run-daily.sh, radar-enrich.mjs, prep-queue.mjs, sync-portals.mjs
 │   ├── evals/             # cases (URLs + my labels), runner
 │   └── .github/workflows/ # gitleaks + tests

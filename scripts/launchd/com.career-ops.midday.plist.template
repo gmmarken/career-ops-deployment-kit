@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Midday career-ops run (D79): scan + grade roles first seen today; texts only for a new S role or a failure. Starts the CareerOps Daily helper app, which runs scripts/daily.sh (D65). Filled in by scripts/install-daily.sh; placeholders only, no personal values. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.career-ops.midday</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__APP_BIN__</string>
+  </array>
+  <!-- Once a day. If the Mac is asleep at this time, launchd runs it on wake; if it is off, that day is missed. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CAREER_OPS_DAILY_MODE</key>
+    <string>midday</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>__HOUR__</integer>
+    <key>Minute</key>
+    <integer>__MINUTE__</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/launchd-midday.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/launchd-midday.err.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
