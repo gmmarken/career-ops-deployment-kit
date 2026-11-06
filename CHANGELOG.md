@@ -23,6 +23,10 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ### Added
 - Prep packs follow the recruiter-review rules (D98): locked CV lines, the posting's title as headline, role types and allowed rewordings, and a `fit-report.md` (verdict, requirement evidence, rejection risks, measured ATS structure and keyword coverage, the AI's recruiter-impact estimate). New required `private/config/cv-rules.json` (see `packs/cv-rules.example.json`). One page preferred.
+- Keyword bank (D103): approved terms tied to real experience; the tailoring must use the posting's exact wording for bank terms it uses; stable keyword coverage in the fit report and README. Required `keyword_bank` in `cv-rules.json` (example: `packs/keyword-bank.example.md`).
+- Description lines under each job may be tailored (D104), with numbers checked; a flag when a number counts something different ("10K clients").
+- Placement check (D105): limited bank terms only on their jobs or lines.
+- Meaning check (D106): a second AI read compares every line you'd send with your CV; new claims block, stronger claims are flagged (`meaning-check.md`).
 - Exact posting keywords on the CV wherever cv.md supports them, two coverage numbers in the fit report, a names note (Amazon Leo is not Lio), and a fixed job-search-agent sentence in the summary for AI-native companies (D101). New `name_notes` and `ai_native_sentence` in `cv-rules.json` (required).
 - Line-specific banned words (D99), e.g. Lightning Supply can't be described with sales words, while "sales" elsewhere is fine.
 - The daily run keeps the Mac awake until it finishes (D100).

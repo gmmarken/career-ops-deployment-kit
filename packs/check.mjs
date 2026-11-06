@@ -52,6 +52,8 @@ const norm = (s) => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
  */
 export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
   const problems = [];
+  // A bullet that cites a whole job ("e1") is read as citing that job's description line ("e1c").
+  for (const e of tailored.experience) for (const b of e.bullets) b.source_ids = (b.source_ids ?? []).map((id) => (!lines.has(id) && lines.has(`${id}c`) ? `${id}c` : id));
   const allText = [...lines.values()].map((l) => l.text).join('\n');
   // Every job stays, in cv.md's order (career-ops also guards section order).
   const ids = tailored.experience.map((e) => e.entry_id);
@@ -60,6 +62,11 @@ export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
   for (const e of tailored.experience) {
     const job = cv.experience.find((j) => j.id === e.entry_id);
     if (!job) continue;
+    // A tailored description line keeps the facts of cv.md's description line (D104).
+    if (e.context) {
+      if (!job.context) problems.push(`${job.company}: a description line was written, but cv.md has none for this job`);
+      else for (const p of numberProblems(e.context, job.context)) problems.push(`${job.company} description: ${p}`);
+    }
     if (!e.bullets.length) problems.push(`${job.company}: no bullets`);
     if (e.bullets.length > maxBullets) problems.push(`${job.company}: ${e.bullets.length} bullets (at most ${maxBullets})`);
     for (const [i, b] of e.bullets.entries()) {
@@ -74,11 +81,12 @@ export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
   // The summary may draw on any line of cv.md.
   for (const p of numberProblems(tailored.summary, allText)) problems.push(`summary: ${p}`);
   // Skills: chosen and ordered from cv.md's own list, never added.
-  const known = new Map(cv.skills.map((s) => [norm(s.category), new Set(s.items.map(norm))]));
+  // A skill may move between groups (it's still on your list); it may never be new (D106).
+  const categories = new Set(cv.skills.map((s) => norm(s.category)));
+  const allItems = new Set(cv.skills.flatMap((s) => s.items.map(norm)));
   for (const s of tailored.skills) {
-    const items = known.get(norm(s.category));
-    if (!items) { problems.push(`skills: "${s.category}" is not a cv.md skills category`); continue; }
-    for (const it of s.items) if (!items.has(norm(it))) problems.push(`skills: "${it}" is not listed under ${s.category} in cv.md`);
+    if (!categories.has(norm(s.category))) { problems.push(`skills: "${s.category}" is not a cv.md skills category`); continue; }
+    for (const it of s.items) if (!allItems.has(norm(it))) problems.push(`skills: "${it}" is not in cv.md's skills list`);
   }
   return { problems };
 }
@@ -97,6 +105,7 @@ export function loadCvRules(path) {
   if (!Array.isArray(r.locked) || !Array.isArray(r.line_rules) || typeof r.tailoring_rules !== 'string') throw new Error(`${path} needs "locked" (list), "line_rules" (list) and "tailoring_rules" (file name).`);
   for (const l of r.locked) if (!l.name || !Array.isArray(l.any_of) || !l.any_of.length) throw new Error(`${path}: each locked entry needs "name" and "any_of".`);
   if (!Array.isArray(r.name_notes) || r.name_notes.some((n) => typeof n !== 'string')) throw new Error(`${path} needs "name_notes": a list of plain-text notes (e.g. which client names look like other companies), [] for none.`);
+  if (typeof r.keyword_bank !== 'string' || !r.keyword_bank.trim()) throw new Error(`${path} needs "keyword_bank": the file in config/ with your approved keywords (D103).`);
   if (typeof r.ai_native_sentence !== 'string' || !r.ai_native_sentence.trim()) throw new Error(`${path} needs "ai_native_sentence": the fixed summary sentence about your AI project, added for AI-native companies (D101).`);
   for (const l of r.line_rules) if (!l.name || !l.line_starts || !Array.isArray(l.forbidden) || !Array.isArray(l.mention)) throw new Error(`${path}: each line rule needs "name", "line_starts", "mention" and "forbidden".`);
   return r;
@@ -143,6 +152,29 @@ export function draftRuleProblems(rules, text, where) {
   return problems;
 }
 
+/** Terms in the keyword bank (D103): "- term, term — why it's true". The "Never" section is left out. */
+export function bankTerms(md) {
+  const terms = [];
+  let never = false;
+  for (const l of String(md).split('\n')) {
+    if (l.startsWith('## ')) { never = /^##\s+never/i.test(l); continue; }
+    if (never || !l.startsWith('- ')) continue;
+    const head = l.slice(2).split(/\s+—\s+/)[0];
+    for (const t of head.split(',').map((x) => x.trim()).filter(Boolean)) terms.push(t);
+  }
+  return [...new Set(terms)];
+}
+
+/** Bank terms the posting itself uses (case-insensitive, whole words; a plural "s" counts), as the posting writes them. */
+export function postingBankTerms(terms, jdText) {
+  const out = [];
+  for (const t of terms) {
+    const m = String(jdText).match(new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?(?![a-z0-9])`, 'i'));
+    if (m) out.push(m[0]);
+  }
+  return [...new Set(out.map((x) => x.toLowerCase()))].map((lc) => out.find((x) => x.toLowerCase() === lc));
+}
+
 /** The posting's title as the CV headline (D98): location and work-model tags removed, nothing added. */
 export function headlineFromTitle(title) {
   const place = /\b(new york|nyc|ny|remote|hybrid|on-?site|us|usa|united states|manhattan|brooklyn)\b/i;
@@ -150,4 +182,83 @@ export function headlineFromTitle(title) {
   t = t.replace(/\s*\(([^)]*)\)\s*/g, (m, inner) => (place.test(inner) ? ' ' : m));
   t = t.replace(/\s*[-–|,]\s*([^-–|,]*)$/, (m, tail) => (place.test(tail) && tail.split(/\s+/).length <= 4 ? '' : m));
   return t.replace(/\s+/g, ' ').trim();
+}
+
+// --- What a number counts (D104): "10K clients" when cv.md says "10K+ customer estimates" -------
+const SKIP = new Set(['to', 'and', 'in', 'of', 'a', 'an', 'the', 'each', 'per', 'across', 'from', 'or', 'for', 'at', 'on', 'with', 'by', 'over', 'under', 'than', 'between', 'total', 'end', 'into', 'as']);
+const lemma = (w) => { const x = w.toLowerCase(); if (x === 'person' || x === 'people') return 'people'; return x.length > 3 && x.endsWith('s') ? x.slice(0, -1) : x; };
+
+/** Each number with the few words after it: [{ key, raw, words: [lemmas], phrase }]. */
+export function countedWords(text) {
+  const t = spellNumberNames(text);
+  const out = [];
+  for (const m of t.matchAll(NUM)) {
+    const unit = m[3] ? UNIT[m[3].trim().toLowerCase()] : '';
+    const after = t.slice(m.index + m[0].length, m.index + m[0].length + 60).split(/[.;:!?\n]/)[0];
+    const words = (after.match(/[A-Za-z]+/g) ?? []).slice(0, 3);
+    out.push({ key: `${m[2].replace(/,/g, '')}${unit}`, raw: m[0].trim(), words: words.map(lemma), phrase: `${m[0].trim()} ${words.join(' ')}`.trim() });
+  }
+  return out;
+}
+
+/**
+ * Warnings: a number the source has, but next to different words ("10K clients" vs "10K+ customer
+ * estimates"). A flag, not a block: cv.md sometimes names the counted thing earlier in the sentence.
+ */
+export function countedNounWarnings(target, source, where) {
+  const src = countedWords(source);
+  const warnings = [];
+  for (const n of countedWords(target)) {
+    const same = src.filter((s) => s.key === n.key);
+    const mine = n.words.filter((w) => !SKIP.has(w));
+    if (!same.length || !mine.length || SKIP.has(n.words[0])) continue;
+    if (same.some((s) => !s.words.length || SKIP.has(s.words[0]))) continue; // source doesn't say what it counts
+    if (same.some((s) => s.words.some((w) => mine.includes(w)))) continue;
+    warnings.push(`⚠️ check this number (${where}): "${n.phrase}", but your CV says "${same.map((s) => s.phrase).join('" / "')}"`);
+  }
+  return warnings;
+}
+
+// --- Placement (D105): a bank term with a [where: …] tag may only describe those jobs or lines -------
+
+/** Bank entries: [{ terms, where: [{ kind: 'job'|'line'|'projects', value }] | null }]. "Never" is left out. */
+export function bankEntries(md) {
+  const out = [];
+  let never = false;
+  for (const l of String(md).split('\n')) {
+    if (l.startsWith('## ')) { never = /^##\s+never/i.test(l); continue; }
+    if (never || !l.startsWith('- ')) continue;
+    const terms = l.slice(2).split(/\s+—\s+/)[0].split(',').map((x) => x.trim()).filter(Boolean);
+    const tag = l.match(/\[where:\s*([^\]]+)\]/i);
+    const where = tag ? [...tag[1].matchAll(/line\s+"([^"]+)"|([^,]+)/gi)].map((m) => (m[1] ? { kind: 'line', value: m[1].trim() } : m[2].trim().toLowerCase() === 'projects' ? { kind: 'projects', value: 'projects' } : { kind: 'job', value: m[2].trim() })).filter((w) => w.value) : null;
+    out.push({ terms, where });
+  }
+  return out;
+}
+
+const termRe = (t) => new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?(?![a-z0-9])`, 'i');
+
+/**
+ * Problems: a [where]-limited bank term used on a CV line outside its jobs or lines. A bullet's lines are
+ * its source lines; a description line is its job's. The summary may draw on any experience.
+ */
+export function placementProblems(entries, cv, lines, tailored) {
+  const problems = [];
+  const limited = entries.filter((e) => e.where);
+  const allowed = (where, job, srcTexts) => where.some((w) =>
+    (w.kind === 'job' && job.company.toLowerCase().startsWith(w.value.toLowerCase()))
+    || (w.kind === 'line' && srcTexts.some((t) => t.toLowerCase().startsWith(w.value.toLowerCase()))));
+  for (const e of tailored.experience) {
+    const job = cv.experience.find((j) => j.id === e.entry_id);
+    if (!job) continue;
+    const pieces = [...e.bullets.map((b) => ({ text: b.text, src: b.source_ids.map((id) => lines.get(id)?.text ?? '') })),
+      ...(e.context ? [{ text: e.context, src: [job.context ?? ''] }] : [])];
+    for (const piece of pieces) for (const entry of limited) for (const t of entry.terms) {
+      if (!termRe(t).test(piece.text)) continue;
+      // Already in the source line itself (e.g. "Coupa" in the Leo line): fine wherever that line goes.
+      if (piece.src.some((s) => termRe(t).test(s))) continue;
+      if (!allowed(entry.where, job, piece.src)) problems.push(`"${t}" can't describe this ${job.company} line (bank: only ${entry.where.map((w) => (w.kind === 'line' ? `"${w.value}…"` : w.value)).join(', ')}): "${piece.text.slice(0, 60)}…"`);
+    }
+  }
+  return problems;
 }

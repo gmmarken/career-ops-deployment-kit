@@ -37,7 +37,7 @@ export function cvPayload(cv, tailored, headline) {
     competencies: [],
     experience: cv.experience.map((j) => {
       const t = tailored.experience.find((x) => x.entry_id === j.id);
-      return { company: j.company, location: j.location ?? undefined, role: j.role, period: j.period, context: j.context ?? undefined, bullets: t.bullets.map((b) => b.text) };
+      return { company: j.company, location: j.location ?? undefined, role: j.role, period: j.period, context: (t.context || j.context) ?? undefined, bullets: t.bullets.map((b) => b.text) };
     }),
     projects: cv.projects.map((p) => projectEntry(p.text)),
     education: cv.education.map((e) => educationEntry(e.text)),

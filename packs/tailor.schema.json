@@ -23,7 +23,8 @@
         "additionalProperties": false,
         "required": [
           "entry_id",
-          "bullets"
+          "bullets",
+          "context"
         ],
         "properties": {
           "entry_id": {
@@ -50,6 +51,13 @@
                 }
               }
             }
+          },
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The job's description line, reworded toward the posting (same facts and numbers), or null to keep cv.md's line."
           }
         }
       }

@@ -26,5 +26,6 @@
   "name_notes": [
     "Example: 'Acme Leo' is a former client; never confuse it with a company called Lio."
   ],
-  "ai_native_sentence": "Built a small AI tool for one demanding user."
+  "ai_native_sentence": "Built a small AI tool for one demanding user.",
+  "keyword_bank": "keyword-bank.md"
 }
