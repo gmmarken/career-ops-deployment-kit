@@ -6,7 +6,8 @@ import { readFileSync, existsSync } from 'node:fs';
 
 // A number with what's around it: "~40", "$200K+", "nearly 300", "30%", "2-4".
 const QUAL = '(~|an estimated |estimated |about |approximately |approx\\. |roughly |nearly |almost |over |under |more than |less than |up to |at least )';
-const NUM = new RegExp(`${QUAL}?\\$?(\\d[\\d,]*(?:\\.\\d+)?)([KMB](?![a-z])|%|\\s(?:million|billion)\\b)?(\\+)?`, 'gi');
+// A number glued to a letter is part of a name, not a claim: "B2B", "S3", "Q4" (D107).
+const NUM = new RegExp(`${QUAL}?(?<![A-Za-z])\\$?(\\d[\\d,]*(?:\\.\\d+)?)([KMB](?![a-z])|%|\\s(?:million|billion)\\b)?(\\+)?`, 'gi');
 const UNIT = { k: 'K', m: 'M', b: 'B', million: 'M', billion: 'B', '%': '%' };
 
 // Names that contain a number aren't claims ("a Fortune 500 go-live" isn't "500 deployments"). Checks read

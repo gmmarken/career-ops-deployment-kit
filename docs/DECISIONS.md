@@ -605,3 +605,8 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **First results:** caught "managed 5-8 initiatives" (cv.md: partner on them) and "Data & AI consultant" (title is Associate Consultant); one false alarm (daily use of AI tools, true per the profile) fixed by giving the check the profile and skills.
 **Cost:** about one more AI call per pack (~$0.10–0.15 API-equivalent).
 **Trade-off:** an AI judging an AI can be wrong both ways; the candidate's own read stays the last check. If it blocks too often in the first weeks, make new claims flags too.
+
+## D107 — Fixes from the first run with the new pack checks (2026-11-06)
+- **"B2B" read as 2 billion:** the kit's number check read the "2B" in "B2B" as a number and blocked a good pack (Clay). A number glued to a letter ("B2B", "S3", "Q4") is now part of a name, not a claim.
+- **A job board that moved:** Rippling's own board now redirects from ats.rippling.com to rippling.com/careers, which the kit doesn't read, and the scan failed (🚨). A board that redirects to another site now counts as "not found": a ⚠️ summary line, retired after 3 runs (D82, D93).
+- **Not a bug:** career-ops' count check paired "10K+ customer estimates" with a later word ("…what clients paid") and reported "10k clients". In private notes it's only a warning; the kit's own check correctly stayed quiet. (The 2026-11-05 OpenAI report of "10K clients" was most likely the same misread.)

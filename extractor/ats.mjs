@@ -165,6 +165,11 @@ async function getPage(url, timeoutMs = TIMEOUT_MS) {
     throw new Error(`Could not reach ${url}: ${err.message}`);
   }
   if (!res.ok) throw new Error(`${url} returned HTTP ${res.status}. The posting may be closed, or the board name is wrong.`);
+  // A board that now sends you to another site (e.g. Rippling's own jobs moved to rippling.com/careers) is gone
+  // from this board: treated as "not found", so it's retired after 3 runs like any other (D107).
+  if (res.redirected && new URL(res.url).hostname !== new URL(url).hostname) {
+    throw new Error(`${url} returned HTTP 404 (treated as not found: it now redirects to ${res.url}, which isn't a job board the kit reads).`);
+  }
   return res.text();
 }
 

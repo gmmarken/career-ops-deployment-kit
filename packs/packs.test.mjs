@@ -436,3 +436,9 @@ test('meaning check: every line you would send is paired with its source; a skip
   assert.match(md, /## 🚫 New claim: CV, Acme/);
   assert.match(md, /returned no verdict for this line/);
 });
+
+test('a number glued to a letter is a name, not a claim: B2B, S3 (D107)', () => {
+  assert.deepEqual(numberProblems("I haven't worked in B2B SaaS, but I built an S3-fed job.", 'Built an automated, S3-fed Python job.'), []);
+  assert.deepEqual(numbers('B2B and Q4').map((n) => n.key), []);
+  assert.match(numberProblems('Grew revenue 2B.', 'none')[0] ?? '', /"2B" is not in the source/);
+});
