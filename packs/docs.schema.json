@@ -160,7 +160,6 @@
       "required": [
         "verdict",
         "requirements",
-        "keywords",
         "rejection_risks",
         "questions_for_you",
         "recruiter_impact"
@@ -205,12 +204,6 @@
                 }
               }
             }
-          }
-        },
-        "keywords": {
-          "type": "array",
-          "items": {
-            "type": "string"
           }
         },
         "rejection_risks": {

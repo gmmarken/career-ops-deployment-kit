@@ -13,7 +13,7 @@ import { fetchPosting } from '../extractor/ats.mjs';
 import { markdownSection } from '../extractor/extract.mjs';
 import { findCompany } from '../extractor/research.mjs';
 import { parseCv, sourceLines } from './cvsource.mjs';
-import { checkTailored, numberProblems, wordCount, loadCvRules, lockedIds, cvRuleProblems, draftRuleProblems, headlineFromTitle } from './check.mjs';
+import { checkTailored, numberProblems, wordCount, spellNumberNames, loadCvRules, lockedIds, cvRuleProblems, draftRuleProblems, headlineFromTitle } from './check.mjs';
 import { cvPayload, cvMarkdown, renderCv, runCo } from './render.mjs';
 import { usd, payText } from '../delivery/format.mjs';
 import { loadProjectNotes, mapMarkdown } from './projects.mjs';
@@ -46,10 +46,6 @@ export function companyMarkdown(name, entry, rounds = []) {
   return `${out.join('\n')}\n`;
 }
 
-// Names that contain a number aren't claims ("a Fortune 500 go-live" isn't "500 deployments"). The fact
-// gate reads a copy with them spelled out; the document itself is unchanged.
-const NUMBER_NAMES = [[/\bFortune (500|100|1000)\b/g, 'Fortune-list'], [/\bS&P 500\b/g, 'S&P-index'], [/\bInc\. 5000\b/g, 'Inc-list']];
-export const spellNumberNames = (text) => NUMBER_NAMES.reduce((t, [re, name]) => t.replace(re, name), String(text));
 
 /** Run career-ops' fact gate on one file. Returns { verdict, problems[], warnings[] }. */
 export async function factGate(file, sources, { run = runCo } = {}) {
@@ -160,6 +156,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const trPath = join(dataDir, 'config', rules.tailoring_rules);
   const trMd = readFileSync(trPath, 'utf8');
   const tailoringRules = ['5. Role archetypes', '6. Allowed vocabulary translations'].map((h) => markdownSection(trMd, h)).join('\n\n');
+  const nameNotes = `<name_notes>\n${rules.name_notes.map((n) => `- ${n}`).join('\n') || '- none'}\n</name_notes>`;
   const banned = `<banned_phrases>\nNever use these words or phrases anywhere, even inside a longer word or about someone else:\n${bannedPhrases(dataDir).map((b) => `- ${b}`).join('\n')}\n</banned_phrases>`;
 
   // 1. Inputs, all saved in the pack so you can see what it was built from.
@@ -178,7 +175,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   // 2. Tailored CV.
   const t = await claude({
     systemPrompt: load('tailor-prompt.md'), schema: JSON.parse(load('tailor.schema.json')), model: PACK_MODEL,
-    input: `${banned}\n\n<cv_source>\n${cvLinesJson}\n</cv_source>\n\n<framing>\n${markdownSection(profile, 'Your Adaptive Framing')}\n</framing>\n\n<tailoring_rules>\n${tailoringRules}\n</tailoring_rules>\n\n<locked>\n${locked}\n</locked>\n\n<posting>\n${jdText}\n</posting>`,
+    input: `${banned}\n\n<cv_source>\n${cvLinesJson}\n</cv_source>\n\n<framing>\n${markdownSection(profile, 'Your Adaptive Framing')}\n</framing>\n\n${nameNotes}\n\n<tailoring_rules>\n${tailoringRules}\n</tailoring_rules>\n\n<locked>\n${locked}\n</locked>\n\n<posting>\n${jdText}\n</posting>`,
   });
   calls.push({ step: 'tailor', ...t.usage });
   const tailored = t.data;
@@ -190,7 +187,12 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const lineCheck = checkTailored(cv, lines, tailored);
   lineCheck.problems.push(...cvRuleProblems(rules, lines, tailored));
   if (lineCheck.problems.length) return finish('blocked', `CV line check: ${lineCheck.problems.join('; ')}`, mapWarnings);
-  if (entry?.ai_native === true && !/job-search agent|career-ops/i.test(tailored.summary)) mapWarnings.push('AI-native company, but the summary doesn\'t mention the AI job-search agent project');
+  // AI-native companies (your Company Radar tick): the summary always names the job-search agent (D101).
+  // If the model left it out, code adds your fixed, pre-checked sentence.
+  if (entry?.ai_native === true && !/job-search agent|career-ops/i.test(tailored.summary)) {
+    tailored.summary = `${tailored.summary.trim()} ${rules.ai_native_sentence.trim()}`;
+    mapWarnings.push('AI-native company: added the job-search agent sentence to the summary');
+  }
   const payload = cvPayload(cv, tailored, headlineFromTitle(p.title));
   writeFileSync(file('cv-payload.json'), JSON.stringify(payload, null, 2));
   writeFileSync(file('cv.md'), cvMarkdown(cv, payload));
@@ -203,7 +205,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const d = await claude({
     systemPrompt: load('docs-prompt.md'), schema: JSON.parse(load('docs.schema.json')), model: PACK_MODEL,
     input: [
-      banned, `<cv>\n${readFileSync(file('cv.md'), 'utf8')}\n</cv>`, `<cv_lines>\n${cvLinesJson}\n</cv_lines>`,
+      banned, nameNotes, `<cv>\n${readFileSync(file('cv.md'), 'utf8')}\n</cv>`, `<cv_lines>\n${cvLinesJson}\n</cv_lines>`,
       `<profile>\n${['Strengths and the examples to tell', 'Your Exit Narrative', 'Your Cross-cutting Advantage', 'Writing Style'].map((h) => markdownSection(profile, h)).join('\n\n')}\n</profile>`,
       `<company>\n${companyText}\n</company>`, `<posting>\nRole: ${role}\nLink: ${p.url}\n\n${jdText}\n</posting>`,
     ].join('\n\n'),
@@ -223,13 +225,18 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   if (pages && pages > 1) warnings.push(`CV is ${pages} pages; one is preferred`);
   // Fit report (D98): measured ATS structure and keyword coverage next to the AI's read.
   mkdirSync(file('checks'), { recursive: true });
-  writeFileSync(file('checks/keywords.md'), `# Keywords for ${role}\n\n## Keywords extracted\n\n${docs.fit_report.keywords.join(', ')}\n`);
-  const coverage = await coJson(['keyword-match.mjs', file('checks/keywords.md'), '--cv', file('cv.html'), '--json'], 'career-ops keyword check', run);
+  // Keyword coverage, counted by career-ops' checker on the CV: every core term, and the ones a cv.md line supports.
+  const kwList = (terms, name) => { writeFileSync(file(`checks/${name}.md`), `# Keywords for ${role}\n\n## Keywords extracted\n\n${terms.join(', ')}\n`); return file(`checks/${name}.md`); };
+  const allTerms = tailored.keywords.map((k) => k.term);
+  const supported = tailored.keywords.filter((k) => k.cv_source_ids.some((id) => lines.has(id))).map((k) => k.term);
+  const coverage = await coJson(['keyword-match.mjs', kwList(allTerms, 'keywords'), '--cv', file('cv.html'), '--json'], 'career-ops keyword check', run);
+  const supportedCoverage = supported.length ? await coJson(['keyword-match.mjs', kwList(supported, 'keywords-supported'), '--cv', file('cv.html'), '--json'], 'career-ops keyword check', run) : null;
+  if (supportedCoverage?.missing?.length) warnings.push(`supported keyword(s) not used verbatim on the CV: ${supportedCoverage.missing.join(', ')}`);
   const atsRaw = await coJson(['verify-ats.mjs', file('cv.html'), '--json'], 'career-ops ATS check', run);
   const ats = { score: atsRaw.score, grade: atsRaw.grade, issues: (atsRaw.issues ?? []).map((i) => (typeof i === 'string' ? i : i.message ?? JSON.stringify(i)).slice(0, 120)) };
   const badIds = docs.fit_report.requirements.flatMap((r) => r.cv_source_ids).filter((id) => !lines.has(id) && !jobIds.has(id));
   if (badIds.length) warnings.push(`fit report cites unknown CV line(s) ${[...new Set(badIds)].join(', ')} (the report is advisory)`);
-  writeFileSync(file('fit-report.md'), fitReportMarkdown(role, docs.fit_report, { archetype: tailored.archetype, lines, coverage, ats, pages }));
+  writeFileSync(file('fit-report.md'), fitReportMarkdown(role, docs.fit_report, { archetype: tailored.archetype, lines, coverage, supportedCoverage, ats, pages }));
   if (wordCount(docs.cover_letter) > COVER_MAX_WORDS) warnings.push(`cover letter is ${wordCount(docs.cover_letter)} words; trim to ${COVER_MAX_WORDS}`);
   // The fact gate on each draft you'd send or say: cv.md for you, the research and posting for them.
   // In the interview prep that's the answer outlines and gap answers (questions to ask and quotes aren't claims).
@@ -253,15 +260,18 @@ async function coJson(args, what, run) {
 }
 
 /** fit-report.md: the AI's read of the fit, next to what code measured (D98). */
-export function fitReportMarkdown(role, fr, { archetype, lines, coverage, ats, pages }) {
+export function fitReportMarkdown(role, fr, { archetype, lines, coverage, supportedCoverage = null, ats, pages }) {
   const label = { embedded_ai_strategist: 'Embedded AI strategist / forward-deployed', implementation_deployment: 'Implementation / deployment strategist', technical_enablement: 'Technical enablement / training', pilot_led_deployment: 'Pilot-led deployment' }[archetype] ?? archetype;
   const out = [`# Fit report: ${role}`, '', `**Verdict:** ${fr.verdict} · **Role type:** ${label}`, '', '## Scores', '',
     '| Score | Value | How it was found |', '|---|---|---|',
     `| ATS structure | ${ats.score}/100 (${ats.grade}) | measured by career-ops' ATS checker${ats.issues.length ? `: ${ats.issues.join('; ')}` : ''} |`,
-    `| Keyword coverage | ${coverage.coveragePct}% (${coverage.presentCount} of ${coverage.total}) | the posting's core terms (picked by the AI), counted on the CV by code |`,
+    `| Keyword coverage, all terms | ${coverage.coveragePct}% (${coverage.presentCount} of ${coverage.total}) | the posting's core terms (picked by the AI), counted on the CV by code |`,
+    `| Keyword coverage, terms your CV supports | ${supportedCoverage ? `${supportedCoverage.coveragePct}% (${supportedCoverage.presentCount} of ${supportedCoverage.total})` : 'n/a (no supported terms)'} | should be near 100%: these are the terms you can truthfully use verbatim |`,
     `| Recruiter impact | ${fr.recruiter_impact.score}/100 | AI estimate, not a measurement: ${fr.recruiter_impact.why} |`,
     `| Pages | ${pages ?? '?'} | one preferred, two allowed |`, ''];
-  if (coverage.missing?.length) out.push(`**Terms not on the CV:** ${coverage.missing.join(', ')}. Add one only if a cv.md line truly supports it.`, '');
+  const unsupported = (coverage.missing ?? []).filter((t) => !(supportedCoverage?.missing ?? []).includes(t) && !(supportedCoverage?.present ?? []).includes(t));
+  if (supportedCoverage?.missing?.length) out.push(`**Supported but not verbatim on the CV:** ${supportedCoverage.missing.join(', ')}. Worth echoing exactly.`, '');
+  if (unsupported.length) out.push(`**Terms your CV doesn't support:** ${unsupported.join(', ')}. Gaps to address in the cover letter or interview, not on the CV.`, '');
   out.push('## Requirements', '', '| Requirement | Evidence | From your CV |', '|---|---|---|');
   for (const r of fr.requirements) {
     const used = r.cv_source_ids.map((id) => lines.get(id)?.text?.slice(0, 50)).filter(Boolean);

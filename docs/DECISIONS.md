@@ -573,3 +573,12 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 ## D100 — The daily run keeps the Mac awake until it finishes (2026-11-05)
 **Context:** A run takes 20+ minutes; after a short wake the Mac can fall back asleep mid-run.
 **Decision:** `daily.sh` runs under macOS's built-in `caffeinate -i`, which blocks idle sleep only while the run lasts. No system setting changes. A scheduled wake (`pmset`) is optional and the candidate's to set; it doesn't work with the lid closed and no external display.
+
+## D101 — Exact posting keywords, a names note, and a fixed AI-native summary sentence (2026-11-05)
+**Context:** The first fit report showed 14% keyword coverage, largely because the CV used different words for supported facts ("went live" vs "go-live"); ATS systems match exact terms. The AI also skipped the job-search agent in the summary for an AI-native company, and a recruiter at Lio could confuse it with the client Amazon Leo.
+**Decision (the candidate's calls):**
+- The tailoring step now lists the posting's 15-25 core terms with the cv.md lines that support each, and must use the posting's exact wording for every supported term. Unsupported terms stay off the CV. The number and hedge checks still apply. The fit report shows coverage of all terms and of supported terms (target near 100%), and names supported terms still missing.
+- `cv-rules.json` `name_notes` go to both AI steps (Amazon Leo is Amazon's satellite internet program, not the company Lio); cv.md's first Leo line now says so.
+- For a company ticked AI-native, if the summary doesn't mention the job-search agent, code appends `ai_native_sentence` from `cv-rules.json` (fixed, fact-checked like the rest).
+- Names that contain a number ("Fortune 500", "S&P 500") aren't read as numbers by any check.
+**Measured on Lio:** keyword coverage 14% → 33% (all terms), 67% (supported terms).

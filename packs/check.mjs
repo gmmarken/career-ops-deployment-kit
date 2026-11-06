@@ -9,10 +9,15 @@ const QUAL = '(~|an estimated |estimated |about |approximately |approx\\. |rough
 const NUM = new RegExp(`${QUAL}?\\$?(\\d[\\d,]*(?:\\.\\d+)?)([KMB](?![a-z])|%|\\s(?:million|billion)\\b)?(\\+)?`, 'gi');
 const UNIT = { k: 'K', m: 'M', b: 'B', million: 'M', billion: 'B', '%': '%' };
 
+// Names that contain a number aren't claims ("a Fortune 500 go-live" isn't "500 deployments"). Checks read
+// a copy with them spelled out; documents are unchanged (D98).
+const NUMBER_NAMES = [[/\bFortune (500|100|1000)\b/g, 'Fortune-list'], [/\bS&P 500\b/g, 'S&P-index'], [/\bInc\. 5000\b/g, 'Inc-list']];
+export const spellNumberNames = (text) => NUMBER_NAMES.reduce((t, [re, name]) => t.replace(re, name), String(text));
+
 /** Every number in a text: { key: "200K", hedged: bool, plus: bool, raw }. */
 export function numbers(text) {
   const out = [];
-  for (const m of String(text).matchAll(NUM)) {
+  for (const m of spellNumberNames(text).matchAll(NUM)) {
     const unit = m[3] ? UNIT[m[3].trim().toLowerCase()] : '';
     out.push({ key: `${m[2].replace(/,/g, '')}${unit}`, hedged: Boolean(m[1]), plus: Boolean(m[4]), raw: m[0].trim() });
   }
@@ -91,6 +96,8 @@ export function loadCvRules(path) {
   try { r = JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
   if (!Array.isArray(r.locked) || !Array.isArray(r.line_rules) || typeof r.tailoring_rules !== 'string') throw new Error(`${path} needs "locked" (list), "line_rules" (list) and "tailoring_rules" (file name).`);
   for (const l of r.locked) if (!l.name || !Array.isArray(l.any_of) || !l.any_of.length) throw new Error(`${path}: each locked entry needs "name" and "any_of".`);
+  if (!Array.isArray(r.name_notes) || r.name_notes.some((n) => typeof n !== 'string')) throw new Error(`${path} needs "name_notes": a list of plain-text notes (e.g. which client names look like other companies), [] for none.`);
+  if (typeof r.ai_native_sentence !== 'string' || !r.ai_native_sentence.trim()) throw new Error(`${path} needs "ai_native_sentence": the fixed summary sentence about your AI project, added for AI-native companies (D101).`);
   for (const l of r.line_rules) if (!l.name || !l.line_starts || !Array.isArray(l.forbidden) || !Array.isArray(l.mention)) throw new Error(`${path}: each line rule needs "name", "line_starts", "mention" and "forbidden".`);
   return r;
 }

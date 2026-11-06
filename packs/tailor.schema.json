@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "required": [
     "archetype",
+    "keywords",
     "summary",
     "experience",
     "skills",
@@ -90,6 +91,29 @@
         "pilot_led_deployment"
       ],
       "description": "Which of the candidate's role types this posting is (tailoring rules, section 5)."
+    },
+    "keywords": {
+      "type": "array",
+      "description": "The posting's 15-25 core terms, exactly as the posting writes them, each with the cv_source line ids that truly support it ([] if none).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "cv_source_ids"
+        ],
+        "properties": {
+          "term": {
+            "type": "string"
+          },
+          "cv_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   }
 }

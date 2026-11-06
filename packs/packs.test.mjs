@@ -11,7 +11,8 @@ import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mj
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
-import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, spellNumberNames } from './build.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown } from './build.mjs';
+import { spellNumberNames } from './check.mjs';
 import { openStore } from '../market/store.mjs';
 import { refreshQueue } from '../scripts/packs.mjs';
 
@@ -288,6 +289,8 @@ const RULES = {
   locked: [{ name: 'AI agent', any_of: ['Built an AI agent'] }, { name: 'Beta report', any_of: ['Cut a daily report'] }],
   line_rules: [{ name: 'Side tool: no sales claims', line_starts: '**Side tool**', mention: ['Side tool'], forbidden: ['sales', 'customers'] }],
   tailoring_rules: 'tailoring-rules.md',
+  name_notes: ['Acme Leo is a client; it is not the company Lio.'],
+  ai_native_sentence: 'Built a small tool for one user.',
 };
 
 test('locked lines must appear (reworded is fine); a rule that matches no cv.md line is a settings error', () => {
@@ -319,7 +322,9 @@ test('the headline is the posting title without location or work-model tags', ()
 test('cv-rules.json is required and checked', () => {
   const d = mkdtempSync(join(tmpdir(), 'rules-'));
   assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /not found/);
-  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ locked: [{ name: 'x' }], line_rules: [], tailoring_rules: 't.md' }));
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ ...RULES, ai_native_sentence: '' }));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /needs "ai_native_sentence"/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ ...RULES, locked: [{ name: 'x' }] }));
   assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /needs "name" and "any_of"/);
   writeFileSync(join(d, 'cv-rules.json'), JSON.stringify(RULES));
   assert.equal(loadCvRules(join(d, 'cv-rules.json')).locked.length, 2);
@@ -328,12 +333,17 @@ test('cv-rules.json is required and checked', () => {
 test('fit report: measured scores are labeled measured, the AI\'s estimate is labeled an estimate', () => {
   const fr = { verdict: 'Medium', requirements: [{ requirement: 'SQL', posting_quote: 'Strong SQL', evidence: 'Strong', cv_source_ids: ['e1b1'] }],
     keywords: ['SQL'], rejection_risks: ['No healthcare'], questions_for_you: [], recruiter_impact: { score: 70, why: 'proof points are high on the page' } };
-  const md = fitReportMarkdown('Acme — Role', fr, { archetype: 'pilot_led_deployment', lines, coverage: { coveragePct: 50, presentCount: 1, total: 2, missing: ['onboarding'] }, ats: { score: 100, grade: 'A', issues: [] }, pages: 1 });
+  const md = fitReportMarkdown('Acme — Role', fr, { archetype: 'pilot_led_deployment', lines,
+    coverage: { coveragePct: 33, presentCount: 1, total: 3, present: ['SQL'], missing: ['go-live', 'onboarding'] },
+    supportedCoverage: { coveragePct: 50, presentCount: 1, total: 2, present: ['SQL'], missing: ['go-live'] },
+    ats: { score: 100, grade: 'A', issues: [] }, pages: 1 });
   assert.match(md, /\*\*Verdict:\*\* Medium · \*\*Role type:\*\* Pilot-led deployment/);
   assert.match(md, /ATS structure \| 100\/100 \(A\) \| measured/);
-  assert.match(md, /Keyword coverage \| 50% \(1 of 2\)/);
+  assert.match(md, /Keyword coverage, all terms \| 33% \(1 of 3\)/);
+  assert.match(md, /Keyword coverage, terms your CV supports \| 50% \(1 of 2\)/);
+  assert.match(md, /Supported but not verbatim on the CV:\*\* go-live/);
+  assert.match(md, /Terms your CV doesn't support:\*\* onboarding/);
   assert.match(md, /Recruiter impact \| 70\/100 \| AI estimate, not a measurement/);
-  assert.match(md, /Terms not on the CV:\*\* onboarding/);
   assert.match(md, /- None\./);
   const blocks = markdownBlocks(md);
   assert.ok(blocks.some((b) => b.type === 'bulleted_list_item' && /ATS structure · 100\/100/.test(b.bulleted_list_item.rich_text.map((r) => r.text.content).join(''))));
@@ -342,6 +352,7 @@ test('fit report: measured scores are labeled measured, the AI\'s estimate is la
 
 test('names with numbers are not claims for the fact gate; a whole job may be cited in interview prep', () => {
   assert.equal(spellNumberNames('owned a Fortune 500 go-live, beat the S&P 500'), 'owned a Fortune-list go-live, beat the S&P-index');
+  assert.deepEqual(numberProblems('a Fortune 500 operations team', 'an operations team'), []);
   const docs = { cover_letter: 'Dear Hiring Team. Sincerely, Pat', outreach: { leader_name: null, leader_title: null, leader_note: null, hiring_manager_note: 'Hi.' },
     interview_prep: { likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'At Acme…', cv_source_ids: ['e1'] }], gaps: [] } };
   assert.deepEqual(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [], jobIds: new Set(['e1', 'e2']) }), []);
