@@ -5,6 +5,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- "B2B", "S3" and similar names are no longer read as numbers by the pack checks (blocked the Clay pack) (D107).
+- A job board that now redirects to another site (Rippling's own) counts as "not found" and is retired after 3 runs, instead of failing the scan (D107).
 - Prep packs: education lines no longer share ids with jobs (the fit report cited a degree as job evidence); "Fortune 500" no longer reads as a number to the fact gate; the CV's hidden empty consent box is removed (ATS 94 → 99).
 - Alerts now pop up on the phone (D95): a ⭐ new S role, a 📦 pack, or a 🚨 failed or paused run also creates a reminder in the "Job Search Alerts" list (`reminders_list` in `daily.json`, required), because texts to your own number never notify. `install-daily.sh --test-message` also sends a test reminder (grants the Reminders permission once).
 - Grading (D96): "N years in a field" is no longer read as a hard requirement, and a list of options joined by "or" counts as met if the CV shows any one.
