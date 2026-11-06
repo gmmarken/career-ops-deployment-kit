@@ -6,12 +6,13 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCv, sourceLines } from './cvsource.mjs';
-import { numbers, numberProblems, checkTailored } from './check.mjs';
+import { numbers, numberProblems, countedNounWarnings, bankEntries, placementProblems, checkTailored, bankTerms, postingBankTerms, cvRuleProblems, draftRuleProblems, headlineFromTitle, lockedIds, loadCvRules } from './check.mjs';
 import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mjs';
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
-import { checkDocs, prepClaims, companyMarkdown, slug } from './build.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, readme, meaningPairs, meaningVerdicts, meaningMarkdown } from './build.mjs';
+import { spellNumberNames } from './check.mjs';
 import { openStore } from '../market/store.mjs';
 import { refreshQueue } from '../scripts/packs.mjs';
 
@@ -73,6 +74,10 @@ test('cv.md is read into numbered lines; an unknown section fails loudly', () =>
   assert.equal(cv.experience[0].context, 'Analytics partner to 10+ leaders.');
   assert.equal(lines.get('e1b2').entry, 'e1');
   assert.equal(lines.get('e1c').text, 'Analytics partner to 10+ leaders.');
+  // education, projects and interests never share an id with a job (e1, e2…)
+  assert.equal(lines.get('ed1').entry, 'education');
+  assert.equal(lines.get('p1').entry, 'projects');
+  assert.ok(!lines.has('e1') && !lines.has('e2'));
   assert.deepEqual(cv.skills[0], { category: 'AI', items: ['context engineering', 'Claude'] });
   assert.equal(cv.interests[0].text, 'Skiing and golf.');
   assert.throws(() => parseCv(CV.replace('## Projects', '## Hobbies')), /unknown section "Hobbies"/);
@@ -114,26 +119,24 @@ test('checkTailored: a faithful rewrite passes', () => {
   assert.deepEqual(checkTailored(cv, lines, good).problems, []);
 });
 
-test('checkTailored: dropped jobs, wrong sources, new numbers, new skills and long headlines block', () => {
+test('checkTailored: dropped jobs, wrong sources, new numbers and new skills block', () => {
   const bad = structuredClone(good);
   bad.experience[0].bullets[0] = { text: 'Built an AI agent used by 50 analysts.', source_ids: ['e1b1'] };
   bad.experience[0].bullets[1] = { text: 'Cut a report to 30 minutes.', source_ids: ['e2b1'] }; // another job's line
   bad.experience[1].bullets.push({ text: 'Led everything.', source_ids: [] });
   bad.skills = [{ category: 'AI', items: ['Kubernetes'] }, { category: 'Cloud', items: ['AWS'] }];
-  bad.headline = 'The Very Best AI Deployment Strategist In Town';
   const p = checkTailored(cv, lines, bad).problems.join('\n');
   assert.match(p, /Acme bullet 1: "50" is not in the source line/);
   assert.match(p, /source e2b1 is not a Acme line/);
   assert.match(p, /Beta Co bullet 2: names no cv\.md line/);
-  assert.match(p, /"Kubernetes" is not listed under AI/);
+  assert.match(p, /"Kubernetes" is not in cv\.md's skills list/);
   assert.match(p, /"Cloud" is not a cv\.md skills category/);
-  assert.match(p, /headline is over 6 words/);
   const missing = { ...good, experience: [good.experience[0]] };
   assert.match(checkTailored(cv, lines, missing).problems[0], /jobs must be e1, e2 in that order/);
 });
 
 test('render: career-ops payload keeps job headers, projects, education and interests word for word', () => {
-  const p = cvPayload(cv, good);
+  const p = cvPayload(cv, good, 'AI Deployment Strategist');
   assert.equal(p.candidate.title, 'AI Deployment Strategist');
   assert.deepEqual(p.candidate.linkedin, { url: 'https://linkedin.com/in/pat-example', display: 'linkedin.com/in/pat-example' });
   assert.equal(p.experience[0].role, 'Analyst, Strategy & Operations');
@@ -279,4 +282,157 @@ test('Notion text: markdown becomes blocks under the 2000-character limit; a blo
   const blocked = packBlocks({ folder: '/f', status: 'blocked', date: '2026-11-05', detail: 'CV line check: x' });
   assert.equal(blocked.length, 3);
   assert.match(blocked[2].callout.rich_text[0].text.content, /CV line check: x/);
+});
+
+// --- D98–D99: recruiter-file rules -------------------------------------------------------
+const RULES = {
+  locked: [{ name: 'AI agent', any_of: ['Built an AI agent'] }, { name: 'Beta report', any_of: ['Cut a daily report'] }],
+  line_rules: [{ name: 'Side tool: no sales claims', line_starts: '**Side tool**', mention: ['Side tool'], forbidden: ['sales', 'customers'] }],
+  tailoring_rules: 'tailoring-rules.md',
+  name_notes: ['Acme Leo is a client; it is not the company Lio.'],
+  ai_native_sentence: 'Built a small tool for one user.',
+  keyword_bank: 'keyword-bank.md',
+};
+
+test('locked lines must appear (reworded is fine); a rule that matches no cv.md line is a settings error', () => {
+  assert.deepEqual(cvRuleProblems(RULES, lines, good), []);
+  const dropped = structuredClone(good);
+  dropped.experience[0].bullets = dropped.experience[0].bullets.filter((b) => !b.source_ids.includes('e1b1'));
+  assert.deepEqual(cvRuleProblems(RULES, lines, dropped), ['locked line left out: AI agent']);
+  assert.throws(() => lockedIds({ ...RULES, locked: [{ name: 'x', any_of: ['Nothing like this'] }] }, lines), /matches no cv\.md line/);
+});
+
+test('a line rule blocks its words only where that line is described', () => {
+  const t = structuredClone(good);
+  t.experience[1].bullets[0].text = 'Cut a daily report to under 30 minutes for the sales team.';
+  assert.deepEqual(cvRuleProblems(RULES, lines, t), []); // not the ruled line: "sales" is fine
+  const draft = 'At the Side tool I won customers. Separately, I partnered with a sales team.';
+  const p = draftRuleProblems(RULES, draft, 'cover letter');
+  assert.equal(p.length, 1);
+  assert.match(p[0], /cover letter: Side tool: no sales claims: "customers"/);
+});
+
+test('the headline is the posting title without location or work-model tags', () => {
+  assert.equal(headlineFromTitle('AI Strategist (New York)'), 'AI Strategist');
+  assert.equal(headlineFromTitle('Forward Deployed Strategist – NYC'), 'Forward Deployed Strategist');
+  assert.equal(headlineFromTitle('Strategist, Agent Development - Public Sector'), 'Strategist, Agent Development - Public Sector');
+  assert.equal(headlineFromTitle('Deployment Strategist (Remote, US)'), 'Deployment Strategist');
+  assert.equal(headlineFromTitle('AI Deployment Manager - Builder'), 'AI Deployment Manager - Builder');
+});
+
+test('cv-rules.json is required and checked', () => {
+  const d = mkdtempSync(join(tmpdir(), 'rules-'));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /not found/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ ...RULES, ai_native_sentence: '' }));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /needs "ai_native_sentence"/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ ...RULES, locked: [{ name: 'x' }] }));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /needs "name" and "any_of"/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify(RULES));
+  assert.equal(loadCvRules(join(d, 'cv-rules.json')).locked.length, 2);
+});
+
+test('fit report: measured scores are labeled measured, the AI\'s estimate is labeled an estimate', () => {
+  const fr = { verdict: 'Medium', requirements: [{ requirement: 'SQL', posting_quote: 'Strong SQL', evidence: 'Strong', cv_source_ids: ['e1b1'] }],
+    keywords: ['SQL'], rejection_risks: ['No healthcare'], questions_for_you: [], recruiter_impact: { score: 70, why: 'proof points are high on the page' } };
+  const md = fitReportMarkdown('Acme — Role', fr, { archetype: 'pilot_led_deployment', lines,
+    coverage: { coveragePct: 33, presentCount: 1, total: 3, present: ['SQL'], missing: ['go-live', 'onboarding'] },
+    supportedCoverage: { coveragePct: 50, presentCount: 1, total: 2, present: ['SQL'], missing: ['go-live'] },
+    ats: { score: 100, grade: 'A', issues: [] }, pages: 1 });
+  assert.match(md, /\*\*Verdict:\*\* Medium · \*\*Role type:\*\* Pilot-led deployment/);
+  assert.match(md, /ATS structure \| 100\/100 \(A\) \| measured/);
+  assert.match(md, /Keyword coverage, all core terms \| 33% \(1 of 3\)/);
+  assert.match(md, /Keyword coverage, your bank terms this posting uses \| 50% \(1 of 2\)/);
+  assert.match(md, /Supported but not verbatim on the CV:\*\* go-live/);
+  assert.match(md, /Terms your CV doesn't support:\*\* onboarding/);
+  assert.match(md, /Recruiter impact \| 70\/100 \| AI estimate, not a measurement/);
+  assert.match(md, /- None\./);
+  const blocks = markdownBlocks(md);
+  assert.ok(blocks.some((b) => b.type === 'bulleted_list_item' && /ATS structure · 100\/100/.test(b.bulleted_list_item.rich_text.map((r) => r.text.content).join(''))));
+  assert.ok(!blocks.some((b) => /\|---/.test(JSON.stringify(b))));
+});
+
+test('names with numbers are not claims for the fact gate; a whole job may be cited in interview prep', () => {
+  assert.equal(spellNumberNames('owned a Fortune 500 go-live, beat the S&P 500'), 'owned a Fortune-list go-live, beat the S&P-index');
+  assert.deepEqual(numberProblems('a Fortune 500 operations team', 'an operations team'), []);
+  const docs = { cover_letter: 'Dear Hiring Team. Sincerely, Pat', outreach: { leader_name: null, leader_title: null, leader_note: null, hiring_manager_note: 'Hi.' },
+    interview_prep: { likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'At Acme…', cv_source_ids: ['e1'] }], gaps: [] } };
+  assert.deepEqual(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [], jobIds: new Set(['e1', 'e2']) }), []);
+  assert.match(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [] })[0], /unknown CV line e1/);
+});
+
+test('every pack README opens with the ATS check (D102)', () => {
+  const p = { url: 'https://x' };
+  const scores = { ats: { score: 99, grade: 'A', issues: [] }, coverage: { coveragePct: 50, presentCount: 10, total: 20 }, supportedCoverage: { coveragePct: 92, presentCount: 12, total: 13 }, pages: 2 };
+  const md = readme('Acme — Role', p, { status: 'ready', detail: null, warnings: [], date: '2026-11-05', scores });
+  assert.match(md, /## ATS check\n\n- \*\*ATS structure:\*\* \*\*99\/100\*\* \(A\)/);
+  assert.match(md, /all core terms \(rough\):\*\* \*\*50%\*\* \(10 of 20\)/);
+  assert.match(md, /your bank terms this posting uses:\*\* \*\*92%\*\* \(12 of 13\)/);
+  assert.ok(md.indexOf('## ATS check') < md.indexOf('## Before you apply'));
+  assert.match(readme('Acme — Role', p, { status: 'blocked', detail: 'x', warnings: [], date: '2026-11-05' }), /Not measured: the pack stopped before the CV was checked/);
+});
+
+test('keyword bank: terms are read (never the Never list), and the posting\'s own wording of them is found', () => {
+  const md = '# Bank\n\n## Deployment\n- implementation, go-live — the migration.\n- playbook — the kit.\n\n## Never\n- C-suite\n';
+  assert.deepEqual(bankTerms(md), ['implementation', 'go-live', 'playbook']);
+  assert.deepEqual(postingBankTerms(['implementation', 'go-live', 'playbook'], 'Own Implementations and build Playbooks to go-live.'), ['Implementations', 'go-live', 'Playbooks']);
+});
+
+test('a bullet citing a whole job is read as citing its description line', () => {
+  const t = structuredClone(good);
+  t.experience[0].bullets[0] = { text: 'Analytics partner to 10+ leaders.', source_ids: ['e1'] };
+  assert.deepEqual(checkTailored(cv, lines, t).problems, []);
+  assert.deepEqual(t.experience[0].bullets[0].source_ids, ['e1c']);
+});
+
+test('what a number counts: "10K clients" is flagged when the CV says "10K+ customer estimates" (D104)', () => {
+  const src = 'Analyzed a pilot across 250K+ returns and 10K+ customer estimates. Led 2 end to end as the sole consultant. Rolled out to the ~40-person team; nearly 300 fraudulent referral codes.';
+  assert.match(countedNounWarnings('Reviewed 10K clients.', src, 'interview prep')[0], /check this number \(interview prep\): "10K clients", but your CV says "10K\+ customer estimates"/);
+  assert.deepEqual(countedNounWarnings('across 10K+ customer estimates', src, 'CV'), []);
+  assert.deepEqual(countedNounWarnings('led 2 projects end-to-end', src, 'CV'), []); // the source doesn't say what 2 counts
+  assert.deepEqual(countedNounWarnings('a ~40 people team', src, 'CV'), []); // person / people
+  assert.deepEqual(countedNounWarnings('nearly 300 codes', src, 'CV'), []);
+});
+
+test('a tailored description line keeps the source line\'s numbers (D104)', () => {
+  const t = structuredClone(good);
+  t.experience[0].context = 'Customer-facing analytics partner to 10+ senior leaders, owning priorities.';
+  assert.deepEqual(checkTailored(cv, lines, t).problems, []);
+  t.experience[0].context = 'Analytics partner to 25 leaders.';
+  assert.match(checkTailored(cv, lines, t).problems.join(), /Acme description: "25" is not in the source line/);
+  t.experience[0].context = null;
+  t.experience[1].context = 'Consultant.';
+  assert.match(checkTailored(cv, lines, t).problems.join(), /Beta Co: a description line was written, but cv\.md has none/);
+  const p = cvPayload(cv, { ...good, experience: [{ ...good.experience[0], context: 'Customer-facing partner to 10+ leaders.' }, good.experience[1]] }, 'X');
+  assert.equal(p.experience[0].context, 'Customer-facing partner to 10+ leaders.');
+});
+
+test('placement: a [where]-limited bank term blocks outside its jobs or lines (D105)', () => {
+  const md = '## T\n- customer-facing — Beta client work. [where: Beta Co]\n- tradeoffs — the kit. [where: line "Rolled out a migration kit"]\n- customers — anywhere.\n## Never\n- C-suite\n';
+  const entries = bankEntries(md);
+  assert.deepEqual(entries.map((e) => [e.terms, e.where]), [[['customer-facing'], [{ kind: 'job', value: 'Beta Co' }]], [['tradeoffs'], [{ kind: 'line', value: 'Rolled out a migration kit' }]], [['customers'], null]]);
+  const t = structuredClone(good);
+  t.experience[0].bullets[0].text = 'Built a customer-facing AI agent for customers, weighing tradeoffs.';
+  const p = placementProblems(entries, cv, lines, t).join('\n');
+  assert.match(p, /"customer-facing" can't describe this Acme line \(bank: only Beta Co\)/);
+  assert.match(p, /"tradeoffs" can't describe this Acme line/);
+  assert.doesNotMatch(p, /^"customers"/m); // unrestricted term
+  t.experience[0].bullets[0] = { text: 'Rolled out a migration kit, weighing tradeoffs.', source_ids: ['e1b2'] };
+  t.experience[1].bullets[0].text = 'Customer-facing: cut a daily report from ~3 hours to under 30 minutes.';
+  assert.deepEqual(placementProblems(entries, cv, lines, t), []);
+});
+
+test('meaning check: every line you would send is paired with its source; a skipped line is never assumed fine (D106)', () => {
+  const docs = { cover_letter: 'Dear Hiring Team,\n\nI cut a daily report from ~3 hours to under 30 minutes at Beta Co, and rolled out a kit to a ~40-person team.\n\nSincerely, Pat', outreach: { leader_note: null, hiring_manager_note: 'Hi, I rolled out a kit to a ~40-person team and would welcome a chat.' } };
+  const t = structuredClone(good);
+  t.experience[0].context = 'Customer-facing analytics partner to 10+ leaders.';
+  const pairs = meaningPairs({ cv, lines, tailored: t, docs });
+  assert.deepEqual(pairs.map((p) => p.where), ['CV, Acme description', 'CV, Acme', 'CV, Acme', 'CV, Beta Co', 'CV summary', 'cover letter', 'outreach to the hiring manager']);
+  assert.equal(pairs[0].source, 'Analytics partner to 10+ leaders.');
+  assert.match(pairs[1].source, /^Built an AI agent that maps files/);
+  const v = meaningVerdicts(pairs, { lines: [{ id: 'L1', verdict: 'same', what_changed: null }, { id: 'L2', verdict: 'new_claim', what_changed: '"used by 50 analysts": the source has no user count' }] });
+  assert.equal(v[1].verdict, 'new_claim');
+  assert.equal(v[2].verdict, 'stronger'); // no verdict returned → flagged, not passed
+  const md = meaningMarkdown('Acme — Role', v);
+  assert.match(md, /## 🚫 New claim: CV, Acme/);
+  assert.match(md, /returned no verdict for this line/);
 });

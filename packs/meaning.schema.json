@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Meaning check (D106)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lines"],
+  "properties": {
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict", "what_changed"],
+        "properties": {
+          "id": { "type": "string" },
+          "verdict": { "enum": ["same", "stronger", "new_claim"] },
+          "what_changed": { "type": ["string", "null"], "description": "For stronger or new_claim: quote the words that changed and what the source says instead." }
+        }
+      }
+    }
+  }
+}

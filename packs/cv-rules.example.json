@@ -1,0 +1,31 @@
+{
+  "_about": "EXAMPLE. Copy to <data dir>/config/cv-rules.json. locked: every tailored CV includes at least one cv.md line from each group (it may still be reworded). line_rules: words that may not describe one cv.md line, on the CV or in a draft sentence that mentions it. tailoring_rules: a markdown file in config/ with sections '## 5. Role archetypes' and '## 6. Allowed vocabulary translations'.",
+  "locked": [
+    {
+      "name": "Strongest proof point",
+      "any_of": [
+        "Cut a daily report"
+      ]
+    }
+  ],
+  "line_rules": [
+    {
+      "name": "Side project: no sales claims",
+      "line_starts": "**Side tool**",
+      "mention": [
+        "Side tool"
+      ],
+      "forbidden": [
+        "sales",
+        "customers",
+        "revenue"
+      ]
+    }
+  ],
+  "tailoring_rules": "tailoring-rules.md",
+  "name_notes": [
+    "Example: 'Acme Leo' is a former client; never confuse it with a company called Lio."
+  ],
+  "ai_native_sentence": "Built a small AI tool for one demanding user.",
+  "keyword_bank": "keyword-bank.md"
+}

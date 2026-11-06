@@ -546,3 +546,62 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 ## D96 — "Years in a field" isn't a hard gate, and an "or" list is met by any one item (2026-11-05)
 **Context:** Re-grading after D94 dropped Context's Forward Deployed Strategist from S to C. The model read "2+ years of hands-on experience in investment banking, private equity, hardware engineering, management consulting, or a similar knowledge-intensive field" as an unmet hard gate, though the candidate has years of consulting.
 **Decision:** The candidate's call. The extraction prompt now says years of experience in a field go in `years_required.min` and are not a hard gate, and a requirement listing options joined by "or" is met if the CV shows any one. Checked on the calibration set before merging.
+
+## D97 — Accept the AI's run-to-run noise; no second reads (2026-11-05)
+**Context:** Re-grading 85 open S/A roles moved about 1 in 11 for reasons unrelated to any rule (the model read a borderline posting slightly differently).
+**Options:** (A) a second read for S/A roles, keeping the higher grade with a flag; (B) read every role twice; (C) accept the noise; (D) sharpen the questions that flip most.
+**Decision:** C, the candidate's call. He reviews S and A roles himself, so a role one tier off is judged anyway; he'll skim B roles now and then. No routine re-grades.
+**Trade-off:** a good role the noise drops to B isn't texted or packed.
+
+## D98 — Prep-pack CVs follow the candidate's recruiter review (2026-11-05)
+**Context:** The candidate ran the first three packs past an "expert recruiter" review (scores 63–74) and turned its suggestions into a rules file, kept privately as `private/config/tailoring-rules.md`. cv.md stays the only source of facts.
+**Decision (the candidate's calls):**
+- **Locked lines** (`private/config/cv-rules.json`): every CV includes the client-hire line, at least one Amazon Leo line, the partnerships line and the Copilot agent. They may still be reworded under the same checks; code blocks a pack that leaves one out.
+- **Headline = the posting's title**, set by code, with location and work-model tags removed.
+- **Role types and allowed rewordings** (sections 5–6 of the rules file) go into the tailoring instructions; the model names the role type, which sets bullet order and summary emphasis. Code can't check meaning, so the CV map review stays the backstop.
+- **Fit report** (`fit-report.md`, also in Notion): verdict; requirement-by-requirement evidence; rejection risks; questions. Scores: ATS structure measured by career-ops' `verify-ats.mjs`; keyword coverage counted by career-ops' `keyword-match.mjs` (the model picks the posting's 15–25 core terms, code counts them on the CV; career-ops' own skill extractor finds no terms in non-technical postings); recruiter impact labeled as the AI's estimate.
+- **ATS cleanup:** the template's empty, CSS-hidden consent box is removed (it read as hidden text: 94 → 99).
+- **One page preferred,** two allowed, with a warning.
+- **Skipped:** Word (.docx) output, re-ranking roles by type, a 95-point pass mark.
+**Fixed while testing:** education lines shared ids with jobs (e1, e2), so the model's "e1" (a job) was read as a degree; education, projects and interests now have their own prefixes. "Fortune 500" was read by the fact gate as a count; names containing numbers are spelled out in the gate's copy only.
+**Measured on Lio:** ATS 99/100; keyword coverage 14%. The coverage number is crude (exact phrases: "went live" doesn't count as "go-live"), so it's a list of terms to echo truthfully, not a grade.
+
+## D99 — Line-specific banned words, starting with Lightning Supply (2026-11-05)
+**Context:** The rule "never claim Lightning Supply made sales" was a global banned word ("sales"), which also blocked "Salesforce" and "your sales team". The 11 raw H&R Block figures on the banned list were redundant with the number checks and risky (e.g. "25%" inside "125%").
+**Decision:** The candidate's call. `cv-rules.json` `line_rules`: words that may not describe one cv.md line, on the CV (bullets built from that line) or in a draft sentence that mentions it. Lightning's sales words moved there; the 11 raw figures were removed (the number checks still block them). Lightning's line now ends "wound down by selling the inventory and domain, recouping almost all losses". To watch for a week.
+
+## D100 — The daily run keeps the Mac awake until it finishes (2026-11-05)
+**Context:** A run takes 20+ minutes; after a short wake the Mac can fall back asleep mid-run.
+**Decision:** `daily.sh` runs under macOS's built-in `caffeinate -i`, which blocks idle sleep only while the run lasts. No system setting changes. A scheduled wake (`pmset`) is optional and the candidate's to set; it doesn't work with the lid closed and no external display.
+
+## D101 — Exact posting keywords, a names note, and a fixed AI-native summary sentence (2026-11-05)
+**Context:** The first fit report showed 14% keyword coverage, largely because the CV used different words for supported facts ("went live" vs "go-live"); ATS systems match exact terms. The AI also skipped the job-search agent in the summary for an AI-native company, and a recruiter at Lio could confuse it with the client Amazon Leo.
+**Decision (the candidate's calls):**
+- The tailoring step now lists the posting's 15-25 core terms with the cv.md lines that support each, and must use the posting's exact wording for every supported term. Unsupported terms stay off the CV. The number and hedge checks still apply. The fit report shows coverage of all terms and of supported terms (target near 100%), and names supported terms still missing.
+- `cv-rules.json` `name_notes` go to both AI steps (Amazon Leo is Amazon's satellite internet program, not the company Lio); cv.md's first Leo line now says so.
+- For a company ticked AI-native, if the summary doesn't mention the job-search agent, code appends `ai_native_sentence` from `cv-rules.json` (fixed, fact-checked like the rest).
+- Names that contain a number ("Fortune 500", "S&P 500") aren't read as numbers by any check.
+**Measured on Lio:** keyword coverage 14% → 33% (all terms), 67% (supported terms).
+
+## D102 — Every pack README opens with an ATS check; private notes get softer name checks (2026-11-05)
+**Decision:** The candidate's call. Each pack's README starts with the ATS check: ATS structure (career-ops' checker), keyword coverage of the posting's core terms, coverage of the terms his CV supports, and pages. In the interview prep (private notes, never sent), a name career-ops' fact gate can't find ("lists Salesforce") is a warning rather than a block; numbers and banned phrases still block there, and the cover letter and outreach stay fully strict.
+**Known limit:** the core-term list is picked by the AI each build, so coverage moves by about ±10 points between builds of the same posting (Edra: 71%, then 58%).
+
+## D103 — A keyword bank: approved terms tied to the experience that makes each true (2026-11-05)
+**Context:** Across the 79 open S/A postings, common terms (customers, ownership, requirements, implementation, playbook, workflows, AI agents…) were missing from the CV word for word, though the experience behind many was real. ATS systems match exact words.
+**Decision:** The candidate's call. `private/config/keyword-bank.md` (`keyword_bank` in `cv-rules.json`, required) lists approved terms, each with the experience behind it, its limits, and a "Never" list (C-suite, champion, roadmap ownership, healthcare, hackathons, workshops, Codex…). Both AI steps get it; career-ops' fact gate reads it as an approved source with every number removed, so numbers still come only from cv.md. Code builds the target list (the bank terms the posting uses), the same every build, and the tailoring must use those exact words where the experience appears. Coverage of that list is the fit report's stable keyword measure; the AI's own list is shown as a rough guide (it varies by build). cv.md gained the bank's skill terms; "prompt and context engineering" is back.
+**Measured (bank terms used, after D104):** Lio 41% → 68%, Edra 57% → 62-67%, OpenAI 57-61%.
+
+## D104 — The description line under each job may be tailored; numbers keep what they count (2026-11-05)
+**Context:** The terms most often missing (customer-facing, ownership, priorities, solutions) belong in the line under each job title, which code copied word for word. A draft also turned "10K+ customer estimates" into "10K clients".
+**Decision:** The candidate's call. The tailoring may reword each job's description line, checked like bullets (numbers and hedges against that job's cv.md description line; shown in the CV map). Both AI steps must keep what a number counts as cv.md writes it, and a code check flags a number paired with different words ("⚠️ check this number"). It's a flag, not a block, because cv.md sometimes names the counted thing earlier in the sentence.
+
+## D105 — Placement: limited bank terms only on the jobs or lines they describe (2026-11-05)
+**Decision:** The candidate's call (option A of the meaning-check card). A bank entry may carry `[where: Slalom]`, `[where: line "opening words"]` or `[where: projects]`. Code blocks a pack that uses such a term on another job's line (e.g. "customer-facing" on H&R Block, "trusted advisor" beyond the client-hire line, "RAG" beyond the biotech MVP). A term already in the source line itself is always fine there.
+
+## D106 — Meaning check: a second AI read reports, code decides (2026-11-05)
+**Context:** Code checks numbers and words, not meaning. Tailoring rewords lines, so a line can say more than the CV does ("helped" → "managed", a title-like phrase, "10K clients").
+**Decision:** The candidate's call (option B; with D105, option C). One extra AI call per pack compares every line he'd send (CV bullets, description lines, summary, cover-letter paragraphs, outreach notes) with its sources: cv.md lines, the skills list, approved facts and his profile's strengths stories. Per line it reports same / stronger / new claim, quoting what changed. A new claim blocks the pack; a stronger claim is flagged first in the README ("⚠️ check this line"); a line without a verdict is flagged, never assumed fine. Report: `meaning-check.md`. Skills may move between groups but never be new.
+**First results:** caught "managed 5-8 initiatives" (cv.md: partner on them) and "Data & AI consultant" (title is Associate Consultant); one false alarm (daily use of AI tools, true per the profile) fixed by giving the check the profile and skills.
+**Cost:** about one more AI call per pack (~$0.10–0.15 API-equivalent).
+**Trade-off:** an AI judging an AI can be wrong both ways; the candidate's own read stays the last check. If it blocks too often in the first weeks, make new claims flags too.

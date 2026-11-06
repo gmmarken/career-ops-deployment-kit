@@ -17,6 +17,8 @@ const SECTION = {
 };
 
 const bulletText = (l) => l.replace(/^-\s+/, '').trim();
+// Line ids must never look alike: jobs are e1, e2… (bullets e1b1, context e1c), so education is ed1 (D98 fix).
+const ID_PREFIX = { projects: 'p', education: 'ed', interests: 'in', additional: 'ad' };
 
 /** Parse cv.md text. Returns { candidate, summary, experience[], projects[], education[], skills[], additional[] }. */
 export function parseCv(md) {
@@ -65,7 +67,7 @@ export function parseCv(md) {
       const m = t.match(/^\*\*(.+?):\*\*\s*(.+)$/);
       if (!m) throw new Error(`cv.md: skills line should look like "- **Category:** a, b": "${t.slice(0, 60)}"`);
       cv.skills.push({ category: m[1].trim(), items: m[2].split(',').map((s) => s.trim()).filter(Boolean) });
-    } else cv[section].push({ id: `${section[0]}${cv[section].length + 1}`, text: t });
+    } else cv[section].push({ id: `${ID_PREFIX[section]}${cv[section].length + 1}`, text: t });
   }
   cv.summary = para.join(' ') || null;
   for (const j of cv.experience) if (!j.role || !j.period) throw new Error(`cv.md: ${j.company} needs a **Role** line and a period line.`);

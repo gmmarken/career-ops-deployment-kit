@@ -81,6 +81,7 @@ export function mapMarkdown(role, cv, lines, tailored, notes) {
   for (const e of tailored.experience) {
     const job = cv.experience.find((j) => j.id === e.entry_id);
     out.push(`## ${job.company}: ${job.role}`, '');
+    if (e.context && job.context && e.context !== job.context) out.push(`- **Description line:** ${e.context}`, `  - **From cv.md:** ${job.context}`);
     for (const b of e.bullets) {
       out.push(`- **CV line:** ${b.text}`);
       for (const id of b.source_ids) {

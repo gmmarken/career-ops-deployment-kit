@@ -3,29 +3,61 @@
   "title": "Tailored CV (D84)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["headline", "summary", "experience", "skills", "changes"],
+  "required": [
+    "archetype",
+    "keywords",
+    "summary",
+    "experience",
+    "skills",
+    "changes"
+  ],
   "properties": {
-    "headline": { "type": "string", "description": "Target-role headline under the name, at most 6 words, no numbers." },
-    "summary": { "type": "string", "description": "2-3 sentences, at most 60 words, every claim from the CV source." },
+    "summary": {
+      "type": "string",
+      "description": "2-3 sentences, at most 60 words, every claim from the CV source."
+    },
     "experience": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["entry_id", "bullets"],
+        "required": [
+          "entry_id",
+          "bullets",
+          "context"
+        ],
         "properties": {
-          "entry_id": { "type": "string" },
+          "entry_id": {
+            "type": "string"
+          },
           "bullets": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["text", "source_ids"],
+              "required": [
+                "text",
+                "source_ids"
+              ],
               "properties": {
-                "text": { "type": "string" },
-                "source_ids": { "type": "array", "items": { "type": "string" } }
+                "text": {
+                  "type": "string"
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
+          },
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The job's description line, reworded toward the posting (same facts and numbers), or null to keep cv.md's line."
           }
         }
       }
@@ -35,10 +67,61 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["category", "items"],
-        "properties": { "category": { "type": "string" }, "items": { "type": "array", "items": { "type": "string" } } }
+        "required": [
+          "category",
+          "items"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
-    "changes": { "type": "array", "items": { "type": "string" }, "description": "Short notes on what was tailored and why, for the candidate's review." }
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Short notes on what was tailored and why, for the candidate's review."
+    },
+    "archetype": {
+      "enum": [
+        "embedded_ai_strategist",
+        "implementation_deployment",
+        "technical_enablement",
+        "pilot_led_deployment"
+      ],
+      "description": "Which of the candidate's role types this posting is (tailoring rules, section 5)."
+    },
+    "keywords": {
+      "type": "array",
+      "description": "The posting's 15-25 core terms, exactly as the posting writes them, each with the cv_source line ids that truly support it ([] if none).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "cv_source_ids"
+        ],
+        "properties": {
+          "term": {
+            "type": "string"
+          },
+          "cv_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
   }
 }
