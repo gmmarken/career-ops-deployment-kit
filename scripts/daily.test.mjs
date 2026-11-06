@@ -18,7 +18,7 @@ function harness(steps) {
   };
 }
 
-const CFG = { tier_per_day: 30, tier_per_company: 5, research_per_day: 10, weekly_email: { to: 'me@example.com', day: 'Sunday' }, packs: { per_day: 1, max_per_day: 3, max_per_week: 5 } };
+const CFG = { tier_per_day: 30, tier_per_company: 5, research_per_day: 10, weekly_email: { to: 'me@example.com', day: 'Sunday' }, packs: { per_day: 1, max_per_day: 3, max_per_week: 5 }, reminders_list: 'Job Search Alerts' };
 const SCAN_OUT = 'Scanning 3 board(s)…\n  ✓ Thrive Capital (Getro): 900 job links; traced 0 new companies, 0 new board(s) to scan\n  ✓ ashby:a (A): 10 open, 2 new, 0 closed\n  ✓ rippling:pace (Pace): 13 open, 1 new, 1 closed\n';
 const TIER_OUT = '3 untiered NYC role(s) to tier; tiering 3.\n  [1/3] S         Pace — Deployment Strategist\n  [2/3] C         A — Solutions Consultant\n  [3/3] A         Stripe — GTM Strategy & Operations Analyst\n\nTiered 3: S 1 · C 1 · A 1\n';
 
@@ -139,10 +139,12 @@ test('config: missing file or field fails loudly', () => {
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sun"}}');
   assert.throws(() => loadConfig(d), /day name like "Sunday"/);
   writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}}');
+  assert.throws(() => loadConfig(d), /"reminders_list" is missing/);
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "reminders_list": "Job Search Alerts"}');
   assert.throws(() => loadConfig(d), /needs a "packs" block/);
-  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "packs": {"per_day": 4, "max_per_day": 3, "max_per_week": 5}}');
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "reminders_list": "Job Search Alerts", "packs": {"per_day": 4, "max_per_day": 3, "max_per_week": 5}}');
   assert.throws(() => loadConfig(d), /per_day can't be more than packs.max_per_day/);
-  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "packs": {"per_day": 1, "max_per_day": 3, "max_per_week": 5}}');
+  writeFileSync(join(d, 'config', 'daily.json'), '{"imessage_to": "x", "tier_per_day": 30, "tier_per_company": 5, "research_per_day": 10, "weekly_email": {"to": "me@example.com", "day": "Sunday"}, "reminders_list": "Job Search Alerts", "packs": {"per_day": 1, "max_per_day": 3, "max_per_week": 5}}');
   assert.equal(loadConfig(d).imessage_to, 'x');
 });
 
@@ -333,4 +335,22 @@ test('not-found boards still counting toward retirement are a summary line, not 
   assert.deepEqual(runFacts({ scan }).notFound, ['pryzm 2/3', 'whatnot 1/3']);
   assert.match(successSummary('2026-11-05', { scan }), /⚠️ 2 job boards not found \(retired after 3 runs in a row\): pryzm 2\/3, whatnot 1\/3/);
   assert.doesNotMatch(successSummary('2026-11-05', { scan: 'Scanning 1 board(s)…\n' }), /not found/);
+});
+
+test('alerts that matter also become a reminder; a reminder that fails is a reported problem (D95)', async () => {
+  const sent = [], reminders = [];
+  const notify = async (t) => { sent.push(t); };
+  const remind = async (t) => { reminders.push(t); };
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_WITH_ALERT }) }, { name: 'packs', go: async () => ({ ok: true, out: PACKS_OUT }) }], log: () => {}, notify, remind, logPath: 'L' });
+  assert.match(reminders[0], /^⭐ New S-tier role: Pace — Deployment Strategist/);
+  assert.match(reminders[1], /^📦 Prep pack ready: Pace — Deployment Strategist/);
+  assert.equal(reminders.length, 2); // a calm ✅ summary is a text only
+  assert.ok(!sent.some((t) => t.startsWith('📦'))); // the morning lists packs in its summary
+  const failing = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'scan', go: async () => ({ ok: false, out: 'market: 1 problem(s)' }) }], log: () => {}, notify, remind: async (t) => { failing.push(t); }, logPath: 'L' });
+  assert.match(failing[0], /JOB SEARCH RUN FAILED/);
+  const texts = [];
+  const r = await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_WITH_ALERT }) }], log: () => {}, notify: async (t) => { texts.push(t); }, remind: async () => { throw new Error('Reminder not created: no permission'); }, logPath: 'L' });
+  assert.equal(r.problems[0].step, 'reminder');
+  assert.match(texts.at(-1), /❌ reminder: S-tier Pace — Deployment Strategist: Reminder not created/);
 });
