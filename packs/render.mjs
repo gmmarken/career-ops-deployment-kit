@@ -2,6 +2,7 @@
 // career-ops' own scripts (build-cv-html.mjs, generate-pdf.mjs), run via scripts/co.sh
 // so they read ../private. generate-pdf.mjs runs career-ops' fact gate again (D10).
 import { execFile } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,15 +24,15 @@ export function educationEntry(text) {
 
 /**
  * career-ops payload from the source CV and the tailored parts.
- * tailored: { headline, summary, experience: [{ entry_id, bullets: [{ text }] }], skills: [{ category, items }] }
+ * tailored: { summary, experience: [{ entry_id, bullets: [{ text }] }], skills: [{ category, items }] }; headline: the posting's title (D98)
  * Job headers, projects, education and the Additional section come from cv.md word for word.
  */
-export function cvPayload(cv, tailored) {
+export function cvPayload(cv, tailored, headline) {
   const c = cv.candidate;
   const linkedin = c.linkedin ? { url: c.linkedin.startsWith('http') ? c.linkedin : `https://${c.linkedin}`, display: c.linkedin.replace(/^https?:\/\/(www\.)?/, '') } : undefined;
   return {
     lang: 'en',
-    candidate: { name: c.name, title: tailored.headline || undefined, email: c.email, phone: c.phone ?? undefined, location: c.location ?? undefined, linkedin },
+    candidate: { name: c.name, title: headline || undefined, email: c.email, phone: c.phone ?? undefined, location: c.location ?? undefined, linkedin },
     summary: tailored.summary,
     competencies: [],
     experience: cv.experience.map((j) => {
@@ -75,7 +76,11 @@ export function runCo(args, { co = join(KIT_DIR, 'scripts', 'co.sh'), timeout = 
 export async function renderCv(payloadPath, htmlPath, pdfPath, { run = runCo } = {}) {
   const h = await run(['build-cv-html.mjs', payloadPath, htmlPath]);
   if (h.code !== 0) throw new Error(`CV HTML build failed (career-ops build-cv-html.mjs):\n${h.out.trim().slice(0, 800)}`);
-  const p = await run(['generate-pdf.mjs', htmlPath, pdfPath, '--format=letter', '--kind=cv']);
+  // career-ops' template keeps an empty consent box hidden by CSS, which ATS checkers read as hidden text (D98).
+  const html = readFileSync(htmlPath, 'utf8');
+  writeFileSync(htmlPath, html.replace(/\s*<div class="cv-consent"><\/div>/, '').replace(/\s*\.cv-consent:empty \{ display: none; \}/, ''));
+  // One page preferred, two allowed (D98): the page count goes in the fit report.
+  const p = await run(['generate-pdf.mjs', htmlPath, pdfPath, '--format=letter', '--kind=cv', '--max-pages=1']);
   if (p.code !== 0) throw new Error(`CV PDF failed (career-ops generate-pdf.mjs):\n${p.out.trim().slice(0, 800)}`);
   return p.out;
 }

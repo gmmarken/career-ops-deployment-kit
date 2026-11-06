@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Prep packs: education lines no longer share ids with jobs (the fit report cited a degree as job evidence); "Fortune 500" no longer reads as a number to the fact gate; the CV's hidden empty consent box is removed (ATS 94 → 99).
 - Alerts now pop up on the phone (D95): a ⭐ new S role, a 📦 pack, or a 🚨 failed or paused run also creates a reminder in the "Job Search Alerts" list (`reminders_list` in `daily.json`, required), because texts to your own number never notify. `install-daily.sh --test-message` also sends a test reminder (grants the Reminders permission once).
 - Grading (D96): "N years in a field" is no longer read as a hard requirement, and a list of options joined by "or" counts as met if the CV shows any one.
 - Grading (D94): roles requiring a language you don't speak, an active security clearance, non-full-time work, or an excluded industry are now Excluded (some caught from the title with no AI). Managing people from day one and off-hours drop a tier. Vague heavy travel, "able to obtain a clearance", 5 office days, a missing required degree and agency postings are flags. New `candidate.languages` and `excluded_industries` in the tier settings (required). `tier-new.sh --regrade S,A` grades open roles again.
@@ -21,6 +22,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Built In NYC reader from the roadmap (D64).
 
 ### Added
+- Prep packs follow the recruiter-review rules (D98): locked CV lines, the posting's title as headline, role types and allowed rewordings, and a `fit-report.md` (verdict, requirement evidence, rejection risks, measured ATS structure and keyword coverage, the AI's recruiter-impact estimate). New required `private/config/cv-rules.json` (see `packs/cv-rules.example.json`). One page preferred.
+- Line-specific banned words (D99), e.g. Lightning Supply can't be described with sales words, while "sales" elsewhere is fine.
+- The daily run keeps the Mac awake until it finishes (D100).
 - Prep packs (Phase 8, D83–D90). New step `scripts/packs.sh build` in the 7 AM and 1 PM runs:
   - **What's in a pack:** a tailored CV (PDF through career-ops), a cover letter draft, interview prep, outreach drafts (you send them), and "research next" with a ready-to-paste prompt for a Claude research session. Saved in `private/output/packs/<date>-<company>-<role>/`, and the text goes into the role's Notion page.
   - **Checks:** every CV bullet names the cv.md line it came from; code checks numbers, "~"/"nearly"/"under" hedges, "+", skills and job order; career-ops' fact gate checks the CV and the drafts. Any failure blocks the pack (no retry) and the text says why.

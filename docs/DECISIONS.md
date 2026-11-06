@@ -546,3 +546,30 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 ## D96 — "Years in a field" isn't a hard gate, and an "or" list is met by any one item (2026-11-05)
 **Context:** Re-grading after D94 dropped Context's Forward Deployed Strategist from S to C. The model read "2+ years of hands-on experience in investment banking, private equity, hardware engineering, management consulting, or a similar knowledge-intensive field" as an unmet hard gate, though the candidate has years of consulting.
 **Decision:** The candidate's call. The extraction prompt now says years of experience in a field go in `years_required.min` and are not a hard gate, and a requirement listing options joined by "or" is met if the CV shows any one. Checked on the calibration set before merging.
+
+## D97 — Accept the AI's run-to-run noise; no second reads (2026-11-05)
+**Context:** Re-grading 85 open S/A roles moved about 1 in 11 for reasons unrelated to any rule (the model read a borderline posting slightly differently).
+**Options:** (A) a second read for S/A roles, keeping the higher grade with a flag; (B) read every role twice; (C) accept the noise; (D) sharpen the questions that flip most.
+**Decision:** C, the candidate's call. He reviews S and A roles himself, so a role one tier off is judged anyway; he'll skim B roles now and then. No routine re-grades.
+**Trade-off:** a good role the noise drops to B isn't texted or packed.
+
+## D98 — Prep-pack CVs follow the candidate's recruiter review (2026-11-05)
+**Context:** The candidate ran the first three packs past an "expert recruiter" review (scores 63–74) and turned its suggestions into a rules file, kept privately as `private/config/tailoring-rules.md`. cv.md stays the only source of facts.
+**Decision (the candidate's calls):**
+- **Locked lines** (`private/config/cv-rules.json`): every CV includes the client-hire line, at least one Amazon Leo line, the partnerships line and the Copilot agent. They may still be reworded under the same checks; code blocks a pack that leaves one out.
+- **Headline = the posting's title**, set by code, with location and work-model tags removed.
+- **Role types and allowed rewordings** (sections 5–6 of the rules file) go into the tailoring instructions; the model names the role type, which sets bullet order and summary emphasis. Code can't check meaning, so the CV map review stays the backstop.
+- **Fit report** (`fit-report.md`, also in Notion): verdict; requirement-by-requirement evidence; rejection risks; questions. Scores: ATS structure measured by career-ops' `verify-ats.mjs`; keyword coverage counted by career-ops' `keyword-match.mjs` (the model picks the posting's 15–25 core terms, code counts them on the CV; career-ops' own skill extractor finds no terms in non-technical postings); recruiter impact labeled as the AI's estimate.
+- **ATS cleanup:** the template's empty, CSS-hidden consent box is removed (it read as hidden text: 94 → 99).
+- **One page preferred,** two allowed, with a warning.
+- **Skipped:** Word (.docx) output, re-ranking roles by type, a 95-point pass mark.
+**Fixed while testing:** education lines shared ids with jobs (e1, e2), so the model's "e1" (a job) was read as a degree; education, projects and interests now have their own prefixes. "Fortune 500" was read by the fact gate as a count; names containing numbers are spelled out in the gate's copy only.
+**Measured on Lio:** ATS 99/100; keyword coverage 14%. The coverage number is crude (exact phrases: "went live" doesn't count as "go-live"), so it's a list of terms to echo truthfully, not a grade.
+
+## D99 — Line-specific banned words, starting with Lightning Supply (2026-11-05)
+**Context:** The rule "never claim Lightning Supply made sales" was a global banned word ("sales"), which also blocked "Salesforce" and "your sales team". The 11 raw H&R Block figures on the banned list were redundant with the number checks and risky (e.g. "25%" inside "125%").
+**Decision:** The candidate's call. `cv-rules.json` `line_rules`: words that may not describe one cv.md line, on the CV (bullets built from that line) or in a draft sentence that mentions it. Lightning's sales words moved there; the 11 raw figures were removed (the number checks still block them). Lightning's line now ends "wound down by selling the inventory and domain, recouping almost all losses". To watch for a week.
+
+## D100 — The daily run keeps the Mac awake until it finishes (2026-11-05)
+**Context:** A run takes 20+ minutes; after a short wake the Mac can fall back asleep mid-run.
+**Decision:** `daily.sh` runs under macOS's built-in `caffeinate -i`, which blocks idle sleep only while the run lasts. No system setting changes. A scheduled wake (`pmset`) is optional and the candidate's to set; it doesn't work with the lid closed and no external display.

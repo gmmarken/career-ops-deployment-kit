@@ -6,12 +6,12 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCv, sourceLines } from './cvsource.mjs';
-import { numbers, numberProblems, checkTailored } from './check.mjs';
+import { numbers, numberProblems, checkTailored, cvRuleProblems, draftRuleProblems, headlineFromTitle, lockedIds, loadCvRules } from './check.mjs';
 import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mjs';
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
-import { checkDocs, prepClaims, companyMarkdown, slug } from './build.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, spellNumberNames } from './build.mjs';
 import { openStore } from '../market/store.mjs';
 import { refreshQueue } from '../scripts/packs.mjs';
 
@@ -73,6 +73,10 @@ test('cv.md is read into numbered lines; an unknown section fails loudly', () =>
   assert.equal(cv.experience[0].context, 'Analytics partner to 10+ leaders.');
   assert.equal(lines.get('e1b2').entry, 'e1');
   assert.equal(lines.get('e1c').text, 'Analytics partner to 10+ leaders.');
+  // education, projects and interests never share an id with a job (e1, e2…)
+  assert.equal(lines.get('ed1').entry, 'education');
+  assert.equal(lines.get('p1').entry, 'projects');
+  assert.ok(!lines.has('e1') && !lines.has('e2'));
   assert.deepEqual(cv.skills[0], { category: 'AI', items: ['context engineering', 'Claude'] });
   assert.equal(cv.interests[0].text, 'Skiing and golf.');
   assert.throws(() => parseCv(CV.replace('## Projects', '## Hobbies')), /unknown section "Hobbies"/);
@@ -114,26 +118,24 @@ test('checkTailored: a faithful rewrite passes', () => {
   assert.deepEqual(checkTailored(cv, lines, good).problems, []);
 });
 
-test('checkTailored: dropped jobs, wrong sources, new numbers, new skills and long headlines block', () => {
+test('checkTailored: dropped jobs, wrong sources, new numbers and new skills block', () => {
   const bad = structuredClone(good);
   bad.experience[0].bullets[0] = { text: 'Built an AI agent used by 50 analysts.', source_ids: ['e1b1'] };
   bad.experience[0].bullets[1] = { text: 'Cut a report to 30 minutes.', source_ids: ['e2b1'] }; // another job's line
   bad.experience[1].bullets.push({ text: 'Led everything.', source_ids: [] });
   bad.skills = [{ category: 'AI', items: ['Kubernetes'] }, { category: 'Cloud', items: ['AWS'] }];
-  bad.headline = 'The Very Best AI Deployment Strategist In Town';
   const p = checkTailored(cv, lines, bad).problems.join('\n');
   assert.match(p, /Acme bullet 1: "50" is not in the source line/);
   assert.match(p, /source e2b1 is not a Acme line/);
   assert.match(p, /Beta Co bullet 2: names no cv\.md line/);
   assert.match(p, /"Kubernetes" is not listed under AI/);
   assert.match(p, /"Cloud" is not a cv\.md skills category/);
-  assert.match(p, /headline is over 6 words/);
   const missing = { ...good, experience: [good.experience[0]] };
   assert.match(checkTailored(cv, lines, missing).problems[0], /jobs must be e1, e2 in that order/);
 });
 
 test('render: career-ops payload keeps job headers, projects, education and interests word for word', () => {
-  const p = cvPayload(cv, good);
+  const p = cvPayload(cv, good, 'AI Deployment Strategist');
   assert.equal(p.candidate.title, 'AI Deployment Strategist');
   assert.deepEqual(p.candidate.linkedin, { url: 'https://linkedin.com/in/pat-example', display: 'linkedin.com/in/pat-example' });
   assert.equal(p.experience[0].role, 'Analyst, Strategy & Operations');
@@ -279,4 +281,69 @@ test('Notion text: markdown becomes blocks under the 2000-character limit; a blo
   const blocked = packBlocks({ folder: '/f', status: 'blocked', date: '2026-11-05', detail: 'CV line check: x' });
   assert.equal(blocked.length, 3);
   assert.match(blocked[2].callout.rich_text[0].text.content, /CV line check: x/);
+});
+
+// --- D98–D99: recruiter-file rules -------------------------------------------------------
+const RULES = {
+  locked: [{ name: 'AI agent', any_of: ['Built an AI agent'] }, { name: 'Beta report', any_of: ['Cut a daily report'] }],
+  line_rules: [{ name: 'Side tool: no sales claims', line_starts: '**Side tool**', mention: ['Side tool'], forbidden: ['sales', 'customers'] }],
+  tailoring_rules: 'tailoring-rules.md',
+};
+
+test('locked lines must appear (reworded is fine); a rule that matches no cv.md line is a settings error', () => {
+  assert.deepEqual(cvRuleProblems(RULES, lines, good), []);
+  const dropped = structuredClone(good);
+  dropped.experience[0].bullets = dropped.experience[0].bullets.filter((b) => !b.source_ids.includes('e1b1'));
+  assert.deepEqual(cvRuleProblems(RULES, lines, dropped), ['locked line left out: AI agent']);
+  assert.throws(() => lockedIds({ ...RULES, locked: [{ name: 'x', any_of: ['Nothing like this'] }] }, lines), /matches no cv\.md line/);
+});
+
+test('a line rule blocks its words only where that line is described', () => {
+  const t = structuredClone(good);
+  t.experience[1].bullets[0].text = 'Cut a daily report to under 30 minutes for the sales team.';
+  assert.deepEqual(cvRuleProblems(RULES, lines, t), []); // not the ruled line: "sales" is fine
+  const draft = 'At the Side tool I won customers. Separately, I partnered with a sales team.';
+  const p = draftRuleProblems(RULES, draft, 'cover letter');
+  assert.equal(p.length, 1);
+  assert.match(p[0], /cover letter: Side tool: no sales claims: "customers"/);
+});
+
+test('the headline is the posting title without location or work-model tags', () => {
+  assert.equal(headlineFromTitle('AI Strategist (New York)'), 'AI Strategist');
+  assert.equal(headlineFromTitle('Forward Deployed Strategist – NYC'), 'Forward Deployed Strategist');
+  assert.equal(headlineFromTitle('Strategist, Agent Development - Public Sector'), 'Strategist, Agent Development - Public Sector');
+  assert.equal(headlineFromTitle('Deployment Strategist (Remote, US)'), 'Deployment Strategist');
+  assert.equal(headlineFromTitle('AI Deployment Manager - Builder'), 'AI Deployment Manager - Builder');
+});
+
+test('cv-rules.json is required and checked', () => {
+  const d = mkdtempSync(join(tmpdir(), 'rules-'));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /not found/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify({ locked: [{ name: 'x' }], line_rules: [], tailoring_rules: 't.md' }));
+  assert.throws(() => loadCvRules(join(d, 'cv-rules.json')), /needs "name" and "any_of"/);
+  writeFileSync(join(d, 'cv-rules.json'), JSON.stringify(RULES));
+  assert.equal(loadCvRules(join(d, 'cv-rules.json')).locked.length, 2);
+});
+
+test('fit report: measured scores are labeled measured, the AI\'s estimate is labeled an estimate', () => {
+  const fr = { verdict: 'Medium', requirements: [{ requirement: 'SQL', posting_quote: 'Strong SQL', evidence: 'Strong', cv_source_ids: ['e1b1'] }],
+    keywords: ['SQL'], rejection_risks: ['No healthcare'], questions_for_you: [], recruiter_impact: { score: 70, why: 'proof points are high on the page' } };
+  const md = fitReportMarkdown('Acme — Role', fr, { archetype: 'pilot_led_deployment', lines, coverage: { coveragePct: 50, presentCount: 1, total: 2, missing: ['onboarding'] }, ats: { score: 100, grade: 'A', issues: [] }, pages: 1 });
+  assert.match(md, /\*\*Verdict:\*\* Medium · \*\*Role type:\*\* Pilot-led deployment/);
+  assert.match(md, /ATS structure \| 100\/100 \(A\) \| measured/);
+  assert.match(md, /Keyword coverage \| 50% \(1 of 2\)/);
+  assert.match(md, /Recruiter impact \| 70\/100 \| AI estimate, not a measurement/);
+  assert.match(md, /Terms not on the CV:\*\* onboarding/);
+  assert.match(md, /- None\./);
+  const blocks = markdownBlocks(md);
+  assert.ok(blocks.some((b) => b.type === 'bulleted_list_item' && /ATS structure · 100\/100/.test(b.bulleted_list_item.rich_text.map((r) => r.text.content).join(''))));
+  assert.ok(!blocks.some((b) => /\|---/.test(JSON.stringify(b))));
+});
+
+test('names with numbers are not claims for the fact gate; a whole job may be cited in interview prep', () => {
+  assert.equal(spellNumberNames('owned a Fortune 500 go-live, beat the S&P 500'), 'owned a Fortune-list go-live, beat the S&P-index');
+  const docs = { cover_letter: 'Dear Hiring Team. Sincerely, Pat', outreach: { leader_name: null, leader_title: null, leader_note: null, hiring_manager_note: 'Hi.' },
+    interview_prep: { likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'At Acme…', cv_source_ids: ['e1'] }], gaps: [] } };
+  assert.deepEqual(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [], jobIds: new Set(['e1', 'e2']) }), []);
+  assert.match(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [] })[0], /unknown CV line e1/);
 });

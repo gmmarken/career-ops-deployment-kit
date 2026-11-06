@@ -20,6 +20,13 @@ You prepare an application pack for one candidate and one job. You answer only w
   - leader_note: a note to that person, or null if there is no leader.
   - hiring_manager_note: a note to the hiring manager for this role (no name).
   - Both: why this company, one proof point from <cv_lines>, a light ask ("a short conversation", with no number of minutes). No flattery, no claims about the company that aren't in <company> or <posting>. The only numbers allowed are ones in <cv_lines> or <company>.
+- fit_report: an honest read of this CV against this posting, the way a recruiter would see it.
+  - verdict: `Strong`, `Medium` or `Stretch`.
+  - requirements: the posting's 6-12 most important requirements, each with a verbatim posting quote, the evidence level on the tailored CV (`Strong` = a CV line shows it directly, `Partial` = adjacent experience, `Gap` = nothing), and the <cv_lines> ids used (bullet ids like e1b2, or e1c for a job's description line; never a job id like e1 on its own).
+  - keywords: the posting's 15-25 core terms: skills, methods, tools and kinds of experience a recruiter or ATS would search for (e.g. "implementation", "stakeholder management", "SQL"), copied as the posting writes them. Not the employer's customers, its products, or traits like "ownership".
+  - rejection_risks: the 3-5 most likely reasons this CV gets passed over for this role.
+  - questions_for_you: facts the candidate could confirm that would close a gap (only things that might be true; never suggest an answer).
+  - recruiter_impact: an estimate from 0 to 100 of how well a 6-second scan of the top third shows this archetype's strongest proof points, with a one-sentence reason. It is an estimate, not a measurement.
 - research_next:
   - missing: what the research doesn't tell him yet that would matter for applying or interviewing (e.g. who leads deployment, recent customer wins, how the team is organized, the interview process, product reviews). Be specific to this company.
   - cowork_prompt: a ready-to-paste prompt for a separate Claude research session with web search. It names the company, the role and the link, says what is already known (from <company>), lists the open questions, asks for sources with links for every claim, and asks for a short brief with an "outreach angles" section. Don't include anything personal about the candidate beyond the role he's applying for.

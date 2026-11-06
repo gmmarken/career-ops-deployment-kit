@@ -7,4 +7,7 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="$(cd "$KIT_DIR/.." && pwd)/private"
 [ -d "$DATA_DIR" ] || { echo "daily.sh: private data dir not found at $DATA_DIR" >&2; exit 2; }
 export CAREER_OPS_DATA_DIR="$DATA_DIR"
-exec node --no-warnings=ExperimentalWarning "$KIT_DIR/scripts/daily.mjs" ${@+"$@"}
+# Keep the Mac awake until the run finishes (D100): a scheduled or brief wake can otherwise sleep mid-run.
+# caffeinate is built into macOS; -i blocks idle sleep only while this command runs.
+[ -x /usr/bin/caffeinate ] || { echo "daily.sh: /usr/bin/caffeinate not found (macOS built-in)" >&2; exit 2; }
+exec /usr/bin/caffeinate -i node --no-warnings=ExperimentalWarning "$KIT_DIR/scripts/daily.mjs" ${@+"$@"}

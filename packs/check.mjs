@@ -2,6 +2,7 @@
 // gate (verify-cv-facts.mjs). The model may reword bullets toward the posting; code then
 // checks every line against the cv.md lines it says it came from. Any problem blocks the
 // pack (D88): no retry, no silent repair.
+import { readFileSync, existsSync } from 'node:fs';
 
 // A number with what's around it: "~40", "$200K+", "nearly 300", "30%", "2-4".
 const QUAL = '(~|an estimated |estimated |about |approximately |approx\\. |roughly |nearly |almost |over |under |more than |less than |up to |at least )';
@@ -41,7 +42,7 @@ const norm = (s) => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
 
 /**
  * Check the model's tailored CV against the parsed cv.md.
- * tailored: { headline, summary, experience: [{ entry_id, bullets: [{ text, source_ids }] }], skills: [{ category, items }] }
+ * tailored: { archetype, summary, experience: [{ entry_id, bullets: [{ text, source_ids }] }], skills: [{ category, items }] }
  * Returns { problems: string[] } — any problem blocks the pack.
  */
 export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
@@ -67,8 +68,6 @@ export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
   }
   // The summary may draw on any line of cv.md.
   for (const p of numberProblems(tailored.summary, allText)) problems.push(`summary: ${p}`);
-  if (/\d/.test(tailored.headline ?? '')) problems.push(`headline has a number: "${tailored.headline}"`);
-  if ((tailored.headline ?? '').split(/\s+/).length > 6) problems.push(`headline is over 6 words: "${tailored.headline}"`);
   // Skills: chosen and ordered from cv.md's own list, never added.
   const known = new Map(cv.skills.map((s) => [norm(s.category), new Set(s.items.map(norm))]));
   for (const s of tailored.skills) {
@@ -81,3 +80,67 @@ export function checkTailored(cv, lines, tailored, { maxBullets = 8 } = {}) {
 
 /** Words in a text (for length limits). */
 export const wordCount = (s) => String(s).trim().split(/\s+/).filter(Boolean).length;
+
+// --- CV rules (D98–D99): locked lines, and words that may not describe one line ---------------
+
+
+/** Read private/config/cv-rules.json. Every field is required; a missing file stops the pack. */
+export function loadCvRules(path) {
+  if (!existsSync(path)) throw new Error(`${path} not found. Copy packs/cv-rules.example.json there (D98).`);
+  let r;
+  try { r = JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
+  if (!Array.isArray(r.locked) || !Array.isArray(r.line_rules) || typeof r.tailoring_rules !== 'string') throw new Error(`${path} needs "locked" (list), "line_rules" (list) and "tailoring_rules" (file name).`);
+  for (const l of r.locked) if (!l.name || !Array.isArray(l.any_of) || !l.any_of.length) throw new Error(`${path}: each locked entry needs "name" and "any_of".`);
+  for (const l of r.line_rules) if (!l.name || !l.line_starts || !Array.isArray(l.forbidden) || !Array.isArray(l.mention)) throw new Error(`${path}: each line rule needs "name", "line_starts", "mention" and "forbidden".`);
+  return r;
+}
+
+const starts = (text, prefix) => String(text).toLowerCase().startsWith(String(prefix).toLowerCase());
+const wordRe = (w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+
+/** cv.md line ids for each locked group. A group that matches no line is a settings error. */
+export function lockedIds(rules, lines) {
+  return rules.locked.map((g) => {
+    const ids = [...lines.values()].filter((l) => g.any_of.some((p) => starts(l.text, p))).map((l) => l.id);
+    if (!ids.length) throw new Error(`cv-rules.json: locked "${g.name}" matches no cv.md line (${g.any_of.join(' / ')}). Fix the rule or cv.md.`);
+    return { name: g.name, ids };
+  });
+}
+
+/** Problems: locked groups the tailored CV left out, and forbidden words on a line-ruled bullet. */
+export function cvRuleProblems(rules, lines, tailored) {
+  const problems = [];
+  const used = new Set(tailored.experience.flatMap((e) => e.bullets.flatMap((b) => b.source_ids)));
+  for (const g of lockedIds(rules, lines)) if (!g.ids.some((id) => used.has(id))) problems.push(`locked line left out: ${g.name}`);
+  for (const r of rules.line_rules) {
+    const ids = new Set([...lines.values()].filter((l) => starts(l.text, r.line_starts)).map((l) => l.id));
+    for (const e of tailored.experience) for (const b of e.bullets) {
+      if (!b.source_ids.some((id) => ids.has(id))) continue;
+      const bad = r.forbidden.filter((w) => wordRe(w).test(b.text));
+      if (bad.length) problems.push(`${r.name}: "${bad.join('", "')}" in "${b.text.slice(0, 60)}…"`);
+    }
+  }
+  return problems;
+}
+
+/** Problems: a draft sentence that mentions a line-ruled subject and uses one of its forbidden words. */
+export function draftRuleProblems(rules, text, where) {
+  const problems = [];
+  for (const sentence of String(text).split(/(?<=[.!?])\s+|\n+/)) {
+    for (const r of rules.line_rules) {
+      if (!r.mention.some((m) => wordRe(m).test(sentence))) continue;
+      const bad = r.forbidden.filter((w) => wordRe(w).test(sentence));
+      if (bad.length) problems.push(`${where}: ${r.name}: "${bad.join('", "')}" in "${sentence.slice(0, 70)}…"`);
+    }
+  }
+  return problems;
+}
+
+/** The posting's title as the CV headline (D98): location and work-model tags removed, nothing added. */
+export function headlineFromTitle(title) {
+  const place = /\b(new york|nyc|ny|remote|hybrid|on-?site|us|usa|united states|manhattan|brooklyn)\b/i;
+  let t = String(title).trim();
+  t = t.replace(/\s*\(([^)]*)\)\s*/g, (m, inner) => (place.test(inner) ? ' ' : m));
+  t = t.replace(/\s*[-–|,]\s*([^-–|,]*)$/, (m, tail) => (place.test(tail) && tail.split(/\s+/).length <= 4 ? '' : m));
+  return t.replace(/\s+/g, ' ').trim();
+}

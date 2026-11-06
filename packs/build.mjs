@@ -6,14 +6,14 @@
 //   3. Model call 2 drafts the other documents (no tools). Code and the fact gate check them.
 // Any check failing blocks the pack (D88): no retry, the reasons go in the pack and the text.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runClaude } from '../extractor/claude.mjs';
 import { fetchPosting } from '../extractor/ats.mjs';
 import { markdownSection } from '../extractor/extract.mjs';
 import { findCompany } from '../extractor/research.mjs';
 import { parseCv, sourceLines } from './cvsource.mjs';
-import { checkTailored, numberProblems, wordCount } from './check.mjs';
+import { checkTailored, numberProblems, wordCount, loadCvRules, lockedIds, cvRuleProblems, draftRuleProblems, headlineFromTitle } from './check.mjs';
 import { cvPayload, cvMarkdown, renderCv, runCo } from './render.mjs';
 import { usd, payText } from '../delivery/format.mjs';
 import { loadProjectNotes, mapMarkdown } from './projects.mjs';
@@ -46,9 +46,18 @@ export function companyMarkdown(name, entry, rounds = []) {
   return `${out.join('\n')}\n`;
 }
 
+// Names that contain a number aren't claims ("a Fortune 500 go-live" isn't "500 deployments"). The fact
+// gate reads a copy with them spelled out; the document itself is unchanged.
+const NUMBER_NAMES = [[/\bFortune (500|100|1000)\b/g, 'Fortune-list'], [/\bS&P 500\b/g, 'S&P-index'], [/\bInc\. 5000\b/g, 'Inc-list']];
+export const spellNumberNames = (text) => NUMBER_NAMES.reduce((t, [re, name]) => t.replace(re, name), String(text));
+
 /** Run career-ops' fact gate on one file. Returns { verdict, problems[], warnings[] }. */
 export async function factGate(file, sources, { run = runCo } = {}) {
-  const args = ['verify-cv-facts.mjs', file, ...sources.flatMap((s) => ['--source', s]), '--json'];
+  const gateDir = join(dirname(file), basename(dirname(file)) === 'checks' ? '' : 'checks');
+  mkdirSync(gateDir, { recursive: true });
+  const gateFile = join(gateDir, `${basename(file)}.gate.md`);
+  writeFileSync(gateFile, spellNumberNames(readFileSync(file, 'utf8')));
+  const args = ['verify-cv-facts.mjs', gateFile, ...sources.flatMap((s) => ['--source', s]), '--json'];
   const r = await run(args);
   const jsonLine = r.out.split('\n').find((l) => l.trim().startsWith('{'));
   if (!jsonLine) throw new Error(`career-ops fact check gave no result for ${file}:\n${r.out.slice(0, 500)}`);
@@ -107,7 +116,7 @@ export function bannedPhrases(dataDir) {
 }
 
 /** Checks on the drafted documents that code can do on its own (D86-D88). Returns problem strings. */
-export function checkDocs(docs, { lines, cvText, companyText, jdText, leaders }) {
+export function checkDocs(docs, { lines, cvText, companyText, jdText, leaders, jobIds = new Set() }) {
   const problems = [];
   const words = wordCount(docs.cover_letter);
   if (words > COVER_MAX_WORDS + 50) problems.push(`cover letter is ${words} words (limit ${COVER_MAX_WORDS})`);
@@ -123,7 +132,7 @@ export function checkDocs(docs, { lines, cvText, companyText, jdText, leaders })
     for (const p of numberProblems(t, `${cvText}\n${companyText}`)) problems.push(`outreach ${k}: ${p}`);
   }
   for (const [i, q] of docs.interview_prep.likely_questions.entries()) {
-    const bad = q.cv_source_ids.filter((id) => !lines.has(id));
+    const bad = q.cv_source_ids.filter((id) => !lines.has(id) && !jobIds.has(id)); // a whole job (e1) is fine to cite here
     if (bad.length) problems.push(`interview question ${i + 1}: unknown CV line ${bad.join(', ')}`);
     for (const p of numberProblems(q.answer_outline, `${cvText}\n${companyText}\n${jdText}`)) problems.push(`interview question ${i + 1}: ${p}`);
   }
@@ -146,6 +155,11 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const lines = sourceLines(cv);
   const profile = readFileSync(join(dataDir, 'modes', '_profile.md'), 'utf8');
   const calls = [];
+  const rules = loadCvRules(join(dataDir, 'config', 'cv-rules.json'));
+  const locked = lockedIds(rules, lines).map((g) => `- ${g.name}: ${g.ids.map((id) => `${id} ("${lines.get(id).text.slice(0, 70)}…")`).join(' or ')}`).join('\n');
+  const trPath = join(dataDir, 'config', rules.tailoring_rules);
+  const trMd = readFileSync(trPath, 'utf8');
+  const tailoringRules = ['5. Role archetypes', '6. Allowed vocabulary translations'].map((h) => markdownSection(trMd, h)).join('\n\n');
   const banned = `<banned_phrases>\nNever use these words or phrases anywhere, even inside a longer word or about someone else:\n${bannedPhrases(dataDir).map((b) => `- ${b}`).join('\n')}\n</banned_phrases>`;
 
   // 1. Inputs, all saved in the pack so you can see what it was built from.
@@ -164,7 +178,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   // 2. Tailored CV.
   const t = await claude({
     systemPrompt: load('tailor-prompt.md'), schema: JSON.parse(load('tailor.schema.json')), model: PACK_MODEL,
-    input: `${banned}\n\n<cv_source>\n${cvLinesJson}\n</cv_source>\n\n<framing>\n${markdownSection(profile, 'Your Adaptive Framing')}\n</framing>\n\n<posting>\n${jdText}\n</posting>`,
+    input: `${banned}\n\n<cv_source>\n${cvLinesJson}\n</cv_source>\n\n<framing>\n${markdownSection(profile, 'Your Adaptive Framing')}\n</framing>\n\n<tailoring_rules>\n${tailoringRules}\n</tailoring_rules>\n\n<locked>\n${locked}\n</locked>\n\n<posting>\n${jdText}\n</posting>`,
   });
   calls.push({ step: 'tailor', ...t.usage });
   const tailored = t.data;
@@ -174,13 +188,16 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   writeFileSync(file('cv-map.md'), map.markdown);
   const mapWarnings = map.missing ? [`${map.missing} CV line(s) have no project notes yet (see cv-map.md; add them to private/cv-projects.md)`] : [];
   const lineCheck = checkTailored(cv, lines, tailored);
+  lineCheck.problems.push(...cvRuleProblems(rules, lines, tailored));
   if (lineCheck.problems.length) return finish('blocked', `CV line check: ${lineCheck.problems.join('; ')}`, mapWarnings);
-  const payload = cvPayload(cv, tailored);
+  if (entry?.ai_native === true && !/job-search agent|career-ops/i.test(tailored.summary)) mapWarnings.push('AI-native company, but the summary doesn\'t mention the AI job-search agent project');
+  const payload = cvPayload(cv, tailored, headlineFromTitle(p.title));
   writeFileSync(file('cv-payload.json'), JSON.stringify(payload, null, 2));
   writeFileSync(file('cv.md'), cvMarkdown(cv, payload));
   const cvGate = await factGate(file('cv.md'), [cvPath], { run });
   if (cvGate.verdict === 'block') return finish('blocked', `CV fact check: ${cvGate.problems.join('; ')}`, [...mapWarnings, ...cvGate.warnings]);
-  await render(file('cv-payload.json'), file('cv.html'), file('cv.pdf'), { run });
+  const pdfOut = await render(file('cv-payload.json'), file('cv.html'), file('cv.pdf'), { run });
+  const pages = Number(String(pdfOut).match(/Pages:\s*(\d+)/)?.[1] ?? NaN) || null;
 
   // 3. Cover letter, interview prep, outreach, research next.
   const d = await claude({
@@ -197,12 +214,25 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   writeFileSync(file('interview-prep.md'), prepMarkdown(role, docs.interview_prep, lines));
   writeFileSync(file('outreach.md'), outreachMarkdown(role, docs.outreach));
   writeFileSync(file('research-next.md'), researchMarkdown(role, docs.research_next));
-  const problems = checkDocs(docs, { lines, cvText, companyText, jdText, leaders: entry?.leaders ?? [] });
+  const jobIds = new Set(cv.experience.map((j) => j.id));
+  const problems = checkDocs(docs, { lines, cvText, companyText, jdText, leaders: entry?.leaders ?? [], jobIds });
+  problems.push(...draftRuleProblems(rules, docs.cover_letter, 'cover letter'),
+    ...draftRuleProblems(rules, `${docs.outreach.leader_note ?? ''}\n${docs.outreach.hiring_manager_note}`, 'outreach'),
+    ...draftRuleProblems(rules, prepClaims(docs.interview_prep), 'interview prep'));
   const warnings = [...mapWarnings, ...cvGate.warnings];
+  if (pages && pages > 1) warnings.push(`CV is ${pages} pages; one is preferred`);
+  // Fit report (D98): measured ATS structure and keyword coverage next to the AI's read.
+  mkdirSync(file('checks'), { recursive: true });
+  writeFileSync(file('checks/keywords.md'), `# Keywords for ${role}\n\n## Keywords extracted\n\n${docs.fit_report.keywords.join(', ')}\n`);
+  const coverage = await coJson(['keyword-match.mjs', file('checks/keywords.md'), '--cv', file('cv.html'), '--json'], 'career-ops keyword check', run);
+  const atsRaw = await coJson(['verify-ats.mjs', file('cv.html'), '--json'], 'career-ops ATS check', run);
+  const ats = { score: atsRaw.score, grade: atsRaw.grade, issues: (atsRaw.issues ?? []).map((i) => (typeof i === 'string' ? i : i.message ?? JSON.stringify(i)).slice(0, 120)) };
+  const badIds = docs.fit_report.requirements.flatMap((r) => r.cv_source_ids).filter((id) => !lines.has(id) && !jobIds.has(id));
+  if (badIds.length) warnings.push(`fit report cites unknown CV line(s) ${[...new Set(badIds)].join(', ')} (the report is advisory)`);
+  writeFileSync(file('fit-report.md'), fitReportMarkdown(role, docs.fit_report, { archetype: tailored.archetype, lines, coverage, ats, pages }));
   if (wordCount(docs.cover_letter) > COVER_MAX_WORDS) warnings.push(`cover letter is ${wordCount(docs.cover_letter)} words; trim to ${COVER_MAX_WORDS}`);
   // The fact gate on each draft you'd send or say: cv.md for you, the research and posting for them.
   // In the interview prep that's the answer outlines and gap answers (questions to ask and quotes aren't claims).
-  mkdirSync(file('checks'), { recursive: true });
   writeFileSync(file('checks/interview-answers.md'), prepClaims(docs.interview_prep));
   const srcs = [cvPath, file('company.md'), file('posting.md')];
   for (const name of ['cover-letter.md', 'outreach.md', 'checks/interview-answers.md']) {
@@ -214,11 +244,39 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   return finish('ready', null, warnings);
 }
 
+/** Run a career-ops JSON check; returns the parsed result. Throws with its own message if it can't run. */
+async function coJson(args, what, run) {
+  const r = await run(args);
+  const start = r.out.indexOf('{');
+  if (start === -1) throw new Error(`${what} gave no result:\n${r.out.slice(0, 400)}`);
+  return JSON.parse(r.out.slice(start, r.out.lastIndexOf('}') + 1));
+}
+
+/** fit-report.md: the AI's read of the fit, next to what code measured (D98). */
+export function fitReportMarkdown(role, fr, { archetype, lines, coverage, ats, pages }) {
+  const label = { embedded_ai_strategist: 'Embedded AI strategist / forward-deployed', implementation_deployment: 'Implementation / deployment strategist', technical_enablement: 'Technical enablement / training', pilot_led_deployment: 'Pilot-led deployment' }[archetype] ?? archetype;
+  const out = [`# Fit report: ${role}`, '', `**Verdict:** ${fr.verdict} · **Role type:** ${label}`, '', '## Scores', '',
+    '| Score | Value | How it was found |', '|---|---|---|',
+    `| ATS structure | ${ats.score}/100 (${ats.grade}) | measured by career-ops' ATS checker${ats.issues.length ? `: ${ats.issues.join('; ')}` : ''} |`,
+    `| Keyword coverage | ${coverage.coveragePct}% (${coverage.presentCount} of ${coverage.total}) | the posting's core terms (picked by the AI), counted on the CV by code |`,
+    `| Recruiter impact | ${fr.recruiter_impact.score}/100 | AI estimate, not a measurement: ${fr.recruiter_impact.why} |`,
+    `| Pages | ${pages ?? '?'} | one preferred, two allowed |`, ''];
+  if (coverage.missing?.length) out.push(`**Terms not on the CV:** ${coverage.missing.join(', ')}. Add one only if a cv.md line truly supports it.`, '');
+  out.push('## Requirements', '', '| Requirement | Evidence | From your CV |', '|---|---|---|');
+  for (const r of fr.requirements) {
+    const used = r.cv_source_ids.map((id) => lines.get(id)?.text?.slice(0, 50)).filter(Boolean);
+    out.push(`| ${r.requirement} ("${r.posting_quote.replace(/\|/g, '/')}") | ${r.evidence} | ${used.length ? used.map((u) => `${u}…`).join('<br>') : '-'} |`);
+  }
+  out.push('', '## Biggest rejection risks', '', ...fr.rejection_risks.map((x) => `- ${x}`), '', '## Questions that could close a gap', '', ...(fr.questions_for_you.length ? fr.questions_for_you.map((x) => `- ${x}`) : ['- None.']), '');
+  return out.join('\n');
+}
+
 function readme(role, p, { status, detail, warnings, date }) {
   const out = [`# Prep pack: ${role}`, '', `Built ${date} · ${p.url}`, ''];
   if (status === 'blocked') out.push('## 🚫 Blocked', '', 'A fact check failed, so this pack is not ready. Nothing in it should be used as is.', '', detail, '', 'To build it again after fixing the cause: `scripts/packs.sh requeue <posting link>`.', '');
   else out.push('## Before you apply', '', '1. Read `cv.pdf` line by line with `cv-map.md` open: it shows the cv.md line and the project behind each bullet. If you can\'t speak to a line, take it out.', '2. Edit `cover-letter.md` into your own words.', '3. Send the `outreach.md` notes yourself, if you want to.', '');
   if (warnings.length) out.push('## Worth a look', '', ...warnings.map((w) => `- ${w}`), '');
-  out.push('## Files', '', '- `cv.pdf` (and `cv.md`): tailored CV · `cv-map.md`: each line → cv.md → the project behind it · `cv-changes.md`: what was tailored and why', '- `cover-letter.md` · `interview-prep.md` · `outreach.md`', '- `research-next.md`: what to find out next, with a prompt for a Claude research session', '- `posting.md`, `company.md`: what the pack was built from', '');
+  out.push('## Files', '', '- `fit-report.md`: verdict, ATS and keyword scores, requirement-by-requirement evidence, rejection risks',
+    '- `cv.pdf` (and `cv.md`): tailored CV · `cv-map.md`: each line → cv.md → the project behind it · `cv-changes.md`: what was tailored and why', '- `cover-letter.md` · `interview-prep.md` · `outreach.md`', '- `research-next.md`: what to find out next, with a prompt for a Claude research session', '- `posting.md`, `company.md`: what the pack was built from', '');
   return out.join('\n');
 }

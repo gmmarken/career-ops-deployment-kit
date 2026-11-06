@@ -68,6 +68,12 @@ export function markdownBlocks(md) {
       continue;
     }
     if (!l.trim()) continue;
+    // Markdown tables become bullets ("cell · cell"); the separator row is dropped.
+    if (l.startsWith('|')) {
+      if (/^\|[\s|:-]+\|$/.test(l)) continue;
+      blocks.push(block('bulleted_list_item', l.split('|').slice(1, -1).map((c) => c.trim().replace(/<br>/g, '; ')).join(' · ')));
+      continue;
+    }
     if (l.startsWith('### ')) blocks.push(block('heading_3', l.slice(4)));
     else if (l.startsWith('## ')) blocks.push(block('heading_3', l.slice(3)));
     else if (l.startsWith('# ')) blocks.push(block('heading_2', l.slice(2)));
@@ -91,7 +97,7 @@ export function packBlocks({ folder, status, date, detail }) {
   ];
   if (status === 'blocked') return head;
   const doc = (title, name) => (existsSync(join(folder, name)) ? [block('heading_2', title), ...markdownBlocks(readFileSync(join(folder, name), 'utf8').replace(/^# .*\n/, ''))] : []);
-  return [...head, ...doc('Cover letter', 'cover-letter.md'), ...doc('Outreach drafts', 'outreach.md'), ...doc('Interview prep', 'interview-prep.md'), ...doc('Research next', 'research-next.md'), ...doc('What the CV tailoring changed', 'cv-changes.md')];
+  return [...head, ...doc('Fit report', 'fit-report.md'), ...doc('Cover letter', 'cover-letter.md'), ...doc('Outreach drafts', 'outreach.md'), ...doc('Interview prep', 'interview-prep.md'), ...doc('Research next', 'research-next.md'), ...doc('What the CV tailoring changed', 'cv-changes.md')];
 }
 
 /** Append blocks to a page, 100 at a time (Notion's limit per request). */
