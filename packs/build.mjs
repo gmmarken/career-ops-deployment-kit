@@ -48,7 +48,9 @@ export function companyMarkdown(name, entry, rounds = []) {
 
 
 /** Run career-ops' fact gate on one file. Returns { verdict, problems[], warnings[] }. */
-export async function factGate(file, sources, { run = runCo } = {}) {
+// namedAsWarnings: for private notes (interview prep), a name the checker can't find is a warning, not a
+// block; numbers and banned phrases still block (D102). Anything you'd send stays fully strict.
+export async function factGate(file, sources, { run = runCo, namedAsWarnings = false } = {}) {
   const gateDir = join(dirname(file), basename(dirname(file)) === 'checks' ? '' : 'checks');
   mkdirSync(gateDir, { recursive: true });
   const gateFile = join(gateDir, `${basename(file)}.gate.md`);
@@ -59,12 +61,13 @@ export async function factGate(file, sources, { run = runCo } = {}) {
   if (!jsonLine) throw new Error(`career-ops fact check gave no result for ${file}:\n${r.out.slice(0, 500)}`);
   const v = JSON.parse(jsonLine);
   if (v.configMissing) throw new Error('career-ops fact check could not find private/config/cv-facts.json.');
+  const named = v.unsupportedFacts.map((x) => `${x.kind ?? 'fact'} not in the sources: ${x.value}`);
   const problems = [
     ...v.invented.map((x) => `number not in the sources: ${x}`),
-    ...v.unsupportedFacts.map((x) => `${x.kind ?? 'fact'} not in the sources: ${x.value}`),
+    ...(namedAsWarnings ? [] : named),
     ...v.forbidden.map((x) => `banned phrase: ${x}`),
   ];
-  const warnings = [...v.warnings.map((x) => `review wording: ${x}`), ...v.advisoryFacts.map((x) => `review: ${x.value}`), ...(v.coverage ? [`fact check coverage: ${v.coverage.message}`] : [])];
+  const warnings = [...(namedAsWarnings ? named.map((x) => `review: ${x}`) : []), ...v.warnings.map((x) => `review wording: ${x}`), ...v.advisoryFacts.map((x) => `review: ${x.value}`), ...(v.coverage ? [`fact check coverage: ${v.coverage.message}`] : [])];
   return { verdict: v.verdict, problems, warnings };
 }
 
@@ -167,8 +170,9 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const companyText = companyMarkdown(p.company, entry, companyId ? store.fundingByCompany().get(companyId) ?? [] : []);
   writeFileSync(file('company.md'), companyText);
   const cvLinesJson = JSON.stringify({ candidate: cv.candidate.name, summary: cv.summary, experience: cv.experience, skills: cv.skills }, null, 1);
+  let scores = null; // the ATS check, once the CV exists (D102)
   const finish = (status, detail, warnings = []) => {
-    writeFileSync(file('README.md'), readme(role, p, { status, detail, warnings, date }));
+    writeFileSync(file('README.md'), readme(role, p, { status, detail, warnings, date, scores }));
     return { status, folder, detail, warnings, calls };
   };
 
@@ -236,6 +240,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   const ats = { score: atsRaw.score, grade: atsRaw.grade, issues: (atsRaw.issues ?? []).map((i) => (typeof i === 'string' ? i : i.message ?? JSON.stringify(i)).slice(0, 120)) };
   const badIds = docs.fit_report.requirements.flatMap((r) => r.cv_source_ids).filter((id) => !lines.has(id) && !jobIds.has(id));
   if (badIds.length) warnings.push(`fit report cites unknown CV line(s) ${[...new Set(badIds)].join(', ')} (the report is advisory)`);
+  scores = { ats, coverage, supportedCoverage, pages };
   writeFileSync(file('fit-report.md'), fitReportMarkdown(role, docs.fit_report, { archetype: tailored.archetype, lines, coverage, supportedCoverage, ats, pages }));
   if (wordCount(docs.cover_letter) > COVER_MAX_WORDS) warnings.push(`cover letter is ${wordCount(docs.cover_letter)} words; trim to ${COVER_MAX_WORDS}`);
   // The fact gate on each draft you'd send or say: cv.md for you, the research and posting for them.
@@ -243,7 +248,7 @@ export async function buildPack(p, { dataDir, store, wl, date, claude = runClaud
   writeFileSync(file('checks/interview-answers.md'), prepClaims(docs.interview_prep));
   const srcs = [cvPath, file('company.md'), file('posting.md')];
   for (const name of ['cover-letter.md', 'outreach.md', 'checks/interview-answers.md']) {
-    const g = await factGate(file(name), srcs, { run });
+    const g = await factGate(file(name), srcs, { run, namedAsWarnings: name === 'checks/interview-answers.md' });
     problems.push(...g.problems.map((x) => `${name}: ${x}`));
     warnings.push(...g.warnings.map((x) => `${name}: ${x}`));
   }
@@ -281,8 +286,20 @@ export function fitReportMarkdown(role, fr, { archetype, lines, coverage, suppor
   return out.join('\n');
 }
 
-function readme(role, p, { status, detail, warnings, date }) {
-  const out = [`# Prep pack: ${role}`, '', `Built ${date} · ${p.url}`, ''];
+/** The ATS check at the top of every pack README (D102): measured scores, or why there are none. */
+export function atsBlock(scores) {
+  if (!scores) return ['## ATS check', '', 'Not measured: the pack stopped before the CV was checked (see below).', ''];
+  const pct = (c) => (c ? `**${c.coveragePct}%** (${c.presentCount} of ${c.total})` : 'n/a');
+  return ['## ATS check', '',
+    `- **ATS structure:** **${scores.ats.score}/100** (${scores.ats.grade}), career-ops' checker${scores.ats.issues.length ? `: ${scores.ats.issues.join('; ')}` : ''}`,
+    `- **Keyword coverage, all of the posting's core terms:** ${pct(scores.coverage)}. 70%+ is a strong match; terms your CV can't support stay off it.`,
+    `- **Keyword coverage, terms your CV supports:** ${pct(scores.supportedCoverage)}. Should be near 100%.`,
+    `- **Pages:** ${scores.pages ?? '?'} (one preferred)`,
+    '', 'Details, and which terms are missing: `fit-report.md`.', ''];
+}
+
+export function readme(role, p, { status, detail, warnings, date, scores = null }) {
+  const out = [`# Prep pack: ${role}`, '', `Built ${date} · ${p.url}`, '', ...atsBlock(scores)];
   if (status === 'blocked') out.push('## 🚫 Blocked', '', 'A fact check failed, so this pack is not ready. Nothing in it should be used as is.', '', detail, '', 'To build it again after fixing the cause: `scripts/packs.sh requeue <posting link>`.', '');
   else out.push('## Before you apply', '', '1. Read `cv.pdf` line by line with `cv-map.md` open: it shows the cv.md line and the project behind each bullet. If you can\'t speak to a line, take it out.', '2. Edit `cover-letter.md` into your own words.', '3. Send the `outreach.md` notes yourself, if you want to.', '');
   if (warnings.length) out.push('## Worth a look', '', ...warnings.map((w) => `- ${w}`), '');

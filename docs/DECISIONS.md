@@ -582,3 +582,7 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - For a company ticked AI-native, if the summary doesn't mention the job-search agent, code appends `ai_native_sentence` from `cv-rules.json` (fixed, fact-checked like the rest).
 - Names that contain a number ("Fortune 500", "S&P 500") aren't read as numbers by any check.
 **Measured on Lio:** keyword coverage 14% → 33% (all terms), 67% (supported terms).
+
+## D102 — Every pack README opens with an ATS check; private notes get softer name checks (2026-11-05)
+**Decision:** The candidate's call. Each pack's README starts with the ATS check: ATS structure (career-ops' checker), keyword coverage of the posting's core terms, coverage of the terms his CV supports, and pages. In the interview prep (private notes, never sent), a name career-ops' fact gate can't find ("lists Salesforce") is a warning rather than a block; numbers and banned phrases still block there, and the cover letter and outreach stay fully strict.
+**Known limit:** the core-term list is picked by the AI each build, so coverage moves by about ±10 points between builds of the same posting (Edra: 71%, then 58%).

@@ -11,7 +11,7 @@ import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mj
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
-import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown } from './build.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, readme } from './build.mjs';
 import { spellNumberNames } from './check.mjs';
 import { openStore } from '../market/store.mjs';
 import { refreshQueue } from '../scripts/packs.mjs';
@@ -357,4 +357,15 @@ test('names with numbers are not claims for the fact gate; a whole job may be ci
     interview_prep: { likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'At Acme…', cv_source_ids: ['e1'] }], gaps: [] } };
   assert.deepEqual(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [], jobIds: new Set(['e1', 'e2']) }), []);
   assert.match(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [] })[0], /unknown CV line e1/);
+});
+
+test('every pack README opens with the ATS check (D102)', () => {
+  const p = { url: 'https://x' };
+  const scores = { ats: { score: 99, grade: 'A', issues: [] }, coverage: { coveragePct: 50, presentCount: 10, total: 20 }, supportedCoverage: { coveragePct: 92, presentCount: 12, total: 13 }, pages: 2 };
+  const md = readme('Acme — Role', p, { status: 'ready', detail: null, warnings: [], date: '2026-11-05', scores });
+  assert.match(md, /## ATS check\n\n- \*\*ATS structure:\*\* \*\*99\/100\*\* \(A\)/);
+  assert.match(md, /all of the posting's core terms:\*\* \*\*50%\*\* \(10 of 20\)/);
+  assert.match(md, /terms your CV supports:\*\* \*\*92%\*\* \(12 of 13\)/);
+  assert.ok(md.indexOf('## ATS check') < md.indexOf('## Before you apply'));
+  assert.match(readme('Acme — Role', p, { status: 'blocked', detail: 'x', warnings: [], date: '2026-11-05' }), /Not measured: the pack stopped before the CV was checked/);
 });
