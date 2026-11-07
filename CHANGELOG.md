@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- Two Company Radar pages for the same company (one named by its alias, made before research) no longer overwrite each other's status every run: the run now stops before reading any company edit and names the extra page to trash (D109). Found on Method / Method Financial.
 - A job board that can't connect (no network, a timeout) is tried once more at the end of the scan. If it still can't, it's a ⚠️ line in the morning summary instead of a failed run, unless more than 10 boards fail (the Mac lost its network) or the same board fails 3 runs in a row (D108). The 2026-11-06 midday run failed on 5 such boards while the Mac slept with the lid closed.
 - "B2B", "S3" and similar names are no longer read as numbers by the pack checks (blocked the Clay pack) (D107).
 - A job board that now redirects to another site (Rippling's own) counts as "not found" and is retired after 3 runs, instead of failing the scan (D107).
