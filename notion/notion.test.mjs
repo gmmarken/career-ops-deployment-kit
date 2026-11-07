@@ -154,3 +154,15 @@ test('Company Radar (Phase 6): funding, leaders, NYC presence, fit and how the c
   assert.equal(bare['Found via'].select.name, 'Job board');
   assert.equal(companyProps('X', { name: 'X', origin: 'you' }, null, { create: false })['Found via'].select.name, 'You');
 });
+
+import { duplicatePages } from './sync.mjs';
+test('two Radar pages for one company (name and alias) are caught before any edit is read (D109)', () => {
+  const wl = { companies: [
+    { name: 'Method Financial (Method)', aliases: ['method', 'Method'] },
+    { name: 'Method Security', aliases: [] },
+    { name: 'Clay', aliases: ['claylabs'] },
+  ] };
+  assert.deepEqual(duplicatePages(['Method Financial (Method)', 'Method', 'Method Security', 'Clay', 'Unknown Co', ''], wl),
+    [{ company: 'Method Financial (Method)', pages: ['Method Financial (Method)', 'Method'] }]);
+  assert.deepEqual(duplicatePages(['Method Financial (Method)', 'Method Security', 'Clay'], wl), []);
+});

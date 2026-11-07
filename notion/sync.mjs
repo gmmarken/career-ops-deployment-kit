@@ -204,11 +204,31 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null, c
 }
 
 /** Read the candidate's company calls from Notion into the watchlist. */
+/**
+ * Radar pages that match the same company record (by name or alias), e.g. a page made before
+ * research named the company, next to the researched one (D109). Returns [{ company, pages }].
+ */
+export function duplicatePages(names, wl) {
+  const by = new Map();
+  for (const name of names) {
+    if (!name) continue;
+    const entry = findCompany(wl, name);
+    if (!entry) continue;
+    if (!by.has(entry.name)) by.set(entry.name, []);
+    by.get(entry.name).push(name);
+  }
+  return [...by].filter(([, pages]) => pages.length > 1).map(([company, pages]) => ({ company, pages }));
+}
+
 export async function pullCompanyEdits(dataDir, { verbose = false, log = console.log } = {}) {
   const cfg = loadNotionConfig(dataDir);
   const client = createClient(readToken(dataDir));
   const wl = loadWatchlist();
   const pages = await client.queryAll(cfg.radar_data_source_id);
+  const dupes = duplicatePages(pages.map((pg) => readProp(pg.properties.Name)), wl);
+  if (dupes.length) {
+    throw new Error(`Company Radar has more than one page for the same company, so their edits would overwrite each other (D109). No company edits were read. In Notion, move the extra page to the trash (keep the one named exactly like the company), then run again:\n  ${dupes.map((d) => `${d.company}: pages ${d.pages.map((n) => `"${n}"`).join(', ')}`).join('\n  ')}`);
+  }
   const changes = [];
   let changed = false;
   for (const pg of pages) {
