@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Fixed
+- A job board that can't connect (no network, a timeout) is tried once more at the end of the scan. If it still can't, it's a ⚠️ line in the morning summary instead of a failed run, unless more than 10 boards fail (the Mac lost its network) or the same board fails 3 runs in a row (D108). The 2026-11-06 midday run failed on 5 such boards while the Mac slept with the lid closed.
 - "B2B", "S3" and similar names are no longer read as numbers by the pack checks (blocked the Clay pack) (D107).
 - A job board that now redirects to another site (Rippling's own) counts as "not found" and is retired after 3 runs, instead of failing the scan (D107).
 - Prep packs: education lines no longer share ids with jobs (the fit report cited a degree as job evidence); "Fortune 500" no longer reads as a number to the fact gate; the CV's hidden empty consent box is removed (ATS 94 → 99).

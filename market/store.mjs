@@ -545,6 +545,14 @@ class Store {
     }
     return n;
   }
+  /** Runs in a row (latest first) where this board couldn't be reached at all (D108). */
+  unreachableStreak(board, isNetworkError) {
+    let n = 0;
+    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
+      if (s.status === 'error' && isNetworkError(s.error)) n++; else break;
+    }
+    return n;
+  }
   /** Stop scanning a board; its open postings close on the day they were last seen. Returns how many closed. */
   retireBoard(board, reason, at = new Date()) {
     const open = this.db.prepare('SELECT id FROM postings WHERE board = ? AND closed_at IS NULL').all(board);
