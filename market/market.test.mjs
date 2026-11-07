@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
-import { knownBoards, watchedWithoutBoard } from './boards.mjs';
+import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, UNREACHABLE_MAX, UNREACHABLE_FAIL_AFTER } from './boards.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { openStore, urlKey, CLOSE_AFTER_MISSES, RETIRE_AFTER } from './store.mjs';
 import { monthRange, openInMonth, monthlyByCompany, ranking, toCsv } from './metrics.mjs';
@@ -359,5 +359,45 @@ test('a board "not found" 3 runs in a row is retired and its postings close; oth
   assert.ok(s.postings().every((p) => p.closed_at === '2026-11-01'));
   assert.equal(s.unretireBoard(board), true);
   assert.equal(s.unretireBoard(board), false);
+  s.close();
+});
+
+test('a board that cannot connect is a network error; an HTTP answer is not (D108)', () => {
+  assert.ok(isNetworkError('Could not reach https://x: fetch failed'));
+  assert.ok(isNetworkError('The operation was aborted due to timeout'));
+  assert.ok(isNetworkError('Could not reach https://x: getaddrinfo ENOTFOUND x'));
+  assert.ok(!isNetworkError('https://x returned HTTP 404. The posting may be closed'));
+  assert.ok(!isNetworkError('https://x returned HTTP 500'));
+  assert.ok(!isNetworkError(null));
+});
+
+test('unreachable after a retry: a summary line, unless too many or 3 runs in a row (D108)', () => {
+  const u = (board, streak = 1) => ({ board, name: board.split(':')[1], streak, error: 'fetch failed' });
+  const few = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', 2)]);
+  assert.deepEqual(few.summary, ['clasp', 'datadog']);
+  assert.deepEqual(few.failures, []);
+  const stuck = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', UNREACHABLE_FAIL_AFTER)]);
+  assert.deepEqual(stuck.summary, ['clasp']);
+  assert.match(stuck.failures[0], /greenhouse:datadog: unreachable 3 runs in a row/);
+  const many = unreachableOutcome(Array.from({ length: UNREACHABLE_MAX + 1 }, (_, i) => u(`ashby:b${i}`)));
+  assert.equal(many.failures.length, UNREACHABLE_MAX + 1);
+  assert.deepEqual(many.summary, []);
+  assert.match(many.failures[0], /lost its network/);
+  assert.deepEqual(unreachableOutcome([]), { failures: [], summary: [] });
+});
+
+test('the unreachable streak counts network errors in a row; anything else breaks it (D108)', () => {
+  const s = openStore(':memory:');
+  const run = (status, error) => { const id = s.startScan('ashby:clasp'); s.finishScan(id, { status, error }); };
+  run('error', 'Could not reach https://x: fetch failed');
+  run('ok');
+  run('error', 'https://x returned HTTP 404.');
+  run('error', 'Could not reach https://x: fetch failed');
+  run('error', 'The operation was aborted due to timeout');
+  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 2);
+  const open = s.startScan('ashby:clasp'); // a scan waiting for its retry doesn't count yet
+  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 2);
+  s.finishScan(open, { status: 'ok' });
+  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 0);
   s.close();
 });

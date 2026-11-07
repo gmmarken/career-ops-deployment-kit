@@ -354,3 +354,11 @@ test('alerts that matter also become a reminder; a reminder that fails is a repo
   assert.equal(r.problems[0].step, 'reminder');
   assert.match(texts.at(-1), /❌ reminder: S-tier Pace — Deployment Strategist: Reminder not created/);
 });
+
+test('boards unreachable after a retry get a summary line; a board read on the retry still counts (D108)', () => {
+  const scan = 'Scanning 3 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ✓ ashby:zip (Zip): 9 open, 2 new, 0 closed (on the retry)\nUnreachable after a retry (postings kept open; checked again next run): clasp · Datadog\n';
+  assert.equal(runFacts({ scan }).newPostings, 3);
+  assert.deepEqual(runFacts({ scan }).unreachable, ['clasp', 'Datadog']);
+  assert.match(successSummary('2026-11-06', { scan }), /⚠️ 2 job boards couldn't connect, even on a retry; checked again next run: clasp, Datadog/);
+  assert.doesNotMatch(successSummary('2026-11-06', { scan: 'Scanning 1 board(s)…\n' }), /couldn't connect/);
+});

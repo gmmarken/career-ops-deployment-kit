@@ -113,7 +113,7 @@ export function runFacts(outputs) {
   const scan = String(outputs.scan ?? '');
   const tier = String(outputs['tier-new'] ?? '');
   const boardsM = scan.match(/^Scanning (\d+) board/m);
-  const boardLines = [...scan.matchAll(/^\s*✓ \S+ \(.*\): \d+ open, (\d+) new, \d+ closed$/gm)];
+  const boardLines = [...scan.matchAll(/^\s*✓ \S+ \(.*\): \d+ open, (\d+) new, \d+ closed(?: \(on the retry\))?$/gm)];
   const queued = tier.match(/^(\d+) untiered NYC role/m);
   const waiting = tier.match(/^(\d+) role\(s\) wait for a later run/m);
   const paused = tier.match(/^Paused: Claude usage limit reached after (\d+) of (\d+) graded; (\d+) left/m);
@@ -122,6 +122,7 @@ export function runFacts(outputs) {
   const researchPaused = /^Paused: Claude usage limit reached after \d+ of \d+ researched/m.test(radar);
   const retired = scan.match(/^Retired (\d+) job board\(s\) that no longer exist: (.+)$/m);
   const notFound = scan.match(/^Not found \(retired after \d+ runs in a row\): (.+)$/m);
+  const unreachable = scan.match(/^Unreachable after a retry \(.*?\): (.+)$/m);
   const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
   const packs = String(outputs.packs ?? '');
   const packsReady = [...packs.matchAll(/^📦 Prep pack ready: (.+?) · /gm)].map((m) => m[1]);
@@ -139,6 +140,7 @@ export function runFacts(outputs) {
     researchPaused,
     retired: retired ? { count: Number(retired[1]), names: retired[2] } : null,
     notFound: notFound ? notFound[1].split(' · ') : [],
+    unreachable: unreachable ? unreachable[1].split(' · ') : [],
     weekly,
     packsReady,
     packsQueued: packsQueued ? Number(packsQueued[1]) : null,
@@ -172,6 +174,7 @@ export function successSummary(date, outputs) {
   }
   if (f.researchPaused) lines.push('⏳ Company research paused at the Claude usage limit; it continues next run');
   if (f.notFound.length) lines.push(`⚠️ ${f.notFound.length} job board${f.notFound.length === 1 ? '' : 's'} not found (retired after 3 runs in a row): ${f.notFound.join(', ')}`);
+  if (f.unreachable.length) lines.push(`⚠️ ${f.unreachable.length} job board${f.unreachable.length === 1 ? '' : 's'} couldn't connect, even on a retry; checked again next run: ${f.unreachable.join(', ')}`);
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
   if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
