@@ -155,7 +155,17 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null, c
     for (const c of companies) {
       const entry = findCompany(wl, c.name);
       const key = companyKey(entry?.name ?? c.name);
-      const existing = radarByKey.get(key);
+      let existing = radarByKey.get(key);
+      if (!existing && entry) {
+        // Research just named this company: reuse the page made under its board name, renamed (D110).
+        const oldKey = [c.name, ...(entry.aliases ?? [])].map(companyKey).find((k) => k !== key && radarByKey.has(k));
+        if (oldKey) {
+          existing = radarByKey.get(oldKey);
+          radarByKey.delete(oldKey);
+          radarByKey.set(key, existing);
+          log(`Company Radar: renamed page "${readProp(existing.properties.Name)}" to "${entry.name}".`);
+        }
+      }
       const n = counts.get(c.id) ?? { open: 0, deployment: 0 };
       if (existing) {
         const props = ownedRemoved(companyProps(c.name, entry, c.first_seen, { create: false, counts: n }), OWNED_BY_YOU.radar);
@@ -205,30 +215,59 @@ export async function syncAll(dataDir, { log = console.log, postingIds = null, c
 
 /** Read the candidate's company calls from Notion into the watchlist. */
 /**
- * Radar pages that match the same company record (by name or alias), e.g. a page made before
- * research named the company, next to the researched one (D109). Returns [{ company, pages }].
+ * Radar pages that match the same company record (by name or alias), e.g. a page made under the
+ * job board's name before research named the company (D109, D110). The page named like the
+ * company is kept. An extra page still at the defaults holds none of your edits, so it can go
+ * to the trash; one with an edit of yours, or a group with no page named like the company, is stuck.
+ * Returns { trash: [{ page, keep, company }], stuck: [{ company, pages: [names] }] }.
  */
-export function duplicatePages(names, wl) {
+export function duplicatePlan(pages, wl) {
   const by = new Map();
-  for (const name of names) {
+  for (const pg of pages) {
+    const name = readProp(pg.properties.Name);
     if (!name) continue;
     const entry = findCompany(wl, name);
     if (!entry) continue;
     if (!by.has(entry.name)) by.set(entry.name, []);
-    by.get(entry.name).push(name);
+    by.get(entry.name).push(pg);
   }
-  return [...by].filter(([, pages]) => pages.length > 1).map(([company, pages]) => ({ company, pages }));
+  const trash = [];
+  const stuck = [];
+  const isDefault = (pg) => JSON.stringify(ownedFromPage(pg)) === JSON.stringify(OWNED_DEFAULTS);
+  for (const [company, group] of by) {
+    if (group.length < 2) continue;
+    const keep = group.find((pg) => companyKey(readProp(pg.properties.Name)) === companyKey(company));
+    const extras = group.filter((pg) => pg !== keep);
+    if (!keep || extras.some((pg) => !isDefault(pg))) {
+      stuck.push({ company, pages: group.map((pg) => readProp(pg.properties.Name)) });
+      continue;
+    }
+    for (const page of extras) trash.push({ page, keep, company });
+  }
+  return { trash, stuck };
+}
+
+/** Move extra pages that hold no edits of yours to the Notion trash, relinking their roles first (D110). Returns the pages left. */
+export async function cleanDuplicatePages(client, cfg, pages, wl, log) {
+  const { trash, stuck } = duplicatePlan(pages, wl);
+  if (stuck.length) {
+    throw new Error(`Company Radar has more than one page for the same company, and the extra page holds an edit of yours (or none is named like the company), so the kit won't pick one (D109, D110). No company edits were read. In Notion, copy any edit you want onto the page named exactly like the company, move the other page to the trash, then run again:\n  ${stuck.map((d) => `${d.company}: pages ${d.pages.map((n) => `"${n}"`).join(', ')}`).join('\n  ')}`);
+  }
+  for (const { page, keep, company } of trash) {
+    const roles = await client.queryAll(cfg.jobs_data_source_id, { filter: { property: 'Company', relation: { contains: page.id } } });
+    for (const r of roles) await client.api(`pages/${r.id}`, 'PATCH', { properties: { Company: relation([keep.id]) } });
+    await client.api(`pages/${page.id}`, 'PATCH', { in_trash: true });
+    log(`Company Radar: moved duplicate page "${readProp(page.properties.Name)}" to the Notion trash (no edits of yours; ${roles.length} role(s) relinked to "${company}"). Restore it from Notion's trash if needed.`);
+  }
+  const gone = new Set(trash.map((t) => t.page.id));
+  return pages.filter((pg) => !gone.has(pg.id));
 }
 
 export async function pullCompanyEdits(dataDir, { verbose = false, log = console.log } = {}) {
   const cfg = loadNotionConfig(dataDir);
   const client = createClient(readToken(dataDir));
   const wl = loadWatchlist();
-  const pages = await client.queryAll(cfg.radar_data_source_id);
-  const dupes = duplicatePages(pages.map((pg) => readProp(pg.properties.Name)), wl);
-  if (dupes.length) {
-    throw new Error(`Company Radar has more than one page for the same company, so their edits would overwrite each other (D109). No company edits were read. In Notion, move the extra page to the trash (keep the one named exactly like the company), then run again:\n  ${dupes.map((d) => `${d.company}: pages ${d.pages.map((n) => `"${n}"`).join(', ')}`).join('\n  ')}`);
-  }
+  const pages = await cleanDuplicatePages(client, cfg, await client.queryAll(cfg.radar_data_source_id), wl, log);
   const changes = [];
   let changed = false;
   for (const pg of pages) {
