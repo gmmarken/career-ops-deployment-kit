@@ -155,14 +155,49 @@ test('Company Radar (Phase 6): funding, leaders, NYC presence, fit and how the c
   assert.equal(companyProps('X', { name: 'X', origin: 'you' }, null, { create: false })['Found via'].select.name, 'You');
 });
 
-import { duplicatePages } from './sync.mjs';
-test('two Radar pages for one company (name and alias) are caught before any edit is read (D109)', () => {
-  const wl = { companies: [
-    { name: 'Method Financial (Method)', aliases: ['method', 'Method'] },
-    { name: 'Method Security', aliases: [] },
-    { name: 'Clay', aliases: ['claylabs'] },
-  ] };
-  assert.deepEqual(duplicatePages(['Method Financial (Method)', 'Method', 'Method Security', 'Clay', 'Unknown Co', ''], wl),
-    [{ company: 'Method Financial (Method)', pages: ['Method Financial (Method)', 'Method'] }]);
-  assert.deepEqual(duplicatePages(['Method Financial (Method)', 'Method Security', 'Clay'], wl), []);
+import { duplicatePlan, cleanDuplicatePages } from './sync.mjs';
+const radarPage = (id, name, { status = 'unknown', watch = false } = {}) => ({ id, properties: {
+  Name: { type: 'title', title: [{ plain_text: name }] },
+  Status: { type: 'select', select: { name: status } },
+  Watch: { type: 'checkbox', checkbox: watch },
+  Verified: { type: 'checkbox', checkbox: false },
+  'AI-native': { type: 'checkbox', checkbox: false },
+} });
+const dupWl = { companies: [
+  { name: 'Squad', aliases: ['squadai'] },
+  { name: 'Method Financial (Method)', aliases: ['method', 'Method'] },
+  { name: 'Clay', aliases: ['claylabs'] },
+] };
+
+test('a duplicate Radar page still at the defaults goes to the trash; the page named like the company stays (D110)', () => {
+  const keep = radarPage('p1', 'Squad', { status: 'strong' });
+  const extra = radarPage('p2', 'squadai');
+  const { trash, stuck } = duplicatePlan([keep, extra, radarPage('p3', 'Clay'), radarPage('p4', 'Unknown Co')], dupWl);
+  assert.deepEqual(trash.map((t) => [t.page.id, t.keep.id, t.company]), [['p2', 'p1', 'Squad']]);
+  assert.deepEqual(stuck, []);
+});
+
+test('a duplicate page holding an edit of yours, or no page named like the company, is never trashed (D110)', () => {
+  const edited = duplicatePlan([radarPage('p1', 'Method Financial (Method)'), radarPage('p2', 'Method', { watch: true })], dupWl);
+  assert.deepEqual(edited.trash, []);
+  assert.deepEqual(edited.stuck, [{ company: 'Method Financial (Method)', pages: ['Method Financial (Method)', 'Method'] }]);
+  const unnamed = duplicatePlan([radarPage('p1', 'method'), radarPage('p2', 'Method')], dupWl);
+  assert.equal(unnamed.trash.length, 0);
+  assert.equal(unnamed.stuck.length, 1);
+});
+
+test('cleaning a duplicate relinks its roles, trashes it, and logs it; a stuck one fails loudly (D110)', async () => {
+  const calls = [];
+  const client = {
+    queryAll: async (ds, body) => { calls.push(['query', ds, body.filter.relation.contains]); return [{ id: 'job1' }]; },
+    api: async (path, method, body) => { calls.push([path, method, body]); return {}; },
+  };
+  const logs = [];
+  const left = await cleanDuplicatePages(client, { jobs_data_source_id: 'jobs' }, [radarPage('p1', 'Squad'), radarPage('p2', 'squadai')], dupWl, (m) => logs.push(m));
+  assert.deepEqual(left.map((p) => p.id), ['p1']);
+  assert.deepEqual(calls[0], ['query', 'jobs', 'p2']);
+  assert.deepEqual(calls[1], ['pages/job1', 'PATCH', { properties: { Company: { relation: [{ id: 'p1' }] } } }]);
+  assert.deepEqual(calls[2], ['pages/p2', 'PATCH', { in_trash: true }]);
+  assert.match(logs[0], /moved duplicate page "squadai" to the Notion trash .*1 role\(s\) relinked to "Squad"/);
+  await assert.rejects(cleanDuplicatePages(client, {}, [radarPage('p1', 'Squad'), radarPage('p2', 'squadai', { status: 'strong' })], dupWl, () => {}), /holds an edit of yours.*Squad: pages "Squad", "squadai"/s);
 });
