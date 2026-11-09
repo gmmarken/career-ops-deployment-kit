@@ -464,37 +464,51 @@ async function scan() {
   const store = openStore();
   const failures = [];
   try {
-    // 1. Find boards on investor job boards (whole-market scans only).
+    // 1. Find boards on investor job boards (whole-market scans only). A list that can't connect is
+    // tried again after the board scan, like a board (D111).
+    const sourceRetry = [];
+    const readSource = async (src, scanId, { lastTry }) => {
+      try {
+        const r = await src.read();
+        store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.found, error: r.errors.join(' | ') } : { status: 'ok', found: r.found });
+        console.log(`  ✓ ${src.label}: ${src.done(r)}${lastTry ? ' (on the retry)' : ''}`);
+        if (r.unreadable.length) console.log(`    Posts somewhere we can't read yet: ${src.unreadable(r)}`);
+        for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
+        return null;
+      } catch (err) {
+        if (isNetworkError(err.message)) {
+          if (!lastTry) {
+            // The scan row stays open until the retry, so one run counts once in the streak.
+            sourceRetry.push({ src, scanId });
+            console.log(`  ⟳ ${src.label}: couldn't connect (${err.message}); trying again after the board scan`);
+            return null;
+          }
+          store.finishScan(scanId, { status: 'error', error: err.message });
+          return { board: src.label, name: src.name, error: err.message, streak: store.unreachableStreak(src.key, isNetworkError) };
+        }
+        store.finishScan(scanId, { status: 'error', error: err.message });
+        failures.push(`${src.label}: ${err.message}`);
+        console.log(`  ✗ ${src.label}: ${err.message}`);
+        return null;
+      }
+    };
     if (!wanted.length) {
       const sources = loadSources();
-      for (const g of sources.getro_boards) {
-        const scanId = store.startScan(`getro:${g.name}`);
-        try {
-          const r = await readGetro(store, g);
-          store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.jobs, error: r.errors.join(' | ') } : { status: 'ok', found: r.jobs });
-          console.log(`  ✓ ${g.name} (Getro): ${r.jobs} job links; traced ${r.traced} new compan${r.traced === 1 ? 'y' : 'ies'}, ${r.added} new board(s) to scan`);
-          if (r.unreadable.length) console.log(`    Posts somewhere we can't read yet: ${r.unreadable.map((u) => `${u.company} (${new URL(u.url).hostname})`).join(', ')}`);
-          for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
-        } catch (err) {
-          store.finishScan(scanId, { status: 'error', error: err.message });
-          failures.push(`${g.name} (Getro): ${err.message}`);
-          console.log(`  ✗ ${g.name} (Getro): ${err.message}`);
-        }
-      }
-      for (const g of sources.a16z_boards) {
-        const scanId = store.startScan(`portfolio:${g.name}`);
-        try {
-          const r = await readPortfolio(store, g);
-          store.finishScan(scanId, r.errors.length ? { status: 'error', found: r.companies, error: r.errors.join(' | ') } : { status: 'ok', found: r.companies });
-          console.log(`  ✓ ${g.name}: ${r.companies} companies; checked ${r.checked} page(s), ${r.relevant} with relevant titles, ${r.added} new board(s) to scan`);
-          if (r.unreadable.length) console.log(`    Posts somewhere we can't read yet: ${r.unreadable.map((u) => `${u.company}${u.hosts.length ? ` (${u.hosts.join(', ')})` : ''}`).join(', ')}`);
-          for (const e of r.errors) { failures.push(e); console.log(`  ✗ ${e}`); }
-        } catch (err) {
-          store.finishScan(scanId, { status: 'error', error: err.message });
-          failures.push(`${g.name}: ${err.message}`);
-          console.log(`  ✗ ${g.name}: ${err.message}`);
-        }
-      }
+      const vcLists = [
+        ...sources.getro_boards.map((g) => ({
+          key: `getro:${g.name}`, name: g.name, label: `${g.name} (Getro)`,
+          read: async () => { const r = await readGetro(store, g); return { ...r, found: r.jobs }; },
+          done: (r) => `${r.jobs} job links; traced ${r.traced} new compan${r.traced === 1 ? 'y' : 'ies'}, ${r.added} new board(s) to scan`,
+          unreadable: (r) => r.unreadable.map((u) => `${u.company} (${new URL(u.url).hostname})`).join(', '),
+        })),
+        ...sources.a16z_boards.map((g) => ({
+          key: `portfolio:${g.name}`, name: g.name, label: g.name,
+          read: async () => { const r = await readPortfolio(store, g); return { ...r, found: r.companies }; },
+          done: (r) => `${r.companies} companies; checked ${r.checked} page(s), ${r.relevant} with relevant titles, ${r.added} new board(s) to scan`,
+          unreadable: (r) => r.unreadable.map((u) => `${u.company}${u.hosts.length ? ` (${u.hosts.join(', ')})` : ''}`).join(', '),
+        })),
+      ];
+      for (const src of vcLists) await readSource(src, store.startScan(src.key), { lastTry: false });
       for (const p of await serperStep(store, sources.serper)) { failures.push(p); console.log(`  ✗ ${p}`); }
     }
 
@@ -556,9 +570,20 @@ async function scan() {
       }
     };
     for (const [board, company] of list) await readOne(board, company, store.startScan(board), { lastTry: false });
+    if (retry.length || sourceRetry.length) await sleep(RETRY_WAIT_MS);
+    if (sourceRetry.length) {
+      console.log(`Retrying ${sourceRetry.length} VC job list(s) that couldn't connect, after ${RETRY_WAIT_MS / 1000}s…`);
+      const still = [];
+      for (const r of sourceRetry) {
+        const u = await readSource(r.src, r.scanId, { lastTry: true });
+        if (u) { still.push(u); console.log(`  ✗ ${u.board}: still couldn't connect (${u.streak} run(s) in a row): ${u.error}`); }
+      }
+      const out = unreachableOutcome(still);
+      failures.push(...out.failures);
+      if (out.summary.length) console.log(`VC job lists unreachable after a retry (checked again next run): ${out.summary.join(' · ')}`);
+    }
     if (retry.length) {
       console.log(`Retrying ${retry.length} board(s) that couldn't connect, after ${RETRY_WAIT_MS / 1000}s…`);
-      await sleep(RETRY_WAIT_MS);
       const still = [];
       for (const r of retry) {
         const u = await readOne(r.board, r.company, r.scanId, { lastTry: true });

@@ -355,6 +355,17 @@ test('alerts that matter also become a reminder; a reminder that fails is a repo
   assert.match(texts.at(-1), /❌ reminder: S-tier Pace — Deployment Strategist: Reminder not created/);
 });
 
+test('VC job lists unreachable after a retry get their own summary line (D111)', () => {
+  const scan = '  ✓ Scale Venture Partners (Getro): 842 job links; traced 0 new companies, 0 new board(s) to scan (on the retry)\nScanning 1 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\nVC job lists unreachable after a retry (checked again next run): Thrive Capital · Andreessen Horowitz\n';
+  const f = runFacts({ scan });
+  assert.equal(f.newPostings, 1);
+  assert.deepEqual(f.vcUnreachable, ['Thrive Capital', 'Andreessen Horowitz']);
+  assert.deepEqual(f.unreachable, []);
+  const text = successSummary('2026-11-09', { scan });
+  assert.match(text, /⚠️ 2 VC job lists couldn't connect, even on a retry; checked again next run: Thrive Capital, Andreessen Horowitz/);
+  assert.doesNotMatch(text, /job boards? couldn't connect/);
+});
+
 test('boards unreachable after a retry get a summary line; a board read on the retry still counts (D108)', () => {
   const scan = 'Scanning 3 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ✓ ashby:zip (Zip): 9 open, 2 new, 0 closed (on the retry)\nUnreachable after a retry (postings kept open; checked again next run): clasp · Datadog\n';
   assert.equal(runFacts({ scan }).newPostings, 3);
