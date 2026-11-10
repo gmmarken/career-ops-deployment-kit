@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText } from './daily.mjs';
+import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile } from './daily.mjs';
 import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
@@ -62,10 +62,10 @@ test('one board failing is reported by iMessage, and later steps still run', asy
   const scanOut = [
     'Scanning 3 board(s)…',
     '  ✓ ashby:a (A): 10 open, 0 new, 0 closed',
-    '  ✗ lever:b: HTTP 500 from Lever',
+    '  ✗ lever:b: Lever page has no job list',
     '  ✓ greenhouse:c (C): 4 open, 1 new, 0 closed',
     'market: 1 board(s) failed and were skipped; their postings were NOT closed:',
-    '  lever:b: HTTP 500 from Lever',
+    '  lever:b: Lever page has no job list',
   ].join('\n');
   let tierRan = false, backupRan = false;
   const h = harness([
@@ -79,7 +79,7 @@ test('one board failing is reported by iMessage, and later steps still run', asy
   assert.equal(h.sent.length, 1);
   assert.match(h.sent[0], /🚨🚨 JOB SEARCH RUN FAILED 🚨🚨[\s\S]*1 problem\. Action needed/);
   assert.match(h.sent[0], /scan: market: 1 board\(s\) failed/);
-  assert.match(h.sent[0], /lever:b: HTTP 500/);
+  assert.match(h.sent[0], /lever:b: Lever page has no job list/);
   assert.doesNotMatch(h.sent[0], /ashby:a/, 'healthy boards are not in the notice');
   assert.match(h.sent[0], /Full log: \/x\/daily-2026-11-03\.log/);
   assert.match(h.logs.join(''), /✓ ashby:a/, 'the log keeps the full output');
@@ -197,10 +197,10 @@ test('summary: says how many roles wait for later runs (D67)', () => {
   assert.doesNotMatch(successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': TIER_OUT }), /waiting/);
 });
 
-test('summary: a usage-limit pause is loud but says nothing is broken (D68)', () => {
+test('summary: a usage-limit pause is flagged but says nothing is broken (D68, D112)', () => {
   const out = '231 untiered NYC role(s) to tier (x); tiering 30 (cap: 30 a run, 5 per company).\n201 role(s) wait for a later run.\n  [1/30] A         Pace — Deployment Strategist\nPaused: Claude usage limit reached after 1 of 30 graded; 29 left for the next run.\n';
   const s = successSummary('2026-11-05', { scan: SCAN_OUT, 'tier-new': out });
-  assert.match(s, /^🚨 ⏳ Job search: grading PAUSED \(/);
+  assert.match(s, /^⏳ Job search: grading PAUSED \(/); // nothing is broken, so no 🚨 (D112)
   assert.match(s, /Claude usage limit hit after 1 of 30 roles\. Nothing is broken/);
   assert.match(s, /⏳ 230 more NYC roles waiting/);
   assert.doesNotMatch(s, /✅/);
@@ -319,10 +319,21 @@ test('packs: the morning summary lists ready packs and the queue; the midday run
   assert.deepEqual(sent, [packText('Pace — Deployment Strategist')]);
 });
 
-test('packs: a blocked pack fails the step, so the failure text names it', async () => {
+test('packs: a blocked pack is a 🚫 line, not a failure; a pack that failed to build is real (D112)', async () => {
+  const blockedOut = `${PACKS_OUT}packs: 1 prep pack(s) need a look:\n  BLOCKED Sierra — AI Strategist: CV line check\n`;
   const sent = [];
-  await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: false, out: `${PACKS_OUT}packs: 1 prep pack(s) need a look:\n  BLOCKED Sierra — AI Strategist: CV line check\n` }) }], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
-  assert.match(sent[0], /JOB SEARCH RUN FAILED[\s\S]*❌ packs:[\s\S]*BLOCKED Sierra/);
+  const r = await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: false, out: blockedOut }) }], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
+  assert.equal(r.problems.length, 0);
+  assert.match(sent[0], /^✅[\s\S]*🚫 1 prep pack held back by the fact check \(your call; details on the role's Notion page\): Sierra — AI Strategist/);
+  const midday = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: false, out: blockedOut }) }], log: () => {}, notify: async (t) => { midday.push(t); }, logPath: 'L', midday: true });
+  assert.ok(midday.some((t) => t.startsWith('🚫 Prep pack held back: Sierra — AI Strategist\nThe fact check found something your CV doesn\'t back up: CV line check')));
+  assert.ok(!midday.some((t) => /RUN FAILED/.test(t)));
+  const failed = [];
+  await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: false, out: 'packs: 2 prep pack(s) need a look:\n  BLOCKED Sierra — AI Strategist: CV line check\n  FAILED Pace — Deployment Strategist: fetch failed\n' }) }], log: () => {}, notify: async (t) => { failed.push(t); }, logPath: 'L' });
+  // A failed pack stays failed until you requeue it, so it doesn't fix itself: real.
+  assert.match(failed[0], /RUN FAILED[\s\S]*❌ packs: packs: 2 prep pack\(s\) need a look:\n  FAILED Pace — Deployment Strategist: fetch failed/);
+  assert.match(failed[0], /Not problems \(no action needed for these\):\n🚫 1 prep pack held back/);
 });
 
 test('packs: hitting the usage limit shows as paused, not failed', () => {
@@ -372,4 +383,62 @@ test('boards unreachable after a retry get a summary line; a board read on the r
   assert.deepEqual(runFacts({ scan }).unreachable, ['clasp', 'Datadog']);
   assert.match(successSummary('2026-11-06', { scan }), /⚠️ 2 job boards couldn't connect, even on a retry; checked again next run: clasp, Datadog/);
   assert.doesNotMatch(successSummary('2026-11-06', { scan: 'Scanning 1 board(s)…\n' }), /couldn't connect/);
+});
+
+// --- D112: only a real problem sends the 🚨 text
+const TIER_CUT_OFF = `${TIER_OUT}tier-new: 2 role(s) failed and were skipped:\n  doordashusa — Grocery Merchant S&O: claude exited with code 143.\n  nebex — Business Operations Manager: claude exited with code 143.\n`;
+const memStreaks = (start = {}) => { const box = { counts: start }; return { box, read: () => box.counts, write: (c) => { box.counts = c; } }; };
+
+test('temporary problems: connection, server error and cut-off AI calls; anything else is real (D112)', () => {
+  for (const e of ['Could not reach https://x: fetch failed', 'The operation was aborted due to timeout', 'https://x returned HTTP 503.', 'claude exited with code 143.', 'claude was stopped (SIGTERM) after 300s']) assert.ok(isTemporary(e), e);
+  for (const e of ['returned HTTP 404.', 'Rippling pay details are in a format the kit doesn\'t read yet', 'unreachable 3 runs in a row (fetch failed)', 'claude exited with code 1.']) assert.ok(!isTemporary(e), e);
+});
+
+test('two cut-off grading calls: a calm summary with a ⚠️ line, no 🚨, exit-worthy problems 0 (D112, the 2026-11-10 run)', async () => {
+  const sent = [];
+  const st = memStreaks();
+  const r = await runDaily({ date: '2026-11-10', steps: [ok('scan', SCAN_OUT), bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: st });
+  assert.equal(r.problems.length, 0);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /^✅ Job search: morning run done/);
+  assert.match(sent[0], /⚠️ 2 roles hit a temporary problem \(no connection, or the Mac slept\); graded next run: doordashusa — Grocery Merchant S&O; nebex — Business Operations Manager/);
+  assert.match(sent[0], /⭐ S: Pace — Deployment Strategist/);
+  assert.deepEqual(st.box.counts, { 'tier-new|doordashusa — Grocery Merchant S&O': 1, 'tier-new|nebex — Business Operations Manager': 1 });
+});
+
+test('the same item failing 3 runs in a row is real; a run where it works clears its count (D112)', async () => {
+  const st = memStreaks({ 'tier-new|nebex — Business Operations Manager': 2, 'tier-new|doordashusa — Grocery Merchant S&O': 1, 'radar|Form D (SEC)': 2 });
+  const sent = [];
+  const r = await runDaily({ date: '2026-11-11', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: st, midday: true });
+  assert.equal(r.problems.length, 1);
+  assert.match(sent[0], /RUN FAILED[\s\S]*❌ tier-new: tier-new: 2 role\(s\) failed and were skipped:\n  nebex — Business Operations Manager: claude exited with code 143\. \(failed 3 runs in a row\)/);
+  assert.match(sent[0], /Not problems[\s\S]*⚠️ 1 role hit a temporary problem[\s\S]*doordashusa/);
+  // radar didn't run at midday, so its count is kept; the grading counts went up.
+  assert.deepEqual(st.box.counts, { 'radar|Form D (SEC)': 2, 'tier-new|nebex — Business Operations Manager': 3, 'tier-new|doordashusa — Grocery Merchant S&O': 2 });
+  await runDaily({ date: '2026-11-11', steps: [ok('tier-new', TIER_OUT)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: st, midday: true });
+  assert.deepEqual(st.box.counts, { 'radar|Form D (SEC)': 2 });
+});
+
+test('a whole step that breaks is real even on a connection error: its work may not reach Notion (D112)', async () => {
+  for (const out of ['tier-new: fetch failed\n', 'Scanning 3 board(s)…\n\n[daily] step timed out after 120 min and was stopped\n']) {
+    const sent = [];
+    const r = await runDaily({ date: '2026-11-07', steps: [bad('tier-new', out)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks() });
+    assert.equal(r.problems.length, 1, out);
+    assert.match(sent[0], /RUN FAILED/);
+  }
+});
+
+test('a Radar source that can\'t connect is temporary; an unreadable count file is a real problem (D112)', async () => {
+  const radar = 'Funding sources:\n  ✗ Form D (SEC): Could not reach the SEC: The operation was aborted due to timeout\nmarket: 1 problem(s); the other sources still ran:\n  Form D (SEC): Could not reach the SEC: The operation was aborted due to timeout\n';
+  const sent = [];
+  const r = await runDaily({ date: '2026-11-07', steps: [bad('radar', radar)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks() });
+  assert.equal(r.problems.length, 0);
+  assert.match(sent[0], /⚠️ 1 Radar source hit a temporary problem[\s\S]*checked again next run: Form D \(SEC\)/);
+  const dir = mkdtempSync(join(tmpdir(), 'streaks-'));
+  writeFileSync(join(dir, 's.json'), '{not json');
+  const bad2 = [];
+  const r2 = await runDaily({ date: '2026-11-07', steps: [ok('scan', SCAN_OUT)], log: () => {}, notify: async (t) => { bad2.push(t); }, logPath: 'L', streaks: streakFile(join(dir, 's.json')) });
+  assert.equal(r2.problems[0].step, 'alert counts');
+  assert.match(bad2[0], /RUN FAILED[\s\S]*s\.json could not be read/);
+  assert.equal(streakFile(join(dir, 'none.json')).read().constructor, Object);
 });

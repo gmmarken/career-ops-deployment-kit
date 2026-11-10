@@ -3,8 +3,12 @@
 // A midday run (--midday, D79) only scans and grades roles first seen today.
 // Every new S-tier role gets its own text as soon as grading finishes (D78).
 // Every step runs even if an earlier one failed (one failing source must not stop the others),
-// and every failure is written to the run log AND sent to Gabriel by iMessage. No retries,
-// no substitute data. Exit code: 0 all good, 1 something failed, 2 couldn't even report.
+// and every failure is written to the run log. No retries, no substitute data.
+// D112: only a real problem sends the 🚨 text. One role, board or source that couldn't connect or
+// was cut off (the Mac slept) is tried again on the next run by itself, so it's a ⚠️ summary line,
+// until the same one fails TEMPORARY_ALERT_AFTER runs in a row. A prep pack held back by its fact
+// check is a 🚫 line: your call, not a broken program.
+// Exit code: 0 all good, 1 a real problem, 2 couldn't even report.
 //
 // Usage (through scripts/daily.sh): daily.sh [--midday | --test-message | --sample-messages | --sample-email]
 import { spawn, execFile } from 'node:child_process';
@@ -16,6 +20,7 @@ import { openStore } from '../market/store.mjs';
 import { weeklyData, weeklyEmail } from '../delivery/weekly.mjs';
 import { sendMail } from '../delivery/mail.mjs';
 import { checkPackConfig } from '../packs/queue.mjs';
+import { isNetworkError } from '../market/boards.mjs';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -69,6 +74,103 @@ export function failureDetail(out) {
   return text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL)}…` : text;
 }
 
+// --- D112: real problems vs ones the next run fixes by itself
+export const TEMPORARY_ALERT_AFTER = 3;
+const WHOLE_STEP = '(whole step)';
+const ITEM_WORDS = { scan: ['job board', 'checked again next run'], 'tier-new': ['role', 'graded next run'], radar: ['Radar source', 'checked again next run'] };
+const STEP_NAMES = { scan: 'Board scan', 'tier-new': 'Grading', radar: 'Company Radar', packs: 'Prep packs' };
+
+/**
+ * A problem the next run fixes by itself: no answer at all (no network, a timeout), a server
+ * error (HTTP 5xx), or an AI call cut off (code 143: stopped while the Mac slept). Anything
+ * else, and anything a step already counted for several runs, is a real problem.
+ */
+export function isTemporary(error) {
+  const e = String(error ?? '');
+  if (/runs in a row/.test(e)) return false;
+  return isNetworkError(e) || /\bHTTP 5\d\d\b/.test(e) || /claude exited with code 143\b|claude was stopped \(SIGTERM\)/.test(e);
+}
+
+/**
+ * The problems in a failed step's output, one per item: the indented lines under its error line
+ * ("tier-new: 2 role(s) failed and were skipped:"). An error line with no list, or a step that
+ * timed out, is one problem for the whole step. `items` is [] when there's no error line to read.
+ */
+export function problemItems(out) {
+  const lines = String(out).trimEnd().split('\n');
+  const items = [];
+  const add = (it) => { const had = items.find((x) => x.key === it.key); if (had) had.error += ` · ${it.error}`; else items.push(it); };
+  const at = lines.findIndex((l) => /^(market|tier-new|packs|backup|weekly|daily):/.test(l));
+  const head = at >= 0 ? lines[at] : null;
+  if (at >= 0) {
+    const sub = [];
+    for (const l of lines.slice(at + 1)) { if (/^\s{2,}\S/.test(l)) sub.push(l.trim()); else break; }
+    if (head.endsWith(':') && sub.length) {
+      for (const l of sub) {
+        const m = l.match(/^(BLOCKED |FAILED )?(.+?): (.+)$/);
+        add(m ? { kind: m[1]?.trim() ?? null, key: m[2], error: m[3] } : { kind: null, key: l, error: l });
+      }
+    } else add({ kind: null, key: WHOLE_STEP, error: head });
+  }
+  const timedOut = lines.find((l) => /^\[daily\] step timed out/.test(l));
+  if (timedOut) add({ kind: null, key: WHOLE_STEP, error: timedOut });
+  return { head, items };
+}
+
+/**
+ * Sort a failed step's problems (D112). A whole step that broke is always real: work it did before
+ * breaking may not reach Notion. One item that hit a temporary problem is tried again next run,
+ * until the same item has failed TEMPORARY_ALERT_AFTER runs in a row. `streaks` holds the count
+ * so far for "step|item". Returns {real: [lines], temporary: [{step, key, error}], held: [{key, error}], seen: [keys]}.
+ */
+export function sortProblems(step, out, streaks = {}) {
+  const real = [], temporary = [], held = [], seen = [];
+  const { head, items } = problemItems(out);
+  if (!items.length) return { real: [failureDetail(out)], temporary, held, seen };
+  for (const it of items) {
+    if (it.kind === 'BLOCKED') { held.push({ key: it.key, error: it.error }); continue; }
+    if (it.key !== WHOLE_STEP && !it.kind && isTemporary(it.error)) {
+      const k = `${step}|${it.key}`;
+      const n = (streaks[k] ?? 0) + 1;
+      seen.push(k);
+      if (n >= TEMPORARY_ALERT_AFTER) real.push(`  ${it.key}: ${it.error} (failed ${n} runs in a row)`);
+      else temporary.push({ step, key: it.key, error: it.error });
+      continue;
+    }
+    real.push(it.key === WHOLE_STEP ? it.error : `  ${it.kind ? `${it.kind} ` : ''}${it.key}: ${it.error}`);
+  }
+  // Items keep their step's error line above them, so the text says what they are.
+  if (real.some((l) => l.startsWith('  ')) && head && !real.includes(head)) real.unshift(head);
+  return { real, temporary, held, seen };
+}
+
+/** The streak counts after a run: items seen this run go up by one; the other items of the steps that ran are cleared. */
+export function nextStreaks(prev, seen, stepsRan) {
+  const next = {};
+  for (const [k, n] of Object.entries(prev)) if (!stepsRan.includes(k.split('|')[0])) next[k] = n;
+  for (const k of seen) next[k] = (prev[k] ?? 0) + 1;
+  return next;
+}
+
+const listNames = (names, max = 3) => `${names.slice(0, max).join('; ')}${names.length > max ? `; +${names.length - max} more` : ''}`;
+
+/** Summary lines for problems the next run fixes by itself, and for packs held back by the fact check (D112). */
+export function quietProblemLines({ temporary = [], held = [] } = {}) {
+  const lines = [];
+  for (const step of [...new Set(temporary.map((t) => t.step))]) {
+    const names = temporary.filter((t) => t.step === step).map((t) => t.key);
+    const [noun, when] = ITEM_WORDS[step] ?? [`${STEP_NAMES[step] ?? step} item`, 'tried again next run'];
+    lines.push(`⚠️ ${names.length} ${noun}${names.length === 1 ? '' : 's'} hit a temporary problem (no connection, or the Mac slept); ${when}: ${listNames(names)}`);
+  }
+  if (held.length) lines.push(`🚫 ${held.length} prep pack${held.length === 1 ? '' : 's'} held back by the fact check (your call; details on the role's Notion page): ${listNames(held.map((h) => h.key))}`);
+  return lines;
+}
+
+/** A prep pack the midday run held back gets a calm text (D112), not the failure text. */
+export function heldText(h) {
+  return `🚫 Prep pack held back: ${h.key}\nThe fact check found something your CV doesn't back up: ${h.error}\nDetails are on the role's Notion page. Fix the cause, then: scripts/packs.sh requeue <posting link>`;
+}
+
 /** "Tue Nov 3" from "2026-11-03" (local date, no time zone shifts). */
 export function shortDate(date) {
   const [y, m, d] = date.split('-').map(Number);
@@ -79,14 +181,15 @@ export function shortDate(date) {
  * The failure text (D63): loud on purpose, so it can't be mistaken for the morning summary.
  * Roles graded in this run are still listed (D78): a broken board shouldn't hide a good role.
  */
-export function summarize(date, problems, logPath, outputs = {}, { midday = false } = {}) {
+export function summarize(date, problems, logPath, outputs = {}, { midday = false, temporary = [], held = [] } = {}) {
   const head = `🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\n${midday ? 'Midday run, ' : ''}${shortDate(date)}: ${problems.length} problem${problems.length === 1 ? '' : 's'}. Action needed.`;
   const body = problems.map((p) => `❌ ${p.step}: ${p.detail}`).join('\n');
   const top = runFacts(outputs).graded.filter((g) => g.tier === 'S' || g.tier === 'A');
   const roles = top.length
     ? `\nGraded this run anyway (in Notion):\n${top.slice(0, MAX_LISTED).map((g) => `${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`).join('\n')}${top.length > MAX_LISTED ? `\n…and ${top.length - MAX_LISTED} more S&A in Notion` : ''}`
     : '';
-  return `${head}\n${body}${roles}\nFull log: ${logPath}`;
+  const quiet = quietProblemLines({ temporary, held });
+  return `${head}\n${body}${quiet.length ? `\nNot problems (no action needed for these):\n${quiet.join('\n')}` : ''}${roles}\nFull log: ${logPath}`;
 }
 
 /** New S-tier roles a grading run found, from the "⭐ alert:" line it prints under each (D78). */
@@ -154,11 +257,11 @@ const TIER_ORDER = ['S', 'A', 'B', 'C', 'Walk-away', 'Excluded'];
 const MAX_LISTED = 6;
 
 /** The success text (D63): a calm morning summary and a nudge to go apply. */
-export function successSummary(date, outputs) {
+export function successSummary(date, outputs, quiet = {}) {
   const f = runFacts(outputs);
-  // Paused on the Claude usage limit (D68): nothing is broken, but it needs your eye.
+  // Paused on the Claude usage limit (D68): nothing is broken, so no 🚨 (D112).
   const lines = f.paused
-    ? [`🚨 ⏳ Job search: grading PAUSED (${shortDate(date)})`, `Claude usage limit hit after ${f.paused.graded} of ${f.paused.of} roles. Nothing is broken; the rest are graded on the next run.`]
+    ? [`⏳ Job search: grading PAUSED (${shortDate(date)})`, `Claude usage limit hit after ${f.paused.graded} of ${f.paused.of} roles. Nothing is broken; the rest are graded on the next run.`]
     : [`✅ Job search: morning run done (${shortDate(date)})`];
   lines.push(f.boards == null ? 'Boards: couldn\'t read the count (see log)' : `${f.boards} boards checked · ${f.newPostings} new postings`);
   if (f.queued == null) lines.push('New roles: couldn\'t read the count (see log)');
@@ -178,6 +281,7 @@ export function successSummary(date, outputs) {
   if (f.notFound.length) lines.push(`⚠️ ${f.notFound.length} job board${f.notFound.length === 1 ? '' : 's'} not found (retired after 3 runs in a row): ${f.notFound.join(', ')}`);
   if (f.unreachable.length) lines.push(`⚠️ ${f.unreachable.length} job board${f.unreachable.length === 1 ? '' : 's'} couldn't connect, even on a retry; checked again next run: ${f.unreachable.join(', ')}`);
   if (f.vcUnreachable.length) lines.push(`⚠️ ${f.vcUnreachable.length} VC job list${f.vcUnreachable.length === 1 ? '' : 's'} couldn't connect, even on a retry; checked again next run: ${f.vcUnreachable.join(', ')}`);
+  lines.push(...quietProblemLines(quiet));
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
   if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
@@ -282,7 +386,7 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
  * Run every step, log everything, report any failure. Returns {problems, notified}.
  * `log(text)` appends to the run log; `notify(text)` sends the notice.
  */
-export async function runDaily({ date, steps, log, notify, logPath, midday = false, remind = null }) {
+export async function runDaily({ date, steps, log, notify, logPath, midday = false, remind = null, streaks = null }) {
   // An alert that should pop up on the phone: a reminder as well as the text (D95). A reminder that
   // can't be created is a reported problem, never a quiet one.
   const popUp = async (text, what) => {
@@ -291,6 +395,7 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
   };
   const problems = [];
   const outputs = {};
+  const failedSteps = [];
   const kind = midday ? 'midday run' : 'daily run';
   log(`\n===== ${kind} ${date} started ${new Date().toISOString()} =====\n`);
   for (const step of steps) {
@@ -299,7 +404,7 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
     try { res = await step.go(); } catch (err) { res = { ok: false, out: `${step.name}: ${err.message}\n` }; }
     outputs[step.name] = res.out;
     log(res.out.endsWith('\n') ? res.out : `${res.out}\n`);
-    if (!res.ok) problems.push({ step: step.name, detail: failureDetail(res.out) });
+    if (!res.ok) failedSteps.push({ step: step.name, out: res.out });
     log(`--- ${step.name}: ${res.ok ? 'ok' : 'FAILED'} ---\n`);
     // Each new S-tier role gets its own text right away (D78). A text that can't be sent is a problem, reported below.
     if (step.name === 'tier-new') {
@@ -316,21 +421,37 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
       }
     }
   }
-  // The morning run sends one summary text (D63); the midday run texts only on a new S role or a failure (D79).
+  // Sort the failed steps' problems: real ones, ones the next run fixes, packs held back (D112).
+  let prev = {};
+  if (streaks) { try { prev = streaks.read(); } catch (err) { problems.push({ step: 'alert counts', detail: err.message }); } }
+  const temporary = [], held = [], seen = [];
+  for (const { step, out } of failedSteps) {
+    const s = sortProblems(step, out, prev);
+    if (s.real.length) {
+      const detail = s.real.join('\n');
+      problems.push({ step, detail: detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL)}…` : detail });
+    }
+    temporary.push(...s.temporary); held.push(...s.held); seen.push(...s.seen);
+  }
+  if (streaks) { try { streaks.write(nextStreaks(prev, seen, Object.keys(outputs))); } catch (err) { problems.push({ step: 'alert counts', detail: err.message }); } }
+  for (const t of temporary) log(`Temporary problem (tried again next run): ${t.step}: ${t.key}: ${t.error}\n`);
+  for (const h of held) log(`Prep pack held back by the fact check: ${h.key}\n`);
+  // The morning run sends one summary text (D63); the midday run texts only on a new S role, a held pack or a real problem (D79, D112).
   if (problems.length) {
-    const notice = summarize(date, problems, logPath, outputs, { midday });
+    const notice = summarize(date, problems, logPath, outputs, { midday, temporary, held });
     await notify(notice);
     log(`\nFailure notice sent (${problems.length} problem(s)).\n`);
     if (remind) { try { await remind(notice); log('Reminder added: failure notice\n'); } catch (err) { log(`Reminder FAILED: failure notice: ${err.message}\n`); } }
   } else if (!midday) {
-    const summary = successSummary(date, outputs);
-    // A paused run starts with 🚨: worth a pop-up too.
-    if (summary.startsWith('🚨')) await popUp(summary, 'paused notice');
-    await notify(summary);
+    await notify(successSummary(date, outputs, { temporary, held }));
     log('\nMorning summary sent.\n');
-  } else log('\nMidday run: nothing wrong; no summary text (S-tier texts only).\n');
+  } else {
+    for (const h of held) { await notify(heldText(h)); log(`Held-pack text sent: ${h.key}\n`); }
+    log('\nMidday run: no real problem; no summary text (S-tier and held-pack texts only).\n');
+  }
   const notified = true;
-  log(`===== ${kind} ${date} finished ${new Date().toISOString()}: ${problems.length ? 'FAILED' : 'ok'} =====\n`);
+  const note = temporary.length ? ` (${temporary.length} temporary problem(s), tried again next run)` : '';
+  log(`===== ${kind} ${date} finished ${new Date().toISOString()}: ${problems.length ? 'FAILED' : 'ok'}${note} =====\n`);
   return { problems, notified };
 }
 
@@ -346,6 +467,17 @@ export function takeLock(path, what, { alive = (pid) => { try { process.kill(pid
   }
   writeFileSync(path, JSON.stringify({ pid: process.pid, what, at: new Date().toISOString() }));
   return () => { try { unlinkSync(path); } catch (err) { if (err.code !== 'ENOENT') throw err; } };
+}
+
+/** Where the "same problem N runs in a row" counts live (D112). A file that can't be read is a real problem, never a quiet reset. */
+export function streakFile(path) {
+  return {
+    read: () => {
+      if (!existsSync(path)) return {};
+      try { return JSON.parse(readFileSync(path, 'utf8')); } catch (e) { throw new Error(`${path} could not be read (${e.message}); the counts start over. Delete the file if this repeats.`); }
+    },
+    write: (counts) => writeFileSync(path, `${JSON.stringify(counts, null, 2)}\n`),
+  };
 }
 
 async function main() {
@@ -393,7 +525,7 @@ async function main() {
     throw new Error('another run is still going (private/logs/daily.lock). If none is, delete that file.');
   }
   try {
-    const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg, midday }), log, notify, logPath, midday, remind });
+    const { problems } = await runDaily({ date, steps: defaultSteps({ dataDir, date, cfg, midday }), log, notify, logPath, midday, remind, streaks: streakFile(join(dataDir, 'data', 'alert-streaks.json')) });
     return problems.length ? 1 : 0;
   } finally { release(); }
 }
