@@ -1,5 +1,5 @@
 {
-  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66, D69); each title is searched on each readable job-board site in any of the places, once every every_days. core_titles are searched every run; rotating_titles take turns with what is left of max_credits_per_run, each run continuing where the last stopped; one search page = one credit; needs SERPER_API_KEY in private/.env. form_d: SEC Form D filings (Phase 6, D70-D71); the SEC requires a contact email in every request, kept only here. funding_news: TechCrunch funding RSS feeds (every run) and Serper news searches (every serper.every_days; 1 credit each) (D72); headlines older than max_age_days are logged but not counted, and several reports of one round stay one round (D77).",
+  "_note": "Copy to private/config/sources.json. getro_boards: investor job boards hosted on Getro (public sitemap + job pages, D50-D51, D57). a16z_boards: a16z-style portfolio boards (public sitemap + company pages, D61). Boards that need a sign-in are not supported. serper: search-engine discovery (D52, D66, D69); each title is searched on each readable job-board site in any of the places, once every every_days. core_titles are searched every run; rotating_titles take turns with what is left of max_credits_per_run, each run continuing where the last stopped; one search page = one credit; needs SERPER_API_KEY in private/.env. form_d: SEC Form D filings (Phase 6, D70-D71); the SEC requires a contact email in every request, kept only here. funding_news: TechCrunch funding RSS feeds (every run) and Serper news searches (every serper.every_days, daily since D113; 1 credit each; each search reads the time since the last good one) (D72, D113); headlines older than max_age_days are logged but not counted, and several reports of one round stay one round (D77).",
   "getro_boards": [
     {
       "name": "Thrive Capital",
@@ -73,12 +73,18 @@
       "https://techcrunch.com/category/venture/feed/"
     ],
     "serper": {
-      "every_days": 7,
+      "every_days": 1,
       "queries": [
         "\"New York\" startup raises seed",
         "\"New York\" startup raises \"Series A\"",
-        "\"New York\" AI startup raises \"Series B\" OR \"Series C\"",
-        "NYC startup funding round AI"
+        "\"New York\" startup raises \"Series B\"",
+        "\"New York\" startup raises \"Series C\" OR \"Series D\"",
+        "\"New York-based\" raises million funding",
+        "\"NYC-based\" startup raises",
+        "\"Brooklyn-based\" startup raises",
+        "\"New York\" AI startup raises funding",
+        "\"New York\" fintech startup raises",
+        "\"New York\" health tech startup raises"
       ]
     }
   }

@@ -176,7 +176,49 @@ export async function runTechCrunch(store, idx, feeds, { feed, maxAgeDays, now =
   return out;
 }
 
-/** Is the weekly news search due? Only a run that finished OK counts. */
+/**
+ * How far back a news search looks (D113): the time since the last good search, so a daily
+ * search reads the past day (fresh stories, few repeats) and a missed day still gets covered.
+ */
+export function newsWindow(lastOkAt, now = new Date()) {
+  if (!lastOkAt) return { tbs: 'qdr:w', label: 'past week' };
+  const days = (new Date(now) - new Date(lastOkAt)) / DAY_MS;
+  if (days <= 1.1) return { tbs: 'qdr:d', label: 'past day' };
+  if (days <= 7) return { tbs: 'qdr:w', label: 'past week' };
+  return { tbs: 'qdr:m', label: 'past month' };
+}
+
+// --- Serper credits (D113): a warning a week before they run out.
+export const SERPER_CREDITS_KEY = 'serper_credit_history';
+export const CREDIT_WARN_DAYS = 7;
+
+/**
+ * Credits left and how long they last. history: [{at, balance}], oldest first (from meta).
+ * The pace is the measured drop over up to 14 days (once 3+ days are recorded), never less than
+ * the planned use (news searches + search discovery), so the warning comes early, not late.
+ * A balance that went up (credits bought) starts the history over.
+ */
+export function creditOutlook(history, balance, plannedPerDay, now = new Date()) {
+  const prev = history.at(-1);
+  let h = prev && balance > prev.balance ? [] : [...history];
+  h.push({ at: new Date(now).toISOString(), balance });
+  h = h.filter((e) => new Date(now) - new Date(e.at) <= 14 * DAY_MS);
+  const days = (new Date(now) - new Date(h[0].at)) / DAY_MS;
+  const measured = days >= 3 ? (h[0].balance - balance) / days : 0;
+  const perDay = Math.max(measured, plannedPerDay);
+  const daysLeft = perDay > 0 ? Math.floor(balance / perDay) : Infinity;
+  return { history: h, perDay, daysLeft, low: daysLeft <= CREDIT_WARN_DAYS };
+}
+
+/** The radar's credit line; the daily run reads "Serper credits LOW:" for the warning. */
+export function creditLine(balance, o) {
+  const pace = `about ${Math.round(o.perDay)} a day · about ${o.daysLeft} day${o.daysLeft === 1 ? '' : 's'} left`;
+  return o.low
+    ? `Serper credits LOW: ${balance.toLocaleString('en-US')} left · ${pace}. Buy more at serper.dev before they run out.`
+    : `  ✓ Serper credits: ${balance.toLocaleString('en-US')} left · ${pace}`;
+}
+
+/** Is the news search due? Only a run that finished OK counts. */
 export function newsSearchDue(lastOkAt, everyDays, now = new Date()) {
   if (!lastOkAt) return { due: true, nextInDays: 0 };
   const left = everyDays - (new Date(now) - new Date(lastOkAt)) / DAY_MS;
@@ -184,7 +226,7 @@ export function newsSearchDue(lastOkAt, everyDays, now = new Date()) {
 }
 
 /**
- * Serper news search (weekly). search(q) → [{ title, link, snippet, date, source }].
+ * Serper news search (daily, D113). search(q) → [{ title, link, snippet, date, source }].
  * A bad key or no credits stops the remaining searches. Returns { searches, headlines, counted, errors, stopped }.
  */
 export async function runNewsSearch(store, idx, queries, { search, maxAgeDays, now = new Date(), pause = () => Promise.resolve() }) {

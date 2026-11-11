@@ -24,7 +24,7 @@ import { decideTier } from '../engine/tier-engine.mjs';
 import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, applyResearch, needsEnrichment } from '../extractor/research.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
 import { fetchFeed, serperNews } from '../extractor/funding-news.mjs';
-import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, newsSearchDue, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
+import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, newsSearchDue, newsWindow, creditOutlook, creditLine, SERPER_CREDITS_KEY, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore, RETIRE_AFTER } from './store.mjs';
 import { recordTiered, rulesHash } from './record.mjs';
@@ -32,7 +32,7 @@ import { syncAll, pullCompanyEdits } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
-import { readSerperKey, search as serperSearch } from '../extractor/serper.mjs';
+import { readSerperKey, search as serperSearch, serperBalance } from '../extractor/serper.mjs';
 import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, RETRY_WAIT_MS } from './boards.mjs';
@@ -293,16 +293,27 @@ async function radar() {
         (r) => `${r.headlines} new headline(s), ${r.counted.length} recorded`, failures);
       if (tc) counted.push(...tc.counted);
     }
-    const { due, nextInDays } = newsSearchDue(store.lastOkScan(NEWS_SEARCH_SOURCE), funding_news.serper.every_days);
+    const lastNews = store.lastOkScan(NEWS_SEARCH_SOURCE);
+    const { due, nextInDays } = newsSearchDue(lastNews, funding_news.serper.every_days);
     if (!due) console.log(`  · News search (Serper): not due; next run in ${nextInDays} day(s)`);
     else {
+      const win = newsWindow(lastNews);
       const ns = await sourceStep(store, NEWS_SEARCH_SOURCE, 'News search (Serper)', async () => {
         const key = readSerperKey(dataDir);
-        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
+        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q, { window: win.tbs }), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
         return { ...r, found: r.headlines };
-      }, (r) => `${r.searches} search(es), ${r.searches} credit(s); ${r.headlines} new headline(s), ${r.counted.length} recorded${r.stopped ? '; stopped early (the rest would fail the same way)' : ''}`, failures);
+      }, (r) => `${r.searches} search(es) of the ${win.label}, ${r.searches} credit(s); ${r.headlines} new headline(s), ${r.counted.length} recorded${r.stopped ? '; stopped early (the rest would fail the same way)' : ''}`, failures);
       if (ns) counted.push(...ns.counted);
     }
+    // Serper credits (D113): checking is free; the daily run warns a week before they run out.
+    try {
+      const balance = await serperBalance(readSerperKey(dataDir));
+      const planned = funding_news.serper.queries.length / funding_news.serper.every_days
+        + (sources.serper ? sources.serper.max_credits_per_run / sources.serper.every_days : 0);
+      const o = creditOutlook(JSON.parse(store.getMeta(SERPER_CREDITS_KEY) ?? '[]'), balance, planned);
+      store.setMeta(SERPER_CREDITS_KEY, JSON.stringify(o.history));
+      console.log(creditLine(balance, o));
+    } catch (err) { failures.push(`Serper credits: ${err.message}`); console.log(`  ✗ Serper credits: ${err.message}`); }
   } finally { store.close(); }
   for (const c of counted) touched.add(c.name);
   console.log(fundedLine(counted) ?? 'Newly funded NYC companies: none new this run.');

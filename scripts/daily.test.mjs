@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile } from './daily.mjs';
+import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText } from './daily.mjs';
 import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
@@ -441,4 +441,14 @@ test('a Radar source that can\'t connect is temporary; an unreadable count file 
   assert.equal(r2.problems[0].step, 'alert counts');
   assert.match(bad2[0], /RUN FAILED[\s\S]*s\.json could not be read/);
   assert.equal(streakFile(join(dir, 'none.json')).read().constructor, Object);
+});
+
+test('Serper credits low: a 💳 line in the summary or failure text, and a pop-up (D113)', async () => {
+  const radar = 'Funding sources:\nSerper credits LOW: 110 left · about 17 a day · about 6 days left. Buy more at serper.dev before they run out.\n';
+  assert.match(successSummary('2026-11-12', { scan: SCAN_OUT, radar }), /💳 Serper credits low: 110 left, about 6 days at 17 a day\. Buy the 50k pack at serper\.dev/);
+  assert.doesNotMatch(successSummary('2026-11-12', { scan: SCAN_OUT, radar: '  ✓ Serper credits: 2,438 left · about 17 a day · about 143 days left\n' }), /💳/);
+  assert.match(summarize('2026-11-12', [{ step: 'scan', detail: 'x' }], 'L', { radar }), /❌ scan: x\n💳 Serper credits low/);
+  const reminders = [];
+  await runDaily({ date: '2026-11-12', steps: [ok('radar', radar)], log: () => {}, notify: async () => {}, remind: async (t) => { reminders.push(t); }, logPath: 'L' });
+  assert.deepEqual(reminders, [creditText({ left: '110', perDay: 17, days: 6 })]);
 });

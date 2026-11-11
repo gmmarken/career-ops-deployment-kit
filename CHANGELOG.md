@@ -4,6 +4,10 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+- Funding news is searched every morning, 10 NYC-focused searches (was 4 a week), each looking back over the time since the last good search (D113). A first run found 7 newly funded NYC companies in a week.
+- Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
+
 ### Fixed
 - Only a real problem sends the 🚨 failure text (D112). A role, board or Radar source that couldn't connect, got a server error, or had its AI call cut off while the Mac slept is tried again on the next run by itself, so it's a ⚠️ line in the morning summary, unless the same one fails 3 runs in a row. A prep pack held back by its fact check is a 🚫 line (a calm text at midday). A usage-limit pause no longer starts with 🚨. A whole step that breaks, a pack that failed to build, and any error the kit doesn't recognize still send 🚨. The 2026-11-10 run failed only on 2 grading calls cut off by a closed lid.
 - A VC job list (Thrive Capital, Scale Venture Partners, a16z) that can't connect is tried once more after the board scan, under the same rules as job boards: still failing, it's a ⚠️ line in the morning summary ("VC job lists couldn't connect, even on a retry") instead of a failed run, unless the same list fails 3 runs in a row. An answer from the site (HTTP 503…) still fails as before (D111). The 2026-11-09 midday run failed only on these 3 lists, while all 338 boards connected on the retry.
