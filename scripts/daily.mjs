@@ -189,7 +189,8 @@ export function summarize(date, problems, logPath, outputs = {}, { midday = fals
     ? `\nGraded this run anyway (in Notion):\n${top.slice(0, MAX_LISTED).map((g) => `${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`).join('\n')}${top.length > MAX_LISTED ? `\n…and ${top.length - MAX_LISTED} more S&A in Notion` : ''}`
     : '';
   const quiet = quietProblemLines({ temporary, held });
-  return `${head}\n${body}${quiet.length ? `\nNot problems (no action needed for these):\n${quiet.join('\n')}` : ''}${roles}\nFull log: ${logPath}`;
+  const low = runFacts(outputs).creditsLow;
+  return `${head}\n${body}${low ? `\n${creditText(low)}` : ''}${quiet.length ? `\nNot problems (no action needed for these):\n${quiet.join('\n')}` : ''}${roles}\nFull log: ${logPath}`;
 }
 
 /** New S-tier roles a grading run found, from the "⭐ alert:" line it prints under each (D78). */
@@ -232,6 +233,7 @@ export function runFacts(outputs) {
   const packsReady = [...packs.matchAll(/^📦 Prep pack ready: (.+?) · /gm)].map((m) => m[1]);
   const packsQueued = packs.match(/^Prep packs done: .* (\d+) queued$/m);
   const packsPaused = /^Paused: Claude usage limit reached after \d+ of \d+ packs/m.test(packs);
+  const credits = radar.match(/^Serper credits LOW: ([\d,]+) left · about (\d+) a day · about (\d+) days? left/m);
   const graded = [...tier.matchAll(/^\s*\[\d+\/\d+\] (S|A|B|C|Walk-away|Excluded)\s+(.+)$/gm)].map((m) => ({ tier: m[1], role: m[2].trim() }));
   return {
     boards: boardsM ? Number(boardsM[1]) : null,
@@ -250,7 +252,13 @@ export function runFacts(outputs) {
     packsReady,
     packsQueued: packsQueued ? Number(packsQueued[1]) : null,
     packsPaused,
+    creditsLow: credits ? { left: credits[1], perDay: Number(credits[2]), days: Number(credits[3]) } : null,
   };
+}
+
+/** The warning a week before the Serper credits run out (D113): a summary line and a pop-up. */
+export function creditText(c) {
+  return `💳 Serper credits low: ${c.left} left, about ${c.days} day${c.days === 1 ? '' : 's'} at ${c.perDay} a day. Buy the 50k pack at serper.dev before they run out (news and board searches stop at 0).`;
 }
 
 const TIER_ORDER = ['S', 'A', 'B', 'C', 'Walk-away', 'Excluded'];
@@ -282,6 +290,7 @@ export function successSummary(date, outputs, quiet = {}) {
   if (f.unreachable.length) lines.push(`⚠️ ${f.unreachable.length} job board${f.unreachable.length === 1 ? '' : 's'} couldn't connect, even on a retry; checked again next run: ${f.unreachable.join(', ')}`);
   if (f.vcUnreachable.length) lines.push(`⚠️ ${f.vcUnreachable.length} VC job list${f.vcUnreachable.length === 1 ? '' : 's'} couldn't connect, even on a retry; checked again next run: ${f.vcUnreachable.join(', ')}`);
   lines.push(...quietProblemLines(quiet));
+  if (f.creditsLow) lines.push(creditText(f.creditsLow));
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 runs in a row): ${f.retired.names}`);
   if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
@@ -412,6 +421,10 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
         try { await notify(alertText(a)); log(`S-tier text sent: ${a.role}\n`); } catch (err) { problems.push({ step: 'S-tier text', detail: `${a.role}: ${err.message}` }); log(`S-tier text FAILED: ${a.role}: ${err.message}\n`); }
         await popUp(alertText(a), `S-tier ${a.role}`);
       }
+    }
+    if (step.name === 'radar') {
+      const low = runFacts({ radar: res.out }).creditsLow;
+      if (low) await popUp(creditText(low), 'Serper credits low');
     }
     if (step.name === 'packs') {
       for (const role of runFacts({ packs: res.out }).packsReady) {

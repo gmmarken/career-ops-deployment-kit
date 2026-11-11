@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from './store.mjs';
-import { companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue } from './radar.mjs';
+import { companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue, newsWindow, creditOutlook, creditLine } from './radar.mjs';
+import { serperBalance } from '../extractor/serper.mjs';
 import { parseFormD, screenHit, screenForm, displayName, leadersFromForm, hitToFiling, secUserAgent } from '../extractor/formd.mjs';
 import { parseRss, readHeadline, relativeDate, isNyc, amountOf } from '../extractor/funding-news.mjs';
 
@@ -249,4 +250,42 @@ test('several articles about one raise stay one round; a different raise is a ne
   assert.equal(e.sources.length, 3); // every article is still kept as a source
   assert.equal(fundedLine([a, b, c]), 'Newly funded NYC companies (1): Serval ($150M, Series C, News)');
   store.close();
+});
+
+// --- D113: a daily news search, and a warning a week before the Serper credits run out
+test('news window: the time since the last good search (D113)', () => {
+  const now = new Date('2026-11-12T12:00:00Z');
+  assert.deepEqual(newsWindow(null, now), { tbs: 'qdr:w', label: 'past week' });
+  assert.equal(newsWindow('2026-11-11T12:13:00Z', now).tbs, 'qdr:d'); // a day ago, a little late
+  assert.equal(newsWindow('2026-11-09T12:00:00Z', now).tbs, 'qdr:w'); // missed two days
+  assert.equal(newsWindow('2026-10-20T12:00:00Z', now).tbs, 'qdr:m');
+});
+
+test('credits: the pace is never below planned use; a week left is LOW; a top-up starts over (D113)', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const first = creditOutlook([], 2438, 17, now);
+  assert.equal(first.daysLeft, 143);
+  assert.equal(first.low, false);
+  assert.match(creditLine(2438, first), /^ {2}✓ Serper credits: 2,438 left · about 17 a day · about 143 days left$/);
+  // measured faster than planned: 400 used in 4 days = 100 a day
+  const hist = [{ at: '2026-11-16T12:00:00Z', balance: 1000 }, { at: '2026-11-18T12:00:00Z', balance: 800 }];
+  const fast = creditOutlook(hist, 600, 17, now);
+  assert.equal(fast.perDay, 100);
+  assert.equal(fast.daysLeft, 6);
+  assert.equal(fast.low, true);
+  assert.equal(creditLine(600, fast), 'Serper credits LOW: 600 left · about 100 a day · about 6 days left. Buy more at serper.dev before they run out.');
+  // credits bought: the history starts over, so the old pace doesn't count
+  const topped = creditOutlook(hist, 50600, 17, now);
+  assert.deepEqual(topped.history, [{ at: now.toISOString(), balance: 50600 }]);
+  assert.equal(topped.low, false);
+  // under 3 days recorded: planned use only
+  assert.equal(creditOutlook([{ at: '2026-11-19T12:00:00Z', balance: 200 }], 100, 17, now).perDay, 17);
+});
+
+test('credit balance: read from Serper; a missing number or a bad answer fails loudly (D113)', async () => {
+  const answer = (status, body) => async () => ({ ok: status === 200, status, json: async () => body });
+  assert.equal(await serperBalance('k', { fetchImpl: answer(200, { balance: 2438, rateLimit: 5 }) }), 2438);
+  await assert.rejects(serperBalance('k', { fetchImpl: answer(200, {}) }), /no credit balance/);
+  await assert.rejects(serperBalance('k', { fetchImpl: answer(403, {}) }), /HTTP 403\. Check SERPER_API_KEY/);
+  await assert.rejects(serperBalance('k', { fetchImpl: async () => { throw new Error('fetch failed'); } }), /Could not reach Serper for the credit balance: fetch failed/);
 });

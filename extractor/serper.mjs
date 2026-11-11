@@ -11,7 +11,18 @@ import { join } from 'node:path';
 import { boardFromUrl } from './ats.mjs';
 
 const API = 'https://google.serper.dev/search';
+const ACCOUNT_API = 'https://google.serper.dev/account';
 const TIMEOUT_MS = 30_000;
+
+/** Credits left on the Serper account (D113). The check itself is free (balance unchanged after it, checked). */
+export async function serperBalance(key, { fetchImpl = fetch } = {}) {
+  let res;
+  try { res = await fetchImpl(ACCOUNT_API, { headers: { 'X-API-KEY': key }, signal: AbortSignal.timeout(TIMEOUT_MS) }); } catch (err) { throw new Error(`Could not reach Serper for the credit balance: ${err.message}`); }
+  if (!res.ok) throw new Error(`Serper's account check returned HTTP ${res.status}.${res.status === 401 || res.status === 403 ? ' Check SERPER_API_KEY.' : ''}`);
+  const body = await res.json();
+  if (!Number.isFinite(body?.balance)) throw new Error("Serper's account answer has no credit balance. Its format may have changed.");
+  return body.balance;
+}
 
 // The job-board sites a result may come from. Greenhouse has two hosts; one search covers both.
 export const SITES = {
