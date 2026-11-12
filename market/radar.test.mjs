@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from './store.mjs';
-import { companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue, newsWindow, creditOutlook, creditLine } from './radar.mjs';
+import { runNycChecks, companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue, newsWindow, creditOutlook, creditLine } from './radar.mjs';
 import { serperBalance } from '../extractor/serper.mjs';
 import { parseFormD, screenHit, screenForm, displayName, leadersFromForm, hitToFiling, secUserAgent } from '../extractor/formd.mjs';
 import { parseRss, readHeadline, relativeDate, isNyc, amountOf } from '../extractor/funding-news.mjs';
@@ -197,8 +197,10 @@ test('refit: fit follows the facts and today\'s open deployment roles; unchanged
 });
 
 test('config: Form D and funding news settings are checked with clear messages', () => {
-  const ok = { form_d: CFG, funding_news: { max_age_days: 30, techcrunch_feeds: ['https://techcrunch.com/tag/funding/feed/'], serper: { every_days: 7, queries: ['q'] } } };
+  const ok = { form_d: CFG, funding_news: { max_age_days: 30, nyc_checks_per_run: 15, techcrunch_feeds: ['https://techcrunch.com/tag/funding/feed/'], serper: { every_days: 7, queries: ['q'], national_queries: [] } } };
   assert.ok(checkRadarConfig(ok));
+  assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, nyc_checks_per_run: undefined } }), /nyc_checks_per_run/);
+  assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, serper: { every_days: 7, queries: ['q'] } } }), /national_queries/);
   assert.throws(() => checkRadarConfig({ ...ok, form_d: undefined }), /"form_d" settings are missing/);
   assert.throws(() => checkRadarConfig({ ...ok, form_d: { ...CFG, contact_email: 'nope' } }), /contact email/);
   assert.throws(() => checkRadarConfig({ ...ok, funding_news: { ...ok.funding_news, techcrunch_feeds: ['https://alleywatch.com/feed/'] } }), /techcrunch/);
@@ -317,4 +319,58 @@ test('a story dropped for having no date is read again and can be recorded; othe
   const rows = s.db.prepare('SELECT url, outcome, published FROM funding_news ORDER BY url').all();
   assert.deepEqual(rows.map((r) => [r.url, r.outcome, r.published]), [['https://a', 'recorded', '2026-11-05'], ['https://b', 'not a company-raised-money headline', null]]);
   s.close();
+});
+
+// --- D117: nationwide news, an NYC check for companies a story doesn't place
+test('NYC check: one call per company, newest first, capped; only a sourced "yes" is recorded (D117)', async () => {
+  const store = openStore(':memory:');
+  const idx = companyIndex(store);
+  const now = new Date('2026-11-12T12:00:00Z');
+  const news = (url, title, published) => store.recordNews({ url, source: 'news:serper', title, published, company: readHeadline(title).company, nyc: false, outcome: 'NYC check pending' }, now);
+  news('https://a1', 'Imprint raises $130M to help brands build loyalty', '2026-11-12');
+  news('https://a2', 'Imprint raises $130M at $1.9B valuation', '2026-11-11');
+  news('https://b', 'Zippy raises $20M for manufactured-home lending', '2026-11-10');
+  news('https://c', 'Gloop raises $5M seed', '2026-11-09');
+  news('https://d', 'Oldco raises $9M', '2026-10-01'); // past the 30-day limit
+  const facts = {
+    Imprint: { is_operating_company: true, hq_city: 'New York', nyc_office: 'yes', evidence: 'HQ: New York (company site)', source_url: 'https://imprint.co' },
+    Zippy: { is_operating_company: true, hq_city: 'Dallas', nyc_office: 'no', evidence: 'Dallas fintech', source_url: 'https://z' },
+    Gloop: { is_operating_company: true, hq_city: null, nyc_office: 'yes', evidence: null, source_url: null }, // no evidence: not counted
+  };
+  const asked = [];
+  const r = await runNycChecks(store, idx, { check: async ({ company }) => { asked.push(company); return { facts: facts[company] }; }, limit: 2, maxAgeDays: 30, now });
+  assert.deepEqual(asked, ['Imprint', 'Zippy']); // one call for Imprint's two stories; the cap leaves Gloop waiting
+  assert.deepEqual(r.nyc, ['Imprint']);
+  assert.equal(r.elsewhere, 1);
+  assert.equal(r.waiting, 1);
+  assert.equal(r.counted.length, 2); // both stories, one round (D77)
+  assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM funding_rounds").get().n, 1);
+  const outcome = (u) => store.db.prepare('SELECT outcome FROM funding_news WHERE url = ?').get(u).outcome;
+  assert.equal(outcome('https://a1'), 'recorded');
+  assert.equal(outcome('https://b'), 'not NYC (checked: Dallas)');
+  assert.equal(outcome('https://c'), 'NYC check pending');
+  assert.equal(outcome('https://d'), 'older than 30 days; not counted');
+  const r2 = await runNycChecks(store, idx, { check: async ({ company }) => ({ facts: facts[company] }), limit: 5, maxAgeDays: 30, now });
+  assert.equal(r2.unknown, 1);
+  assert.equal(outcome('https://c'), 'NYC office not found (checked); not counted');
+  // A failed check is reported and the company waits; the usage limit pauses the rest.
+  news('https://e', 'Fragment raises $12M Series A', '2026-11-12');
+  news('https://f', 'Mural raises $15M Series A', '2026-11-12');
+  const r3 = await runNycChecks(store, idx, { check: async ({ company }) => { throw new Error(company === 'Fragment' ? 'claude exited with code 143.' : 'Claude usage limit reached'); }, limit: 5, maxAgeDays: 30, now });
+  assert.match(r3.errors[0], /^NYC check, (Fragment|Mural): claude exited with code 143/);
+  assert.equal(outcome('https://e'), 'NYC check pending');
+  store.close();
+});
+
+test('a story that doesn\'t place an untracked company in NYC waits for the NYC check instead of being dropped (D117)', () => {
+  const store = openStore(':memory:');
+  const now = new Date('2026-11-12T12:00:00Z');
+  const r = considerNews(store, companyIndex(store), { title: 'Garage Raises $41M to help cities buy used fire trucks', link: 'https://g', published: '2026-11-10' }, { source: 'news:serper', label: 'x', maxAgeDays: 30, now });
+  assert.equal(r, null);
+  assert.equal(store.newsPending()[0].company, 'Garage');
+  // A company we already track is recorded wherever the story is set (D72).
+  store.company('garage');
+  const r2 = considerNews(store, companyIndex(store), { title: 'Garage Raises $41M to help cities buy used fire trucks', link: 'https://g2', published: '2026-11-10' }, { source: 'news:serper', label: 'x', maxAgeDays: 30, now });
+  assert.equal(r2.name, 'garage');
+  store.close();
 });

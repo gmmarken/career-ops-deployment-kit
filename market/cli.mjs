@@ -6,7 +6,7 @@
 //   recall <file> [--source linkedin]
 //                                check a hand-collected list ("Company | Title" per line) against the database
 //   enrich [--limit N]           research companies not yet researched with the Phase 6 questions (fills empty fields only)
-//   radar --research N [--no-notion] [--news-window day|week|month]
+//   radar --research N [--no-notion] [--news-window day|week|month] [--form-d-since YYYY-MM-DD]
 //                                Company Radar (Phase 6): SEC Form D filings + funding news -> newly funded NYC companies,
 //                                then research N companies (newly funded first), recompute deployment fit, sync to Notion
 //   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
@@ -24,7 +24,7 @@ import { decideTier } from '../engine/tier-engine.mjs';
 import { loadWatchlist, watchlistPath, findCompany, toCompanyFacts, researchCompany, saveResearch, saveWatchlist, applyResearch, needsEnrichment } from '../extractor/research.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
 import { fetchFeed, serperNews } from '../extractor/funding-news.mjs';
-import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, newsSearchDue, newsWindow, creditOutlook, creditLine, SERPER_CREDITS_KEY, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
+import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch, runNycChecks, newsSearchDue, newsWindow, creditOutlook, creditLine, SERPER_CREDITS_KEY, fundedLine, researchOrder, refit, FORM_D_SOURCE, TECHCRUNCH_SOURCE, NEWS_SEARCH_SOURCE } from './radar.mjs';
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore, RETIRE_AFTER } from './store.mjs';
 import { recordTiered, rulesHash } from './record.mjs';
@@ -32,6 +32,7 @@ import { syncAll, pullCompanyEdits } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
+import { checkNyc } from '../extractor/nyc-check.mjs';
 import { readSerperKey, search as serperSearch, serperBalance } from '../extractor/serper.mjs';
 import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
@@ -284,7 +285,10 @@ async function radar() {
   try {
     const idx = companyIndex(store);
     console.log('Funding sources:');
-    const fd = await sourceStep(store, FORM_D_SOURCE, 'Form D (SEC)', async () => { const r = await runFormD(store, idx, form_d); return { ...r, found: r.listed }; },
+    // --form-d-since YYYY-MM-DD (D117): a one-time look-back further than lookback_days.
+    const since = arg('--form-d-since');
+    if (since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error('--form-d-since must be a date like 2026-08-01.');
+    const fd = await sourceStep(store, FORM_D_SOURCE, 'Form D (SEC)', async () => { const r = await runFormD(store, idx, form_d, { since: since ?? null }); return { ...r, found: r.listed }; },
       (r) => `${r.listed} ${form_d.state} filing(s) since ${r.start}; ${r.opened} opened, ${r.counted.length} counted (${r.counted.filter((c) => c.isNewCompany).length} new to the Radar)`, failures);
     if (fd && Object.keys(fd.skipped).length) console.log(`    Not counted: ${Object.entries(fd.skipped).map(([k, v]) => `${v} ${k}`).join(' · ')}`);
     if (fd) counted.push(...fd.counted);
@@ -303,15 +307,23 @@ async function radar() {
       const win = forced ? NEWS_WINDOWS[forced] : newsWindow(lastNews);
       const ns = await sourceStep(store, NEWS_SEARCH_SOURCE, 'News search (Serper)', async () => {
         const key = readSerperKey(dataDir);
-        const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q, { window: win.tbs }), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
+        const r = await runNewsSearch(store, idx, [...funding_news.serper.queries, ...funding_news.serper.national_queries], { search: (q) => serperNews(key, q, { window: win.tbs }), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
         return { ...r, found: r.headlines };
       }, (r) => `${r.searches} search(es) of the ${win.label}, ${r.searches} credit(s); ${r.headlines} new headline(s), ${r.counted.length} recorded${r.stopped ? '; stopped early (the rest would fail the same way)' : ''}`, failures);
       if (ns) counted.push(...ns.counted);
     }
+    // NYC checks (D117): raises in stories that don't say where the company is.
+    if (funding_news.nyc_checks_per_run > 0) {
+      const nc = await runNycChecks(store, idx, { check: (q) => checkNyc(q), limit: funding_news.nyc_checks_per_run, maxAgeDays: funding_news.max_age_days });
+      console.log(`  ✓ NYC check (AI, one per company): ${nc.checked} checked; ${nc.nyc.length} in NYC${nc.nyc.length ? ` (${nc.nyc.join(', ')})` : ''}, ${nc.elsewhere} elsewhere, ${nc.unknown} not found, ${nc.notCompany} not companies; ${nc.waiting} waiting for the next run`);
+      if (nc.paused) console.log('    NYC checks paused at the Claude usage limit; they continue next run');
+      for (const e of nc.errors) { console.log(`  ✗ ${e}`); failures.push(e); }
+      counted.push(...nc.counted);
+    }
     // Serper credits (D113): checking is free; the daily run warns a week before they run out.
     try {
       const balance = await serperBalance(readSerperKey(dataDir));
-      const planned = funding_news.serper.queries.length / funding_news.serper.every_days
+      const planned = (funding_news.serper.queries.length + funding_news.serper.national_queries.length) / funding_news.serper.every_days
         + (sources.serper ? sources.serper.max_credits_per_run / sources.serper.every_days : 0);
       const o = creditOutlook(JSON.parse(store.getMeta(SERPER_CREDITS_KEY) ?? '[]'), balance, planned);
       store.setMeta(SERPER_CREDITS_KEY, JSON.stringify(o.history));

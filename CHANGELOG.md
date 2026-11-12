@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Changed
+- Funding news is also searched nationwide (5 more searches a day). A raise whose story doesn't place the company in NYC gets one short AI check of where it's based, and only a sourced NYC answer counts. Raises at companies already tracked count wherever the story is. `market.sh radar --form-d-since` adds a one-time Form D look-back (D117).
 - Funding news is searched every morning, 10 NYC-focused searches (was 4 a week), each looking back over the time since the last good search (D113). A first run found 7 newly funded NYC companies in a week.
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 

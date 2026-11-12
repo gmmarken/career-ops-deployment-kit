@@ -166,6 +166,8 @@ export const PACK_BUILT = ['ready', 'blocked'];
 
 /** A news story dropped only because its date couldn't be read (D77); it's read again later (D116). */
 export const NO_DATE = 'no publish date; not counted';
+/** A raise in a story that doesn't place the company in NYC, waiting for its NYC check (D117). */
+export const NYC_PENDING = 'NYC check pending';
 
 /** A board that answers "not found" this many runs in a row is retired (D82). */
 export const RETIRE_AFTER = 3;
@@ -670,6 +672,13 @@ class Store {
   /** URLs of funding news items already looked at. */
   /** Stories already looked at. One dropped only for having no date is read again (D116: the date reader missed some forms). */
   newsSeen() { return new Set(this.db.prepare(`SELECT url FROM funding_news WHERE outcome != '${NO_DATE}'`).all().map((r) => r.url)); }
+
+  /** Stories waiting for an NYC check (D117), newest first. */
+  newsPending() { return this.db.prepare(`SELECT * FROM funding_news WHERE outcome = '${NYC_PENDING}' ORDER BY COALESCE(published, '') DESC, seen_at DESC`).all(); }
+  /** Settle a story's outcome after its NYC check (D117). */
+  setNewsOutcome(url, outcome, companyId = null) {
+    this.db.prepare('UPDATE funding_news SET outcome = ?, company_id = COALESCE(?, company_id) WHERE url = ?').run(outcome, companyId, url);
+  }
 
   recordNews(n, at = new Date()) {
     this.db.prepare(`INSERT INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)

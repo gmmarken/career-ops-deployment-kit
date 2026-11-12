@@ -11,7 +11,9 @@ import { normalizeName } from '../extractor/research.mjs';
 import { searchFormD, fetchFormD, screenHit, screenForm, displayName, leadersFromForm, secUserAgent, filingFolder, PAUSE_MS } from '../extractor/formd.mjs';
 import { readHeadline, isNyc, relativeDate } from '../extractor/funding-news.mjs';
 import { deploymentFit } from '../engine/fit.mjs';
-import { NO_DATE } from './store.mjs';
+import { NO_DATE, NYC_PENDING } from './store.mjs';
+import { isUsageLimit } from '../extractor/claude.mjs';
+import { nycVerdict } from '../extractor/nyc-check.mjs';
 
 export const FORM_D_SOURCE = 'form_d';
 export const TECHCRUNCH_SOURCE = 'news:techcrunch';
@@ -37,6 +39,12 @@ export function checkRadarConfig(cfg, where = 'sources.json') {
   const s = n.serper;
   if (!s || !Number.isInteger(s.every_days) || s.every_days < 1 || !Array.isArray(s.queries) || !s.queries.length) {
     throw new Error(`${where}: funding_news.serper needs every_days (whole number, at least 1) and a non-empty queries list.`);
+  }
+  if (!Array.isArray(s.national_queries) || s.national_queries.some((q) => typeof q !== 'string' || !q.trim())) {
+    throw new Error(`${where}: funding_news.serper.national_queries must be a list of searches with no city in them (it may be empty) (D117).`);
+  }
+  if (!Number.isInteger(n.nyc_checks_per_run) || n.nyc_checks_per_run < 0 || n.nyc_checks_per_run > 50) {
+    throw new Error(`${where}: funding_news.nyc_checks_per_run must be a whole number from 0 to 50: how many companies a run checks for an NYC office, one short AI call each (D117).`);
   }
   return { form_d: f, funding_news: n };
 }
@@ -99,13 +107,14 @@ export const formDPage = (cik, accession) => `https://www.sec.gov/Archives/edgar
  * get: { search(args), filing(hit) } (defaults read the SEC). Returns
  * { listed, opened, counted: [{ name, amount_usd, newRound, isNewCompany, nyc, via }], skipped: {why: n}, errors: [] }.
  */
-export async function runFormD(store, idx, cfg, { fetchImpl = fetch, pause = () => new Promise((r) => setTimeout(r, PAUSE_MS)), now = new Date() } = {}) {
+export async function runFormD(store, idx, cfg, { fetchImpl = fetch, pause = () => new Promise((r) => setTimeout(r, PAUSE_MS)), now = new Date(), since = null } = {}) {
   const ua = secUserAgent(cfg.contact_email);
   const today = day(now);
   const floor = day(new Date(now) - cfg.lookback_days * DAY_MS);
   const lastOk = store.lastOkScan(FORM_D_SOURCE);
   const fromLast = lastOk ? day(new Date(lastOk) - 3 * DAY_MS) : floor; // overlap 3 days: filings appear in search a little late
-  const start = fromLast > floor ? fromLast : floor;
+  // since (D117): a one-time look-back from that date; filings already looked at are skipped as usual.
+  const start = since ?? (fromLast > floor ? fromLast : floor);
   const hits = await searchFormD({ state: cfg.state, start, end: today, ua, fetchImpl, pause });
   const seen = store.formDSeen();
   const out = { listed: hits.length, start, opened: 0, counted: [], skipped: {}, errors: [] };
@@ -150,7 +159,8 @@ export function considerNews(store, idx, item, { source, label, maxAgeDays, now 
   if (!item.published) { store.recordNews({ ...base, company: h.company, outcome: NO_DATE }, now); return null; }
   if (item.published < day(new Date(now) - maxAgeDays * DAY_MS)) { store.recordNews({ ...base, company: h.company, outcome: `older than ${maxAgeDays} days; not counted` }, now); return null; }
   const known = idx.get(companyKey(h.company));
-  if (!nyc && !known) { store.recordNews({ ...base, company: h.company, outcome: 'not NYC, company not tracked' }, now); return null; }
+  // Not placed in NYC and not a company we track: an NYC check decides (D117).
+  if (!nyc && !known) { store.recordNews({ ...base, company: h.company, outcome: NYC_PENDING }, now); return null; }
   const r = recordFunded(store, idx, {
     name: h.company, round: h.round, stage: h.stage, amount_usd: h.amount_usd, date: item.published ?? null, source_url: item.link,
     supports: `${label}: "${item.title}"`, found_via: 'News', source: 'news', nyc, nyc_evidence: nyc ? `In the news as NYC-based: "${item.title}"` : null,
@@ -217,6 +227,55 @@ export function creditLine(balance, o) {
   return o.low
     ? `Serper credits LOW: ${balance.toLocaleString('en-US')} left · ${pace}. Buy more at serper.dev before they run out.`
     : `  ✓ Serper credits: ${balance.toLocaleString('en-US')} left · ${pace}`;
+}
+
+/**
+ * NYC checks (D117): stories waiting for one, newest first, one check per company, at most
+ * `limit` companies a run; the rest wait. check({company, headline}) → {facts}. Code decides with
+ * nycVerdict: only "nyc" is recorded as a raise; the others are logged with why. A failed check
+ * leaves the company waiting (reported); the usage limit stops the checks for this run.
+ * Returns { checked, nyc: [names], elsewhere, unknown, notCompany, waiting, counted, errors, paused }.
+ */
+export async function runNycChecks(store, idx, { check, limit, maxAgeDays, now = new Date() }) {
+  const out = { checked: 0, nyc: [], elsewhere: 0, unknown: 0, notCompany: 0, waiting: 0, counted: [], errors: [], paused: false };
+  const groups = new Map();
+  for (const r of store.newsPending()) {
+    if (r.published && r.published < day(new Date(now) - maxAgeDays * DAY_MS)) { store.setNewsOutcome(r.url, `older than ${maxAgeDays} days; not counted`); continue; }
+    const k = companyKey(r.company);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  let left = limit;
+  for (const rows of groups.values()) {
+    if (left <= 0 || out.paused) { out.waiting++; continue; }
+    const company = rows[0].company;
+    let facts;
+    try { ({ facts } = await check({ company, headline: rows[0].title })); } catch (err) {
+      if (isUsageLimit(err.message)) { out.paused = true; out.waiting++; continue; }
+      out.errors.push(`NYC check, ${company}: ${err.message.split('\n')[0]}`);
+      continue;
+    }
+    left--;
+    out.checked++;
+    const v = nycVerdict(facts);
+    if (v !== 'nyc') {
+      const why = v === 'elsewhere' ? `not NYC (checked: ${facts.hq_city ?? 'based elsewhere'})` : v === 'not a company' ? 'not an operating company (checked)' : 'NYC office not found (checked); not counted';
+      for (const r of rows) store.setNewsOutcome(r.url, why);
+      if (v === 'elsewhere') out.elsewhere++; else if (v === 'unknown') out.unknown++; else out.notCompany++;
+      continue;
+    }
+    out.nyc.push(company);
+    for (const r of rows) {
+      const h = readHeadline(r.title);
+      if (!h) { store.setNewsOutcome(r.url, 'not a company-raised-money headline'); continue; }
+      const rec = recordFunded(store, idx, {
+        name: h.company, round: h.round, stage: h.stage, amount_usd: h.amount_usd, date: r.published ?? null, source_url: r.url,
+        supports: `News (via Google News): "${r.title}"`, found_via: 'News', source: 'news', nyc: true, nyc_evidence: `${facts.evidence} (${facts.source_url})`,
+      }, now);
+      store.setNewsOutcome(r.url, 'recorded', store.company(rec.name, now));
+      out.counted.push({ ...rec, amount_usd: h.amount_usd, round: h.round, via: 'News' });
+    }
+  }
+  return out;
 }
 
 /** Is the news search due? Only a run that finished OK counts. */
