@@ -657,3 +657,11 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - **AlleyWatch:** the candidate compares by hand over the next weeks. The kit never reads AlleyWatch (D72).
 **Measured:** on a copy of the database, one first search (past week, 10 credits) recorded 7 newly funded NYC companies, including Cowboy and Kalepa from AlleyWatch's list and 5 that list didn't have; Sentra and Numica were still missed. Balance: 2,429 credits, about 141 days at the planned pace.
 **Trade-off:** about 300 credits a month instead of about 16, so the free credits last about 4–5 months. The headline reader can still misread a name ("Nubank alum raises…" read as a company called "Nubank Alum"); each found company still gets research before it reaches the outreach list.
+
+## D116 — Funding news: every Google News date form is read; date-dropped stories are read again (2026-11-12)
+**Context:** The first daily news search (2026-11-12, D113) looked back a month (the last search was 11-05) and read 67 new headlines, but recorded 3. 22 were dropped as "no publish date": Google News gives a story's age as "3 days ago", "1 week ago", "2 weeks ago", "1 month ago" or a written date, and the reader only knew minutes, hours and days. They included NYC raises such as Qualitate ($25M), Fragment, Overwatch, Mural, Pennant, MARC and Baba.
+**Decision:** The candidate's call (a bug fix within D72/D77; the rule "no date, not counted" stays).
+- `relativeDate` reads minutes, hours, days, weeks (7 days each), months (31 days each, so "1 month ago" is always past the 30-day limit), "yesterday", "Nov 4, 2026", "4 Nov 2026" and ISO dates. A week can be up to 6 days older than it reads; a month is never made to look newer.
+- A story dropped only for having no date is read again when a search finds it, and its row is updated. Every other story stays "seen" and is never overwritten.
+- `market.sh radar --news-window day|week|month` searches now over that window (10 credits), for a one-time catch-up. Used once on 11-12 with "month".
+**Not changed yet:** 39 headlines were not "company raises $X" in a form the reader knows ("AI operating system race heats up as Nevis raises $70 million", "Cuttable adds $20m Series A", "Blacksmith becomes a unicorn after raising $66M"). A wider headline reader is a separate change.

@@ -60,10 +60,22 @@ export async function serperNews(key, q, { fetchImpl = fetch, window = 'qdr:w' }
 
 /** "5 days ago" → the date, counted from `now`. Hours and days only; anything vaguer stays null. */
 export function relativeDate(text, now = new Date()) {
-  const m = String(text ?? '').match(/^(\d+)\s+(minute|hour|day)s?\s+ago$/i);
-  if (!m) return null;
-  const ms = { minute: 60e3, hour: 3600e3, day: 86400e3 }[m[2].toLowerCase()] * Number(m[1]);
-  return new Date(new Date(now) - ms).toISOString().slice(0, 10);
+  const t = String(text ?? '').trim();
+  const ago = (days) => new Date(new Date(now) - days * 86400e3).toISOString().slice(0, 10);
+  // D116: every form Google News uses. A week counts as 7 days and a month as 31, so "1 month ago"
+  // is always older than the 30-day limit (D77): a story is never made to look newer than it can be by more than a week.
+  const m = t.match(/^(\d+)\s+(minute|min|hour|day|week|month)s?\s+ago$/i);
+  if (m) return ago(Number(m[1]) * { minute: 1 / 1440, min: 1 / 1440, hour: 1 / 24, day: 1, week: 7, month: 31 }[m[2].toLowerCase()]);
+  if (/^yesterday$/i.test(t)) return ago(1);
+  const mon = (name) => ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(String(name).slice(0, 3).toLowerCase());
+  const ymd = (y, mo, d) => (mo < 0 || d < 1 || d > 31 ? null : `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  let d = t.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/); // "Nov 4, 2026"
+  if (d) return ymd(d[3], mon(d[1]), Number(d[2]));
+  d = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/); // "4 Nov 2026"
+  if (d) return ymd(d[3], mon(d[2]), Number(d[1]));
+  d = t.match(/^(\d{4})-(\d{2})-(\d{2})/); // "2026-11-04"
+  if (d) return `${d[1]}-${d[2]}-${d[3]}`;
+  return null;
 }
 
 /** Does the text place the company in NYC? */

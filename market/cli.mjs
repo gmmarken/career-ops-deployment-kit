@@ -6,7 +6,7 @@
 //   recall <file> [--source linkedin]
 //                                check a hand-collected list ("Company | Title" per line) against the database
 //   enrich [--limit N]           research companies not yet researched with the Phase 6 questions (fills empty fields only)
-//   radar --research N [--no-notion]
+//   radar --research N [--no-notion] [--news-window day|week|month]
 //                                Company Radar (Phase 6): SEC Form D filings + funding news -> newly funded NYC companies,
 //                                then research N companies (newly funded first), recompute deployment fit, sync to Notion
 //   stats                        refresh provisional monthly stats; freeze months that ended 7+ days ago
@@ -294,10 +294,13 @@ async function radar() {
       if (tc) counted.push(...tc.counted);
     }
     const lastNews = store.lastOkScan(NEWS_SEARCH_SOURCE);
-    const { due, nextInDays } = newsSearchDue(lastNews, funding_news.serper.every_days);
+    // --news-window day|week|month (D116): search now over that window, e.g. a one-time catch-up.
+    const forced = arg('--news-window');
+    if (forced !== undefined && !NEWS_WINDOWS[forced]) throw new Error('--news-window must be day, week or month.');
+    const { due, nextInDays } = forced ? { due: true } : newsSearchDue(lastNews, funding_news.serper.every_days);
     if (!due) console.log(`  · News search (Serper): not due; next run in ${nextInDays} day(s)`);
     else {
-      const win = newsWindow(lastNews);
+      const win = forced ? NEWS_WINDOWS[forced] : newsWindow(lastNews);
       const ns = await sourceStep(store, NEWS_SEARCH_SOURCE, 'News search (Serper)', async () => {
         const key = readSerperKey(dataDir);
         const r = await runNewsSearch(store, idx, funding_news.serper.queries, { search: (q) => serperNews(key, q, { window: win.tbs }), maxAgeDays: funding_news.max_age_days, pause: () => sleep(300) });
@@ -332,6 +335,7 @@ async function radar() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const NEWS_WINDOWS = { day: { tbs: 'qdr:d', label: 'past day' }, week: { tbs: 'qdr:w', label: 'past week' }, month: { tbs: 'qdr:m', label: 'past month' } };
 
 /** Investor job boards to read, from private/config/sources.json. Missing file = clear error. */
 function loadSources() {

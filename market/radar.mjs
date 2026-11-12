@@ -11,6 +11,7 @@ import { normalizeName } from '../extractor/research.mjs';
 import { searchFormD, fetchFormD, screenHit, screenForm, displayName, leadersFromForm, secUserAgent, filingFolder, PAUSE_MS } from '../extractor/formd.mjs';
 import { readHeadline, isNyc, relativeDate } from '../extractor/funding-news.mjs';
 import { deploymentFit } from '../engine/fit.mjs';
+import { NO_DATE } from './store.mjs';
 
 export const FORM_D_SOURCE = 'form_d';
 export const TECHCRUNCH_SOURCE = 'news:techcrunch';
@@ -146,7 +147,7 @@ export function considerNews(store, idx, item, { source, label, maxAgeDays, now 
   const base = { url: item.link, source, title: item.title, published: item.published ?? null, nyc };
   if (!h) { store.recordNews({ ...base, outcome: 'not a company-raised-money headline' }, now); return null; }
   // Feeds also carry old stories; only recent news counts as "newly funded". No date, no count.
-  if (!item.published) { store.recordNews({ ...base, company: h.company, outcome: 'no publish date; not counted' }, now); return null; }
+  if (!item.published) { store.recordNews({ ...base, company: h.company, outcome: NO_DATE }, now); return null; }
   if (item.published < day(new Date(now) - maxAgeDays * DAY_MS)) { store.recordNews({ ...base, company: h.company, outcome: `older than ${maxAgeDays} days; not counted` }, now); return null; }
   const known = idx.get(companyKey(h.company));
   if (!nyc && !known) { store.recordNews({ ...base, company: h.company, outcome: 'not NYC, company not tracked' }, now); return null; }
