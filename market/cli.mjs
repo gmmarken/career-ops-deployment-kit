@@ -35,7 +35,7 @@ import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
 import { readSerperKey, search as serperSearch, serperBalance } from '../extractor/serper.mjs';
 import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
-import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, RETRY_WAIT_MS } from './boards.mjs';
+import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, daysInARow, RETRY_WAIT_MS } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
 import { TARGET_FAMILIES, titleFamily, companyKey, TITLE_CLASSIFIER_VERSION, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
 
@@ -495,7 +495,7 @@ async function scan() {
             return null;
           }
           store.finishScan(scanId, { status: 'error', error: err.message });
-          return { board: src.label, name: src.name, error: err.message, streak: store.unreachableStreak(src.key, isNetworkError) };
+          return { board: src.label, name: src.name, error: err.message, days: store.unreachableDays(src.key, isNetworkError) };
         }
         store.finishScan(scanId, { status: 'error', error: err.message });
         failures.push(`${src.label}: ${err.message}`);
@@ -558,21 +558,21 @@ async function scan() {
             return null;
           }
           store.finishScan(scanId, { status: 'error', error: err.message });
-          return { board, name: company ?? board, error: err.message, streak: store.unreachableStreak(board, isNetworkError) };
+          return { board, name: company ?? board, error: err.message, days: store.unreachableDays(board, isNetworkError) };
         }
-        // "Not found" RETIRE_AFTER runs in a row: the board is gone (D82). Once is just an error.
+        // "Not found" RETIRE_AFTER days in a row: the board is gone (D82, D115). Once is just an error.
         const notFound = /HTTP 404\b/.test(err.message);
-        const streak = notFound ? store.notFoundStreak(board) + 1 : 0;
         store.finishScan(scanId, { status: 'error', error: err.message });
-        if (notFound && streak >= RETIRE_AFTER) {
+        const days = notFound ? store.notFoundDays(board) : 0;
+        if (notFound && days >= RETIRE_AFTER) {
           const closed = store.retireBoard(board, err.message);
           gone.push(company ?? board);
-          console.log(`  🗑 ${board}: not found ${streak} runs in a row, so it was retired; ${closed} open posting(s) closed. To scan it again: scripts/market.sh unretire ${board}`);
+          console.log(`  🗑 ${board}: not found ${daysInARow(days)}, so it was retired; ${closed} open posting(s) closed. To scan it again: scripts/market.sh unretire ${board}`);
           return null;
         }
         if (notFound) {
-          counting.push(`${company ?? board} ${streak}/${RETIRE_AFTER}`);
-          console.log(`  ⚠ ${board}: not found (${streak} of ${RETIRE_AFTER} runs in a row; retired after ${RETIRE_AFTER}): ${err.message}`);
+          counting.push(`${company ?? board} ${days}/${RETIRE_AFTER}`);
+          console.log(`  ⚠ ${board}: not found (${daysInARow(days)}; retired after ${RETIRE_AFTER}): ${err.message}`);
           return null;
         }
         failures.push(`${board}: ${err.message}`);
@@ -587,7 +587,7 @@ async function scan() {
       const still = [];
       for (const r of sourceRetry) {
         const u = await readSource(r.src, r.scanId, { lastTry: true });
-        if (u) { still.push(u); console.log(`  ✗ ${u.board}: still couldn't connect (${u.streak} run(s) in a row): ${u.error}`); }
+        if (u) { still.push(u); console.log(`  ✗ ${u.board}: still couldn't connect (${daysInARow(u.days)}): ${u.error}`); }
       }
       const out = unreachableOutcome(still);
       failures.push(...out.failures);
@@ -598,14 +598,14 @@ async function scan() {
       const still = [];
       for (const r of retry) {
         const u = await readOne(r.board, r.company, r.scanId, { lastTry: true });
-        if (u) { still.push(u); console.log(`  ✗ ${u.board}: still couldn't connect (${u.streak} run(s) in a row): ${u.error}`); }
+        if (u) { still.push(u); console.log(`  ✗ ${u.board}: still couldn't connect (${daysInARow(u.days)}): ${u.error}`); }
       }
       const out = unreachableOutcome(still);
       failures.push(...out.failures);
       if (out.summary.length) console.log(`Unreachable after a retry (postings kept open; checked again next run): ${out.summary.join(' · ')}`);
     }
     if (gone.length) console.log(`Retired ${gone.length} job board(s) that no longer exist: ${gone.join(', ')}`);
-    if (counting.length) console.log(`Not found (retired after ${RETIRE_AFTER} runs in a row): ${counting.join(' · ')}`);
+    if (counting.length) console.log(`Not found (retired after ${RETIRE_AFTER} days in a row): ${counting.join(' · ')}`);
     if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
 
     if (!wanted.length) {

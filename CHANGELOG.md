@@ -5,6 +5,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Changed
+- Alerts count problems in days (D115). A role, board, VC list, company page or source that fails once is only logged. The same one failing 2 days in a row is a ⚠️ line in the morning text, and 5 days in a row sends 🚨. A morning and a midday failure count as one day. Not-found boards retire on the 3rd day (was the 3rd run). A prep pack that fails on a connection error is queued again once by itself. More than 10 boards unreachable after the retry now sends 🚨 right away.
+
+### Changed
 - Funding news is searched every morning, 10 NYC-focused searches (was 4 a week), each looking back over the time since the last good search (D113). A first run found 7 newly funded NYC companies in a week.
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
