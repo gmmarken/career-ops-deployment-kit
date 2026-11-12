@@ -1,9 +1,10 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["is_operating_company", "hq_city", "nyc_office", "evidence", "source_url"],
+  "required": ["is_operating_company", "is_own_funding_round", "hq_city", "nyc_office", "evidence", "source_url"],
   "properties": {
     "is_operating_company": { "type": ["boolean", "null"], "description": "true for a company that sells a product or service; false for a fund, nonprofit, government body or investment vehicle; null if unclear" },
+    "is_own_funding_round": { "type": ["boolean", "null"], "description": "true if the news is the company raising money for itself (equity, a venture round, a seed or growth round); false if it is a fund the company manages, debt for lending, an acquisition or an IPO; null if unclear" },
     "hq_city": { "type": ["string", "null"], "description": "City of the headquarters, as the sources state it; null if not found" },
     "nyc_office": { "enum": ["yes", "no", "unknown"], "description": "yes: headquarters, an office or a team in New York City (the five boroughs); no: sources show it is based elsewhere with no NYC office; unknown: not found" },
     "evidence": { "type": ["string", "null"], "description": "One short line quoting or describing what shows the answer; null if unknown" },

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from './store.mjs';
-import { runNycChecks, companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue, newsWindow, creditOutlook, creditLine } from './radar.mjs';
+import { dateWindows, runNycChecks, companyIndex, recordFunded, runFormD, runTechCrunch, runNewsSearch, considerNews, fundedLine, researchOrder, refit, checkRadarConfig, newsSearchDue, newsWindow, creditOutlook, creditLine } from './radar.mjs';
 import { serperBalance } from '../extractor/serper.mjs';
 import { parseFormD, screenHit, screenForm, displayName, leadersFromForm, hitToFiling, secUserAgent } from '../extractor/formd.mjs';
 import { parseRss, readHeadline, relativeDate, isNyc, amountOf } from '../extractor/funding-news.mjs';
@@ -333,9 +333,9 @@ test('NYC check: one call per company, newest first, capped; only a sourced "yes
   news('https://c', 'Gloop raises $5M seed', '2026-11-09');
   news('https://d', 'Oldco raises $9M', '2026-10-01'); // past the 30-day limit
   const facts = {
-    Imprint: { is_operating_company: true, hq_city: 'New York', nyc_office: 'yes', evidence: 'HQ: New York (company site)', source_url: 'https://imprint.co' },
-    Zippy: { is_operating_company: true, hq_city: 'Dallas', nyc_office: 'no', evidence: 'Dallas fintech', source_url: 'https://z' },
-    Gloop: { is_operating_company: true, hq_city: null, nyc_office: 'yes', evidence: null, source_url: null }, // no evidence: not counted
+    Imprint: { is_operating_company: true, is_own_funding_round: true, hq_city: 'New York', nyc_office: 'yes', evidence: 'HQ: New York (company site)', source_url: 'https://imprint.co' },
+    Zippy: { is_operating_company: true, is_own_funding_round: true, hq_city: 'Dallas', nyc_office: 'no', evidence: 'Dallas fintech', source_url: 'https://z' },
+    Gloop: { is_operating_company: true, is_own_funding_round: true, hq_city: null, nyc_office: 'yes', evidence: null, source_url: null }, // no evidence: not counted
   };
   const asked = [];
   const r = await runNycChecks(store, idx, { check: async ({ company }) => { asked.push(company); return { facts: facts[company] }; }, limit: 2, maxAgeDays: 30, now });
@@ -373,4 +373,15 @@ test('a story that doesn\'t place an untracked company in NYC waits for the NYC 
   const r2 = considerNews(store, companyIndex(store), { title: 'Garage Raises $41M to help cities buy used fire trucks', link: 'https://g2', published: '2026-11-10' }, { source: 'news:serper', label: 'x', maxAgeDays: 30, now });
   assert.equal(r2.name, 'garage');
   store.close();
+});
+
+test('a long Form D range is read in 14-day windows; a fund raise is not a startup round (D117)', async () => {
+  assert.deepEqual(dateWindows('2026-08-01', '2026-08-31', 14), [['2026-08-01', '2026-08-14'], ['2026-08-15', '2026-08-28'], ['2026-08-29', '2026-08-31']]);
+  assert.deepEqual(dateWindows('2026-11-10', '2026-11-12', 14), [['2026-11-10', '2026-11-12']]);
+  const { nycVerdict } = await import('../extractor/nyc-check.mjs');
+  const base = { is_operating_company: true, is_own_funding_round: true, hq_city: 'New York', nyc_office: 'yes', evidence: 'HQ New York', source_url: 'https://x' };
+  assert.equal(nycVerdict(base), 'nyc');
+  assert.equal(nycVerdict({ ...base, is_own_funding_round: false }), 'not a funding round'); // e.g. Brookfield's $25B fund
+  assert.equal(nycVerdict({ ...base, is_operating_company: false }), 'not a company');
+  assert.equal(nycVerdict({ ...base, nyc_office: 'no' }), 'elsewhere');
 });

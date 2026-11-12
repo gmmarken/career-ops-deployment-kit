@@ -101,6 +101,16 @@ const usd = (n) => (n == null ? null : n >= 1e9 ? `$${+(n / 1e9).toFixed(1)}B` :
 /** Human page for a Form D (the SEC's own rendering of the filing). */
 export const formDPage = (cik, accession) => `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${filingFolder(accession)}/xslFormDX01/primary_doc.xml`;
 
+/** ["2026-08-01", "2026-08-14"], ["2026-08-15", …] up to end: back-to-back windows of `days` days (D117). */
+export function dateWindows(start, end, days) {
+  const out = [];
+  for (let s = new Date(`${start}T00:00:00Z`); day(s) <= end; s = new Date(+s + days * DAY_MS)) {
+    const e = day(new Date(+s + (days - 1) * DAY_MS));
+    out.push([day(s), e < end ? e : end]);
+  }
+  return out;
+}
+
 /**
  * Form D: list the state's filings since the last good run (first run: lookback_days),
  * screen them, open the ones that may count, record those that do.
@@ -115,7 +125,12 @@ export async function runFormD(store, idx, cfg, { fetchImpl = fetch, pause = () 
   const fromLast = lastOk ? day(new Date(lastOk) - 3 * DAY_MS) : floor; // overlap 3 days: filings appear in search a little late
   // since (D117): a one-time look-back from that date; filings already looked at are skipped as usual.
   const start = since ?? (fromLast > floor ? fromLast : floor);
-  const hits = await searchFormD({ state: cfg.state, start, end: today, ua, fetchImpl, pause });
+  // A long range is read in 14-day windows: EDGAR's search fails past its 500th result (seen on a 3-month look-back, D117).
+  const hits = [];
+  const got = new Set();
+  for (const [s, e] of dateWindows(start, today, 14)) {
+    for (const h of await searchFormD({ state: cfg.state, start: s, end: e, ua, fetchImpl, pause })) if (!got.has(h.accession)) { got.add(h.accession); hits.push(h); }
+  }
   const seen = store.formDSeen();
   const out = { listed: hits.length, start, opened: 0, counted: [], skipped: {}, errors: [] };
   const skip = (why) => { const k = why.replace(/\s*\(.*$/, '').replace(/^industry: .*/, 'industry not on the list').replace(/^raised .*/, 'under the minimum amount'); out.skipped[k] = (out.skipped[k] ?? 0) + 1; };
@@ -258,7 +273,7 @@ export async function runNycChecks(store, idx, { check, limit, maxAgeDays, now =
     out.checked++;
     const v = nycVerdict(facts);
     if (v !== 'nyc') {
-      const why = v === 'elsewhere' ? `not NYC (checked: ${facts.hq_city ?? 'based elsewhere'})` : v === 'not a company' ? 'not an operating company (checked)' : 'NYC office not found (checked); not counted';
+      const why = { elsewhere: `not NYC (checked: ${facts.hq_city ?? 'based elsewhere'})`, 'not a company': 'not an operating company (checked)', 'not a funding round': "not the company's own funding round (checked: a fund, debt, an acquisition or an IPO)", unknown: 'NYC office not found (checked); not counted' }[v];
       for (const r of rows) store.setNewsOutcome(r.url, why);
       if (v === 'elsewhere') out.elsewhere++; else if (v === 'unknown') out.unknown++; else out.notCompany++;
       continue;

@@ -315,7 +315,7 @@ async function radar() {
     // NYC checks (D117): raises in stories that don't say where the company is.
     if (funding_news.nyc_checks_per_run > 0) {
       const nc = await runNycChecks(store, idx, { check: (q) => checkNyc(q), limit: funding_news.nyc_checks_per_run, maxAgeDays: funding_news.max_age_days });
-      console.log(`  ✓ NYC check (AI, one per company): ${nc.checked} checked; ${nc.nyc.length} in NYC${nc.nyc.length ? ` (${nc.nyc.join(', ')})` : ''}, ${nc.elsewhere} elsewhere, ${nc.unknown} not found, ${nc.notCompany} not companies; ${nc.waiting} waiting for the next run`);
+      console.log(`  ✓ NYC check (AI, one per company): ${nc.checked} checked; ${nc.nyc.length} in NYC${nc.nyc.length ? ` (${nc.nyc.join(', ')})` : ''}, ${nc.elsewhere} elsewhere, ${nc.unknown} not found, ${nc.notCompany} not a company or not its own round; ${nc.waiting} waiting for the next run`);
       if (nc.paused) console.log('    NYC checks paused at the Claude usage limit; they continue next run');
       for (const e of nc.errors) { console.log(`  ✗ ${e}`); failures.push(e); }
       counted.push(...nc.counted);
