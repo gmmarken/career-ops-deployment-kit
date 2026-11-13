@@ -657,3 +657,9 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - **AlleyWatch:** the candidate compares by hand over the next weeks. The kit never reads AlleyWatch (D72).
 **Measured:** on a copy of the database, one first search (past week, 10 credits) recorded 7 newly funded NYC companies, including Cowboy and Kalepa from AlleyWatch's list and 5 that list didn't have; Sentra and Numica were still missed. Balance: 2,429 credits, about 141 days at the planned pace.
 **Trade-off:** about 300 credits a month instead of about 16, so the free credits last about 4–5 months. The headline reader can still misread a name ("Nubank alum raises…" read as a company called "Nubank Alum"); each found company still gets research before it reaches the outreach list.
+
+## D118 — "The first 90 days" isn't a number claim (2026-11-13)
+**Context:** The 2026-11-13 morning run held back the Trunk Tools pack (🚫). The outreach note ended "I'd welcome a short conversation about the first 90 days", and the kit's number check found "90" in neither the CV nor the company research. The posting itself has a "What the first 90 days look like" section. The phrase is a role's opening time frame, not a claim about the candidate; every other number in the note matched the CV.
+**Options:** (A) read "first/next/initial 30/60/90/100 days" and "30-60-90" as names, like "Fortune 500" (D98); (B) let cover letters and outreach notes also take numbers from the posting; (C) rebuild the pack and change nothing.
+**Decision:** The candidate's call: option A. Both the kit's check and career-ops' fact gate read those phrases spelled out ("first ninety days"); the documents are unchanged. Any other number, including "90%" or "in 90 days", is still checked.
+**Trade-off:** a made-up "in my first 90 days I…" would pass this check; the meaning check (D106) still reads every line for new claims. Option B was declined because a posting's number could then pass as his own.

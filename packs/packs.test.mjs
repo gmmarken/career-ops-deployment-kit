@@ -354,6 +354,10 @@ test('fit report: measured scores are labeled measured, the AI\'s estimate is la
 test('names with numbers are not claims for the fact gate; a whole job may be cited in interview prep', () => {
   assert.equal(spellNumberNames('owned a Fortune 500 go-live, beat the S&P 500'), 'owned a Fortune-list go-live, beat the S&P-index');
   assert.deepEqual(numberProblems('a Fortune 500 operations team', 'an operations team'), []);
+  // D118: a role's opening time frame isn't a claim (blocked the Trunk Tools pack on 2026-11-13).
+  assert.deepEqual(numberProblems("I'd welcome a short conversation about the first 90 days.", 'an operations team'), []);
+  assert.deepEqual(numberProblems('a 30-60-90 plan for the next 60-day stretch', 'an operations team'), []);
+  assert.match(numberProblems('cut costs 90% in 90 days', 'cut costs').join(), /"90%" is not in the source line.*"90" is not in the source line/);
   const docs = { cover_letter: 'Dear Hiring Team. Sincerely, Pat', outreach: { leader_name: null, leader_title: null, leader_note: null, hiring_manager_note: 'Hi.' },
     interview_prep: { likely_questions: [{ question: 'q', posting_quote: null, answer_outline: 'At Acme…', cv_source_ids: ['e1'] }], gaps: [] } };
   assert.deepEqual(checkDocs(docs, { lines, cvText: CV, companyText: '', jdText: '', leaders: [], jobIds: new Set(['e1', 'e2']) }), []);
