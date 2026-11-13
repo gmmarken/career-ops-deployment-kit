@@ -6,12 +6,11 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ### Changed
 - Alerts count problems in days (D115). A role, board, VC list, company page or source that fails once is only logged. The same one failing 2 days in a row is a ⚠️ line in the morning text, and 5 days in a row sends 🚨. A morning and a midday failure count as one day. Not-found boards retire on the 3rd day (was the 3rd run). A prep pack that fails on a connection error is queued again once by itself. More than 10 boards unreachable after the retry now sends 🚨 right away.
-
-### Changed
 - Funding news is searched every morning, 10 NYC-focused searches (was 4 a week), each looking back over the time since the last good search (D113). A first run found 7 newly funded NYC companies in a week.
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
 ### Fixed
+- Grading no longer opens a role its board's latest scan didn't list. Such a role was usually just taken down, and its "not found" page sent a false 🚨 (2026-11-12, a DoorDash role). It waits: graded if it's back on the next scan, closed if not (D114).
 - Only a real problem sends the 🚨 failure text (D112). A role, board or Radar source that couldn't connect, got a server error, or had its AI call cut off while the Mac slept is tried again on the next run by itself, so it's a ⚠️ line in the morning summary, unless the same one fails 3 runs in a row. A prep pack held back by its fact check is a 🚫 line (a calm text at midday). A usage-limit pause no longer starts with 🚨. A whole step that breaks, a pack that failed to build, and any error the kit doesn't recognize still send 🚨. The 2026-11-10 run failed only on 2 grading calls cut off by a closed lid.
 - A VC job list (Thrive Capital, Scale Venture Partners, a16z) that can't connect is tried once more after the board scan, under the same rules as job boards: still failing, it's a ⚠️ line in the morning summary ("VC job lists couldn't connect, even on a retry") instead of a failed run, unless the same list fails 3 runs in a row. An answer from the site (HTTP 503…) still fails as before (D111). The 2026-11-09 midday run failed only on these 3 lists, while all 338 boards connected on the retry.
 - Company Radar no longer makes a second page when research names a company that already has a page under its job board's name ("squadai" → "Squad"): the old page is renamed and reused. A duplicate page that holds none of your edits is moved to the Notion trash automatically (its roles relinked first) and logged; one with an edit of yours still stops the run (D110).

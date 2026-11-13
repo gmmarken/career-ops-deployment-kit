@@ -658,6 +658,12 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **Measured:** on a copy of the database, one first search (past week, 10 credits) recorded 7 newly funded NYC companies, including Cowboy and Kalepa from AlleyWatch's list and 5 that list didn't have; Sentra and Numica were still missed. Balance: 2,429 credits, about 141 days at the planned pace.
 **Trade-off:** about 300 credits a month instead of about 16, so the free credits last about 4–5 months. The headline reader can still misread a name ("Nubank alum raises…" read as a company called "Nubank Alum"); each found company still gets research before it reaches the outreach list.
 
+## D114 — Grading skips a role the latest scan didn't see (2026-11-12)
+**Context:** The 2026-11-12 run sent a 🚨 because grading opened DoorDash's "Director, Strategy & Operations (DashOS)", and its page answered HTTP 404. DoorDash had taken it down overnight. A posting closes only after CLOSE_AFTER_MISSES (2) scans in a row miss it, so after the first miss it still counted as open and was queued. D112 treats a 404 as a real problem, since it can't tell a removed role from a broken link.
+**Decision:** The candidate's call. Grading (and `--regrade`) leaves out a role whose board's latest scan didn't list it (`miss_count` > 0) and names it in the log. If it's back on the next scan, its miss count resets and it's graded then. If it's missed again, it closes as before. A board that couldn't be scanned adds no miss, so its roles are graded as usual.
+**Checked:** a grading dry run on the live database held back the DashOS role and a second DoorDash role that also left the board on 11-12 and would have failed the next run.
+**Trade-off:** a role that disappears from its board for one scan and then returns is graded a run later.
+
 ## D115 — Problems are counted in days: quiet on day 1, ⚠️ from day 2, 🚨 from day 5 (2026-11-12)
 **Context:** After D112, a one-time blip still put a ⚠️ line in the morning text: two a16z company pages that timed out once (11-12), a text check that couldn't connect once (11-11), a board unreachable once after its retry. The candidate: warnings only when something needs looking into (the same board, company or link failing again), 🚨 only for a structural failure. "If I'm getting too many warnings, I'm going to start ignoring them." Option A of the card (B: a single item never sends a 🚨).
 **Decision:** The candidate's call: option A.
