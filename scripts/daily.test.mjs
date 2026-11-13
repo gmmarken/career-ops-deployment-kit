@@ -296,7 +296,7 @@ test('weekly email: only on its day, sent with what the week found; a send failu
   assert.match(mails[0].subject, /1 newly funded NYC company, 0 S \+ 0 A roles/);
   assert.match(mails[0].text, /Clark: \$11M, Seed, on 2026-11-03 \(News\)\n  Fit: Possible\. Business customers\n  What they do: AI for auditors\n  Leaders: Ada Example \(CEO\)/);
   await assert.rejects(sendWeekly({ dataDir: d, cfg: CFG, send: async () => { throw new Error('Email send failed: Mail has no email account set up.'); } }), /Mail has no email account/);
-  assert.match(successSummary('2026-11-08', { scan: SCAN_OUT + 'Retired 1 job board(s) that no longer exist: Pryzm\n', 'tier-new': TIER_OUT, 'weekly-email': out }), /🗑 Retired 1 job board that no longer exists \(not found 3 runs in a row\): Pryzm\n📧 Weekly email sent to you/);
+  assert.match(successSummary('2026-11-08', { scan: SCAN_OUT + 'Retired 1 job board(s) that no longer exist: Pryzm\n', 'tier-new': TIER_OUT, 'weekly-email': out }), /🗑 Retired 1 job board that no longer exists \(not found 3 days in a row\): Pryzm\n📧 Weekly email sent to you/);
 });
 
 // --- Phase 8: prep packs in the daily texts (D85, D89) --------------------------------
@@ -341,11 +341,13 @@ test('packs: hitting the usage limit shows as paused, not failed', () => {
   assert.match(successSummary('2026-11-05', { packs: out }), /⏳ Prep packs paused at the Claude usage limit/);
 });
 
-test('not-found boards still counting toward retirement are a summary line, not a failure (D93)', () => {
-  const scan = 'Scanning 2 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ⚠ ashby:pryzm: not found (2 of 3 runs in a row; retired after 3): HTTP 404\nNot found (retired after 3 runs in a row): pryzm 2/3 · whatnot 1/3\n';
-  assert.deepEqual(runFacts({ scan }).notFound, ['pryzm 2/3', 'whatnot 1/3']);
-  assert.match(successSummary('2026-11-05', { scan }), /⚠️ 2 job boards not found \(retired after 3 runs in a row\): pryzm 2\/3, whatnot 1\/3/);
-  assert.doesNotMatch(successSummary('2026-11-05', { scan: 'Scanning 1 board(s)…\n' }), /not found/);
+test('not-found boards: day 1 only in the log, a ⚠️ line from day 2 (D93, D115)', () => {
+  const scan = 'Scanning 2 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\nNot found (retired after 3 days in a row): pryzm 2/3 · whatnot 1/3\n';
+  assert.deepEqual(runFacts({ scan }).notFound, [{ name: 'pryzm', days: 2, of: 3 }, { name: 'whatnot', days: 1, of: 3 }]);
+  const text = successSummary('2026-11-05', { scan });
+  assert.match(text, /⚠️ 1 job board not found 2\+ days in a row \(retired on day 3 if still gone\): pryzm 2\/3/);
+  assert.doesNotMatch(text, /whatnot/);
+  assert.doesNotMatch(successSummary('2026-11-05', { scan: 'Not found (retired after 3 days in a row): whatnot 1/3\n' }), /not found/);
 });
 
 test('alerts that matter also become a reminder; a reminder that fails is a reported problem (D95)', async () => {
@@ -366,23 +368,23 @@ test('alerts that matter also become a reminder; a reminder that fails is a repo
   assert.match(texts.at(-1), /❌ reminder: S-tier Pace — Deployment Strategist: Reminder not created/);
 });
 
-test('VC job lists unreachable after a retry get their own summary line (D111)', () => {
-  const scan = '  ✓ Scale Venture Partners (Getro): 842 job links; traced 0 new companies, 0 new board(s) to scan (on the retry)\nScanning 1 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\nVC job lists unreachable after a retry (checked again next run): Thrive Capital · Andreessen Horowitz\n';
+test('VC job lists that can\'t connect: day 1 only in the log, a ⚠️ line from day 2 (D111, D115)', () => {
+  const scan = '  ✓ Scale Venture Partners (Getro): 842 job links; traced 0 new companies, 0 new board(s) to scan (on the retry)\nScanning 1 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\nVC job lists unreachable after a retry (checked again next run): Thrive Capital (2 days in a row) · Andreessen Horowitz (1 day in a row)\n';
   const f = runFacts({ scan });
   assert.equal(f.newPostings, 1);
-  assert.deepEqual(f.vcUnreachable, ['Thrive Capital', 'Andreessen Horowitz']);
-  assert.deepEqual(f.unreachable, []);
+  assert.deepEqual(f.vcUnreachable, [{ name: 'Thrive Capital', days: 2 }, { name: 'Andreessen Horowitz', days: 1 }]);
   const text = successSummary('2026-11-09', { scan });
-  assert.match(text, /⚠️ 2 VC job lists couldn't connect, even on a retry; checked again next run: Thrive Capital, Andreessen Horowitz/);
-  assert.doesNotMatch(text, /job boards? couldn't connect/);
+  assert.match(text, /⚠️ 1 VC job list couldn't connect 2\+ days in a row, even on a retry; checked again next run: Thrive Capital \(2 days in a row\)/);
+  assert.doesNotMatch(text, /Andreessen/);
 });
 
-test('boards unreachable after a retry get a summary line; a board read on the retry still counts (D108)', () => {
-  const scan = 'Scanning 3 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ✓ ashby:zip (Zip): 9 open, 2 new, 0 closed (on the retry)\nUnreachable after a retry (postings kept open; checked again next run): clasp · Datadog\n';
+test('boards that can\'t connect: day 1 only in the log, a ⚠️ line from day 2; a board read on the retry still counts (D108, D115)', () => {
+  const scan = 'Scanning 3 board(s)…\n  ✓ ashby:pace (Pace): 3 open, 1 new, 0 closed\n  ✓ ashby:zip (Zip): 9 open, 2 new, 0 closed (on the retry)\nUnreachable after a retry (postings kept open; checked again next run): clasp (1 day in a row) · Datadog (3 days in a row)\n';
   assert.equal(runFacts({ scan }).newPostings, 3);
-  assert.deepEqual(runFacts({ scan }).unreachable, ['clasp', 'Datadog']);
-  assert.match(successSummary('2026-11-06', { scan }), /⚠️ 2 job boards couldn't connect, even on a retry; checked again next run: clasp, Datadog/);
-  assert.doesNotMatch(successSummary('2026-11-06', { scan: 'Scanning 1 board(s)…\n' }), /couldn't connect/);
+  assert.match(successSummary('2026-11-06', { scan }), /⚠️ 1 job board couldn't connect 2\+ days in a row, even on a retry; checked again next run: Datadog \(3 days in a row\)/);
+  assert.doesNotMatch(successSummary('2026-11-06', { scan }), /clasp/);
+  // the older line without day counts reads as day 1
+  assert.doesNotMatch(successSummary('2026-11-06', { scan: 'Unreachable after a retry (x): clasp\n' }), /couldn't connect/);
 });
 
 // --- D112: only a real problem sends the 🚨 text
@@ -394,29 +396,51 @@ test('temporary problems: connection, server error and cut-off AI calls; anythin
   for (const e of ['returned HTTP 404.', 'Rippling pay details are in a format the kit doesn\'t read yet', 'unreachable 3 runs in a row (fetch failed)', 'claude exited with code 1.']) assert.ok(!isTemporary(e), e);
 });
 
-test('two cut-off grading calls: a calm summary with a ⚠️ line, no 🚨, exit-worthy problems 0 (D112, the 2026-11-10 run)', async () => {
+test('two cut-off grading calls on day 1: a calm summary with no flag; the counts are saved by day (D112, D115, the 2026-11-10 run)', async () => {
   const sent = [];
   const st = memStreaks();
   const r = await runDaily({ date: '2026-11-10', steps: [ok('scan', SCAN_OUT), bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: st });
   assert.equal(r.problems.length, 0);
   assert.equal(sent.length, 1);
   assert.match(sent[0], /^✅ Job search: morning run done/);
-  assert.match(sent[0], /⚠️ 2 roles hit a temporary problem \(no connection, or the Mac slept\); graded next run: doordashusa — Grocery Merchant S&O; nebex — Business Operations Manager/);
+  assert.doesNotMatch(sent[0], /⚠️/);
   assert.match(sent[0], /⭐ S: Pace — Deployment Strategist/);
-  assert.deepEqual(st.box.counts, { 'tier-new|doordashusa — Grocery Merchant S&O': 1, 'tier-new|nebex — Business Operations Manager': 1 });
+  assert.deepEqual(st.box.counts, { 'tier-new|doordashusa — Grocery Merchant S&O': { days: 1, last: '2026-11-10' }, 'tier-new|nebex — Business Operations Manager': { days: 1, last: '2026-11-10' } });
 });
 
-test('the same item failing 3 runs in a row is real; a run where it works clears its count (D112)', async () => {
-  const st = memStreaks({ 'tier-new|nebex — Business Operations Manager': 2, 'tier-new|doordashusa — Grocery Merchant S&O': 1, 'radar|Form D (SEC)': 2 });
+test('the same item: ⚠️ on day 2, 🚨 on day 5; midday is the same day; a gap or a good run starts over (D115)', async () => {
+  const nebex = 'tier-new|nebex — Business Operations Manager';
+  const dd = 'tier-new|doordashusa — Grocery Merchant S&O';
+  const st = memStreaks({ [nebex]: { days: 1, last: '2026-11-10' }, [dd]: { days: 4, last: '2026-11-10' }, 'radar|Form D (SEC)': { days: 2, last: '2026-11-10' } });
   const sent = [];
+  // Day 2 for nebex, day 5 for DoorDash (midday run: radar doesn't run, so its count is kept).
   const r = await runDaily({ date: '2026-11-11', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: st, midday: true });
   assert.equal(r.problems.length, 1);
-  assert.match(sent[0], /RUN FAILED[\s\S]*❌ tier-new: tier-new: 2 role\(s\) failed and were skipped:\n  nebex — Business Operations Manager: claude exited with code 143\. \(failed 3 runs in a row\)/);
-  assert.match(sent[0], /Not problems[\s\S]*⚠️ 1 role hit a temporary problem[\s\S]*doordashusa/);
-  // radar didn't run at midday, so its count is kept; the grading counts went up.
-  assert.deepEqual(st.box.counts, { 'radar|Form D (SEC)': 2, 'tier-new|nebex — Business Operations Manager': 3, 'tier-new|doordashusa — Grocery Merchant S&O': 2 });
-  await runDaily({ date: '2026-11-11', steps: [ok('tier-new', TIER_OUT)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: st, midday: true });
-  assert.deepEqual(st.box.counts, { 'radar|Form D (SEC)': 2 });
+  assert.match(sent[0], /RUN FAILED[\s\S]*❌ tier-new: tier-new: 2 role\(s\) failed and were skipped:\n  doordashusa — Grocery Merchant S&O: claude exited with code 143\. \(failing 5 days in a row\)/);
+  assert.match(sent[0], /Not problems[\s\S]*⚠️ 1 role failing 2\+ days in a row[\s\S]*nebex — Business Operations Manager \(2 days in a row\)/);
+  assert.deepEqual(st.box.counts, { 'radar|Form D (SEC)': { days: 2, last: '2026-11-10' }, [nebex]: { days: 2, last: '2026-11-11' }, [dd]: { days: 5, last: '2026-11-11' } });
+  // The morning after: same failure, now day 3 for nebex; a second run the same day doesn't add a day.
+  await runDaily({ date: '2026-11-12', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: st, midday: true });
+  await runDaily({ date: '2026-11-12', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: st, midday: true });
+  assert.equal(st.box.counts[nebex].days, 3);
+  // A good run clears the step's counts; a day missed in between starts over at 1.
+  await runDaily({ date: '2026-11-12', steps: [ok('tier-new', TIER_OUT)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: st, midday: true });
+  assert.deepEqual(Object.keys(st.box.counts), ['radar|Form D (SEC)']);
+  const later = memStreaks({ [nebex]: { days: 3, last: '2026-11-08' } });
+  await runDaily({ date: '2026-11-12', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: later, midday: true });
+  assert.equal(later.box.counts[nebex].days, 1);
+  // A count file from D112 (plain numbers) reads as a first day.
+  const old = memStreaks({ [nebex]: 2 });
+  await runDaily({ date: '2026-11-12', steps: [bad('tier-new', TIER_CUT_OFF)], log: () => {}, notify: async () => {}, logPath: 'L', streaks: old, midday: true });
+  assert.equal(old.box.counts[nebex].days, 1);
+});
+
+test('a prep pack that failed twice on a connection error is a ⚠️ requeue line, not a 🚨 (D115)', async () => {
+  const sent = [];
+  const out = 'packs: 1 prep pack(s) need a look:\n  FAILED Pace — Deployment Strategist: fetch failed (failed twice on a connection error)\n';
+  const r = await runDaily({ date: '2026-11-12', steps: [bad('packs', out)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks() });
+  assert.equal(r.problems.length, 0);
+  assert.match(sent[0], /^✅[\s\S]*⚠️ 1 prep pack couldn't be built twice \(no connection\); requeue with scripts\/packs\.sh requeue <posting link>: Pace — Deployment Strategist/);
 });
 
 test('a whole step that breaks is real even on a connection error: its work may not reach Notion (D112)', async () => {
@@ -428,12 +452,12 @@ test('a whole step that breaks is real even on a connection error: its work may 
   }
 });
 
-test('a Radar source that can\'t connect is temporary; an unreadable count file is a real problem (D112)', async () => {
+test('a Radar source that can\'t connect is temporary (⚠️ from day 2); an unreadable count file is a real problem (D112, D115)', async () => {
   const radar = 'Funding sources:\n  ✗ Form D (SEC): Could not reach the SEC: The operation was aborted due to timeout\nmarket: 1 problem(s); the other sources still ran:\n  Form D (SEC): Could not reach the SEC: The operation was aborted due to timeout\n';
   const sent = [];
-  const r = await runDaily({ date: '2026-11-07', steps: [bad('radar', radar)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks() });
+  const r = await runDaily({ date: '2026-11-07', steps: [bad('radar', radar)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks({ 'radar|Form D (SEC)': { days: 1, last: '2026-11-06' } }) });
   assert.equal(r.problems.length, 0);
-  assert.match(sent[0], /⚠️ 1 Radar source hit a temporary problem[\s\S]*checked again next run: Form D \(SEC\)/);
+  assert.match(sent[0], /⚠️ 1 Radar source failing 2\+ days in a row[\s\S]*checked again next run: Form D \(SEC\) \(2 days in a row\)/);
   const dir = mkdtempSync(join(tmpdir(), 'streaks-'));
   writeFileSync(join(dir, 's.json'), '{not json');
   const bad2 = [];
@@ -451,4 +475,13 @@ test('Serper credits low: a 💳 line in the summary or failure text, and a pop-
   const reminders = [];
   await runDaily({ date: '2026-11-12', steps: [ok('radar', radar)], log: () => {}, notify: async () => {}, remind: async (t) => { reminders.push(t); }, logPath: 'L' });
   assert.deepEqual(reminders, [creditText({ left: '110', perDay: 17, days: 6 })]);
+});
+
+test('a16z company pages get their own name in the ⚠️ line; a lost network and day-counted escalations are real (D115)', async () => {
+  const scan = 'market: 1 problem(s); failed boards were skipped and their postings were NOT closed:\n  Andreessen Horowitz → optimism (https://jobs.a16z.com/jobs/optimism): Could not reach https://jobs.a16z.com/jobs/optimism: The operation was aborted due to timeout\n';
+  const sent = [];
+  await runDaily({ date: '2026-11-13', steps: [bad('scan', scan)], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', streaks: memStreaks({ 'scan|Andreessen Horowitz → optimism (https://jobs.a16z.com/jobs/optimism)': { days: 1, last: '2026-11-12' } }) });
+  assert.match(sent[0], /⚠️ 1 VC company page failing 2\+ days in a row/);
+  assert.ok(!isTemporary('ashby:b1: fetch failed (one of 11 boards unreachable after a retry; more than 10 usually means the Mac lost its network)'));
+  assert.ok(!isTemporary('ashby:clasp: unreachable 5 days in a row (fetch failed)'));
 });

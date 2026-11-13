@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { titleFamily, inHomeMetro, TITLE_CLASSIFIER_VERSION, companyKey, textCheck, TEXT_CHECK_VERSION } from './classify.mjs';
-import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, UNREACHABLE_MAX, UNREACHABLE_FAIL_AFTER } from './boards.mjs';
+import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, UNREACHABLE_MAX, ALERT_AFTER_DAYS } from './boards.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { openStore, urlKey, CLOSE_AFTER_MISSES, RETIRE_AFTER } from './store.mjs';
 import { monthRange, openInMonth, monthlyByCompany, ranking, toCsv } from './metrics.mjs';
@@ -343,16 +343,17 @@ test('the rules fingerprint changes when any nested setting changes', () => {
   assert.notEqual(rulesHash(a), rulesHash({ ...a, caps: { ...a.caps, pay_not_posted: 'B' } }));
 });
 
-test('a board "not found" 3 runs in a row is retired and its postings close; other errors never count (D82)', () => {
+test('a board "not found" 3 days in a row is retired and its postings close; other errors never count (D82, D115)', () => {
   const s = openStore(':memory:');
   s.seePosting(P(), '2026-11-01');
   const board = P().board;
-  const run = (status, error) => { const id = s.startScan(board); s.finishScan(id, { status, error }); };
-  run('error', 'https://x returned HTTP 404. The posting may be closed');
-  run('error', 'Could not reach https://x: fetch failed'); // breaks the streak
-  run('error', 'https://x returned HTTP 404.');
-  run('error', 'https://x returned HTTP 404.');
-  assert.equal(s.notFoundStreak(board), 2);
+  const run = (status, error, at) => { const id = s.startScan(board, at); s.finishScan(id, { status, error }); };
+  run('error', 'https://x returned HTTP 404. The posting may be closed', '2026-11-08T12:00:00');
+  run('error', 'Could not reach https://x: fetch failed', '2026-11-09T12:00:00'); // breaks the streak
+  run('error', 'https://x returned HTTP 404.', '2026-11-10T12:00:00');
+  run('error', 'https://x returned HTTP 404.', '2026-11-11T12:00:00');
+  run('error', 'https://x returned HTTP 404.', '2026-11-11T18:00:00'); // midday: same day
+  assert.equal(s.notFoundDays(board), 2);
   assert.equal(RETIRE_AFTER, 3);
   assert.equal(s.retireBoard(board, 'HTTP 404'), 1);
   assert.ok(s.retiredBoards().has(board));
@@ -371,14 +372,14 @@ test('a board that cannot connect is a network error; an HTTP answer is not (D10
   assert.ok(!isNetworkError(null));
 });
 
-test('unreachable after a retry: a summary line, unless too many or 3 runs in a row (D108)', () => {
-  const u = (board, streak = 1) => ({ board, name: board.split(':')[1], streak, error: 'fetch failed' });
-  const few = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', 2)]);
-  assert.deepEqual(few.summary, ['clasp', 'datadog']);
+test('unreachable after a retry: a summary line with its days, unless too many or 5 days in a row (D108, D115)', () => {
+  const u = (board, days = 1) => ({ board, name: board.split(':')[1], days, error: 'fetch failed' });
+  const few = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', 4)]);
+  assert.deepEqual(few.summary, ['clasp (1 day in a row)', 'datadog (4 days in a row)']);
   assert.deepEqual(few.failures, []);
-  const stuck = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', UNREACHABLE_FAIL_AFTER)]);
-  assert.deepEqual(stuck.summary, ['clasp']);
-  assert.match(stuck.failures[0], /greenhouse:datadog: unreachable 3 runs in a row/);
+  const stuck = unreachableOutcome([u('ashby:clasp'), u('greenhouse:datadog', ALERT_AFTER_DAYS)]);
+  assert.deepEqual(stuck.summary, ['clasp (1 day in a row)']);
+  assert.match(stuck.failures[0], /greenhouse:datadog: unreachable 5 days in a row/);
   const many = unreachableOutcome(Array.from({ length: UNREACHABLE_MAX + 1 }, (_, i) => u(`ashby:b${i}`)));
   assert.equal(many.failures.length, UNREACHABLE_MAX + 1);
   assert.deepEqual(many.summary, []);
@@ -386,18 +387,19 @@ test('unreachable after a retry: a summary line, unless too many or 3 runs in a 
   assert.deepEqual(unreachableOutcome([]), { failures: [], summary: [] });
 });
 
-test('the unreachable streak counts network errors in a row; anything else breaks it (D108)', () => {
+test('unreachable days count network errors in a row by day; anything else breaks it (D108, D115)', () => {
   const s = openStore(':memory:');
-  const run = (status, error) => { const id = s.startScan('ashby:clasp'); s.finishScan(id, { status, error }); };
-  run('error', 'Could not reach https://x: fetch failed');
-  run('ok');
-  run('error', 'https://x returned HTTP 404.');
-  run('error', 'Could not reach https://x: fetch failed');
-  run('error', 'The operation was aborted due to timeout');
-  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 2);
+  const run = (status, error, at) => { const id = s.startScan('ashby:clasp', at); s.finishScan(id, { status, error }); };
+  run('error', 'Could not reach https://x: fetch failed', '2026-11-07T12:00:00');
+  run('ok', null, '2026-11-08T12:00:00');
+  run('error', 'https://x returned HTTP 404.', '2026-11-09T12:00:00');
+  run('error', 'Could not reach https://x: fetch failed', '2026-11-10T12:00:00');
+  run('error', 'The operation was aborted due to timeout', '2026-11-11T12:00:00');
+  run('error', 'The operation was aborted due to timeout', '2026-11-11T18:00:00'); // midday: same day
+  assert.equal(s.unreachableDays('ashby:clasp', isNetworkError), 2);
   const open = s.startScan('ashby:clasp'); // a scan waiting for its retry doesn't count yet
-  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 2);
+  assert.equal(s.unreachableDays('ashby:clasp', isNetworkError), 2);
   s.finishScan(open, { status: 'ok' });
-  assert.equal(s.unreachableStreak('ashby:clasp', isNetworkError), 0);
+  assert.equal(s.unreachableDays('ashby:clasp', isNetworkError), 0);
   s.close();
 });

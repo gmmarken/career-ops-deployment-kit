@@ -15,6 +15,10 @@ import { loadProjectNotes, addMissingSections, linesWithoutNotes } from '../pack
 import { openStore, urlKey } from '../market/store.mjs';
 import { loadWatchlist } from '../extractor/research.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
+import { isTemporary } from '../market/boards.mjs';
+
+// D115: a pack that fails on a connection error (or a cut-off AI call) goes back in the queue once.
+export const PACK_RETRY_NOTE = 'queued again after a connection error';
 import { createClient, readToken } from '../notion/client.mjs';
 import { loadNotionConfig } from '../notion/setup.mjs';
 import { loadConfig, localDate } from './daily.mjs';
@@ -51,6 +55,7 @@ async function build({ dataDir, dry }) {
 
   const store = openStore();
   const failed = [];
+  const requeued = [];
   const blocked = [];
   let paused = null;
   try {
@@ -77,9 +82,16 @@ async function build({ dataDir, dry }) {
       } catch (err) {
         // Usage limit (D68): the rest would fail too; they stay queued for the next run.
         if (isUsageLimit(err.message)) { paused = { done: i, of: todo.length }; break; }
+        const first = err.message.split('\n')[0];
+        if (isTemporary(first) && r.detail !== PACK_RETRY_NOTE) {
+          store.setPack(r.posting_id, { status: 'queued', detail: PACK_RETRY_NOTE });
+          requeued.push(role(r));
+          console.log(`⟳ Prep pack couldn't connect: ${role(r)}: ${first}; queued again for the next run`);
+          continue;
+        }
         store.setPack(r.posting_id, { status: 'failed', detail: err.message.split('\n').slice(0, 3).join(' ') });
-        failed.push(`${role(r)}: ${err.message.split('\n')[0]}`);
-        console.log(`❌ Prep pack FAILED: ${role(r)}: ${err.message.split('\n')[0]}`);
+        failed.push(`${role(r)}: ${first}${isTemporary(first) ? ' (failed twice on a connection error)' : ''}`);
+        console.log(`❌ Prep pack FAILED: ${role(r)}: ${first}`);
       }
     }
     if (todo.length) console.log(`Pack AI calls: model ${PACK_MODEL}, ~$${usage.toFixed(2)} API-equivalent`);
@@ -96,7 +108,7 @@ async function build({ dataDir, dry }) {
       store.setPack(r.posting_id, { notion_status: r.status, ...(contentDue ? { notion_content_at: new Date().toISOString() } : {}) });
     }
     const left = store.packs().filter((r) => r.status === 'queued').length;
-    console.log(`Prep packs done: ${todo.length - failed.length - blocked.length - (paused ? paused.of - paused.done : 0)} ready · ${blocked.length} blocked · ${failed.length} failed · ${left} queued`);
+    console.log(`Prep packs done: ${todo.length - failed.length - blocked.length - requeued.length - (paused ? paused.of - paused.done : 0)} ready · ${blocked.length} blocked · ${failed.length} failed · ${left} queued`);
   } finally { store.close(); }
   const bad = [...blocked.map((b) => `BLOCKED ${b}`), ...failed.map((f) => `FAILED ${f}`)];
   if (bad.length) throw new Error(`${bad.length} prep pack(s) need a look:\n  ${bad.join('\n  ')}`);
