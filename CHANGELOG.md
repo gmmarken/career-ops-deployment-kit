@@ -4,6 +4,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+- Grading no longer opens a role its board's latest scan didn't list. Such a role was usually just taken down, and its "not found" page sent a false 🚨 (2026-11-12, a DoorDash role). It waits: graded if it's back on the next scan, closed if not (D114).
+
 ### Changed
 - Funding news is searched every morning, 10 NYC-focused searches (was 4 a week), each looking back over the time since the last good search (D113). A first run found 7 newly funded NYC companies in a week.
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).

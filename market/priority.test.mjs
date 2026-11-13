@@ -14,3 +14,10 @@ test('pickBatch: best families first, oldest first within a family, capped per c
   assert.deepEqual(pickBatch(todo, { limit: 100, perCompany: 2 }).map((p) => p.id), [4, 8, 7, 5, 1, 6]);
   assert.equal(pickBatch(todo).length, 8); // no caps: everything
 });
+
+test('a role the latest scan missed waits a run instead of failing grading (D114)', async () => {
+  const { missedLastScan } = await import('./priority.mjs');
+  assert.equal(missedLastScan({ miss_count: 1 }), true);
+  assert.equal(missedLastScan({ miss_count: 0 }), false);
+  assert.equal(missedLastScan({}), false); // a board that couldn't be scanned adds no miss
+});
