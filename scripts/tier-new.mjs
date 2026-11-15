@@ -13,7 +13,7 @@ import { gatherFacts, describeCalls } from './pipeline.mjs';
 import { openStore } from '../market/store.mjs';
 import { recordTiered } from '../market/record.mjs';
 import { TARGET_FAMILIES } from '../market/classify.mjs';
-import { pickBatch } from '../market/priority.mjs';
+import { pickBatch, missedLastScan } from '../market/priority.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
 import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
 import { payText } from '../delivery/format.mjs';
@@ -41,10 +41,14 @@ async function main() {
   const wanted = (p) => TARGET_FAMILIES.has(p.title_family) || (p.title_family === 'borderline' && p.text_check === 'hit');
   const regrade = arg('--regrade')?.split(',').map((t) => t.trim()).filter(Boolean) ?? null;
   if (regrade && (!regrade.length || regrade.some((t) => !['S', 'A', 'B', 'C', 'Excluded', 'Walk-away'].includes(t)))) throw new Error('--regrade takes tiers like S,A');
-  const todo = regrade
+  const due = regrade
     ? store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && p.url && regrade.includes(p.tier))
     : store.postings().filter((p) => !p.closed_at && p.in_home_metro === true && wanted(p) && p.url && !store.latestDecision(p.id) && (!since || p.first_seen.slice(0, 10) >= since));
   store.close();
+  // Roles the latest scan didn't see wait a run (D114): most were just taken down.
+  const missed = due.filter(missedLastScan);
+  const todo = due.filter((p) => !missedLastScan(p));
+  if (missed.length) console.log(`${missed.length} role(s) not seen in the latest scan wait (graded if they're back next scan, closed if not): ${missed.map((p) => `${p.company} — ${p.title}`).slice(0, 5).join('; ')}${missed.length > 5 ? `; +${missed.length - 5} more` : ''}`);
   const batch = pickBatch(todo, { limit, perCompany });
   const caps = [limit < Infinity && `${limit} a run`, perCompany < Infinity && `${perCompany} per company`].filter(Boolean).join(', ');
   console.log(regrade

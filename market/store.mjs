@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS funding_news (
 );
 `;
 
-// v6 (Phase 7, D82): job boards that no longer exist ("not found" RETIRE_AFTER runs in a row).
+// v6 (Phase 7, D82): job boards that no longer exist ("not found" RETIRE_AFTER days in a row, D115).
 const SCHEMA_V6 = `
 CREATE TABLE IF NOT EXISTS retired_boards (
   board TEXT PRIMARY KEY, retired_at TEXT NOT NULL, reason TEXT NOT NULL, closed INTEGER NOT NULL
@@ -169,7 +169,7 @@ export const NO_DATE = 'no publish date; not counted';
 /** A raise in a story that doesn't place the company in NYC, waiting for its NYC check (D117). */
 export const NYC_PENDING = 'NYC check pending';
 
-/** A board that answers "not found" this many runs in a row is retired (D82). */
+/** A board that answers "not found" this many days in a row is retired (D82; days since D115). */
 export const RETIRE_AFTER = 3;
 
 function migrate(db, from) {
@@ -542,22 +542,18 @@ class Store {
   boards() { return this.db.prepare('SELECT * FROM boards ORDER BY board').all(); }
 
   // --- Boards that no longer exist (D82) -------------------------------------------
-  /** How many of this board's latest finished scans in a row said "not found" (HTTP 404). */
-  notFoundStreak(board) {
-    let n = 0;
-    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
-      if (s.status === 'error' && /HTTP 404\b/.test(s.error ?? '')) n++; else break;
+  /** Days (on this Mac's calendar) covered by the latest finished scans in a row that match `failed` (D115). */
+  failingDays(board, failed) {
+    const days = new Set();
+    for (const s of this.db.prepare("SELECT status, error, started_at FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
+      if (s.status === 'error' && failed(s.error ?? '')) days.add(new Date(s.started_at).toLocaleDateString('en-CA')); else break;
     }
-    return n;
+    return days.size;
   }
-  /** Runs in a row (latest first) where this board couldn't be reached at all (D108). */
-  unreachableStreak(board, isNetworkError) {
-    let n = 0;
-    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
-      if (s.status === 'error' && isNetworkError(s.error)) n++; else break;
-    }
-    return n;
-  }
+  /** Days in a row this board's scans said "not found" (HTTP 404), counting the latest finished scan. */
+  notFoundDays(board) { return this.failingDays(board, (e) => /HTTP 404\b/.test(e)); }
+  /** Days in a row this board couldn't be reached at all (D108, D115). */
+  unreachableDays(board, isNetworkError) { return this.failingDays(board, isNetworkError); }
   /** Stop scanning a board; its open postings close on the day they were last seen. Returns how many closed. */
   retireBoard(board, reason, at = new Date()) {
     const open = this.db.prepare('SELECT id FROM postings WHERE board = ? AND closed_at IS NULL').all(board);
