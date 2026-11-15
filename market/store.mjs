@@ -164,6 +164,9 @@ CREATE TABLE IF NOT EXISTS prep_packs (
 /** Statuses that used a build slot (they count toward the daily and weekly caps, D85). */
 export const PACK_BUILT = ['ready', 'blocked'];
 
+/** A news story dropped only because its date couldn't be read (D77); it's read again later (D116). */
+export const NO_DATE = 'no publish date; not counted';
+
 /** A board that answers "not found" this many days in a row is retired (D82; days since D115). */
 export const RETIRE_AFTER = 3;
 
@@ -661,11 +664,14 @@ class Store {
   }
 
   /** URLs of funding news items already looked at. */
-  newsSeen() { return new Set(this.db.prepare('SELECT url FROM funding_news').all().map((r) => r.url)); }
+  /** Stories already looked at. One dropped only for having no date is read again (D116: the date reader missed some forms). */
+  newsSeen() { return new Set(this.db.prepare(`SELECT url FROM funding_news WHERE outcome != '${NO_DATE}'`).all().map((r) => r.url)); }
 
   recordNews(n, at = new Date()) {
-    this.db.prepare(`INSERT OR IGNORE INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
+    this.db.prepare(`INSERT INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET published = excluded.published, company = excluded.company, nyc = excluded.nyc, outcome = excluded.outcome,
+        company_id = excluded.company_id, seen_at = excluded.seen_at WHERE funding_news.outcome = '${NO_DATE}'`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
   }
 
   /** Record a funding round seen in a Form D or the news. Returns true if it is new (not already recorded). */

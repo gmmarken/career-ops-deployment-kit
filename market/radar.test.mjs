@@ -120,7 +120,7 @@ test('headlines: company, amount and round read by code; non-company headlines s
   assert.equal(readHeadline('Convective Capital raises an $85 million fund to build disaster resilience'), null);
   assert.equal(amountOf('$2.5 million'), 2_500_000);
   assert.equal(relativeDate('5 days ago', new Date('2026-11-04T12:00:00Z')), '2026-10-30');
-  assert.equal(relativeDate('2 weeks ago'), null);
+  assert.equal(relativeDate('someday'), null);
   assert.ok(isNyc('Clark, a New York-based AI startup'));
   assert.ok(!isNyc('a Baltimore firm'));
 });
@@ -288,4 +288,33 @@ test('credit balance: read from Serper; a missing number or a bad answer fails l
   await assert.rejects(serperBalance('k', { fetchImpl: answer(200, {}) }), /no credit balance/);
   await assert.rejects(serperBalance('k', { fetchImpl: answer(403, {}) }), /HTTP 403\. Check SERPER_API_KEY/);
   await assert.rejects(serperBalance('k', { fetchImpl: async () => { throw new Error('fetch failed'); } }), /Could not reach Serper for the credit balance: fetch failed/);
+});
+
+// --- D116: every Google News date form, and stories dropped for a missing date are read again
+test('news dates: hours, days, weeks, months, yesterday and written dates (D116)', () => {
+  const now = new Date('2026-11-12T12:00:00Z');
+  assert.equal(relativeDate('3 hours ago', now), '2026-11-12');
+  assert.equal(relativeDate('5 days ago', now), '2026-11-07');
+  assert.equal(relativeDate('1 week ago', now), '2026-11-05');
+  assert.equal(relativeDate('2 weeks ago', now), '2026-10-29');
+  assert.equal(relativeDate('1 month ago', now), '2026-10-12'); // 31 days: older than the 30-day limit
+  assert.equal(relativeDate('Yesterday', now), '2026-11-11');
+  assert.equal(relativeDate('Nov 4, 2026', now), '2026-11-04');
+  assert.equal(relativeDate('4 Nov 2026', now), '2026-11-04');
+  assert.equal(relativeDate('2026-11-04T10:00:00Z', now), '2026-11-04');
+  assert.equal(relativeDate('Foo 4, 2026', now), null);
+  assert.equal(relativeDate('', now), null);
+});
+
+test('a story dropped for having no date is read again and can be recorded; others stay seen (D116)', () => {
+  const s = openStore(':memory:');
+  const base = { source: 'news:serper', title: 'NYC AI startup Qualitate raises $25M', nyc: true };
+  s.recordNews({ ...base, url: 'https://a', company: 'Qualitate', outcome: 'no publish date; not counted' });
+  s.recordNews({ ...base, url: 'https://b', outcome: 'not a company-raised-money headline' });
+  assert.deepEqual([...s.newsSeen()], ['https://b']);
+  s.recordNews({ ...base, url: 'https://a', published: '2026-11-05', company: 'Qualitate', outcome: 'recorded' });
+  s.recordNews({ ...base, url: 'https://b', outcome: 'recorded' }); // a decided story isn't overwritten
+  const rows = s.db.prepare('SELECT url, outcome, published FROM funding_news ORDER BY url').all();
+  assert.deepEqual(rows.map((r) => [r.url, r.outcome, r.published]), [['https://a', 'recorded', '2026-11-05'], ['https://b', 'not a company-raised-money headline', null]]);
+  s.close();
 });

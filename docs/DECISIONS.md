@@ -675,3 +675,11 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - 🗑 retired, 🚫 held back, ⏳ paused and 💳 credits low are unchanged.
 **Checked against the logs:** replaying every run since 11-03, each one-day blip since 11-09 stays in the log: the VC lists (11-09 midday), the two cut-off grading calls (11-10), the Ramp text check (11-11) and the two a16z pages (11-12). No item reached day 2. The 11-12 DoorDash 404 is D114's. The 11-04 pay format, the 11-06 Rippling change and the 11-07/08 sleep-broken runs still send 🚨.
 **Trade-off:** a board or source that's broken for good is flagged a day later than before (day 2, not day 1), and becomes a 🚨 on day 5, not the 3rd run.
+
+## D116 — Funding news: every Google News date form is read; date-dropped stories are read again (2026-11-12)
+**Context:** The first daily news search (2026-11-12, D113) looked back a month (the last search was 11-05) and read 67 new headlines, but recorded 3. 22 were dropped as "no publish date": Google News gives a story's age as "3 days ago", "1 week ago", "2 weeks ago", "1 month ago" or a written date, and the reader only knew minutes, hours and days. They included NYC raises such as Qualitate ($25M), Fragment, Overwatch, Mural, Pennant, MARC and Baba.
+**Decision:** The candidate's call (a bug fix within D72/D77; the rule "no date, not counted" stays).
+- `relativeDate` reads minutes, hours, days, weeks (7 days each), months (31 days each, so "1 month ago" is always past the 30-day limit), "yesterday", "Nov 4, 2026", "4 Nov 2026" and ISO dates. A week can be up to 6 days older than it reads; a month is never made to look newer.
+- A story dropped only for having no date is read again when a search finds it, and its row is updated. Every other story stays "seen" and is never overwritten.
+- `market.sh radar --news-window day|week|month` searches now over that window (10 credits), for a one-time catch-up. Used once on 11-12 with "month".
+**Not changed yet:** 39 headlines were not "company raises $X" in a form the reader knows ("AI operating system race heats up as Nevis raises $70 million", "Cuttable adds $20m Series A", "Blacksmith becomes a unicorn after raising $66M"). A wider headline reader is a separate change.
