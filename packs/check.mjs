@@ -12,7 +12,11 @@ const UNIT = { k: 'K', m: 'M', b: 'B', million: 'M', billion: 'B', '%': '%' };
 
 // Names that contain a number aren't claims ("a Fortune 500 go-live" isn't "500 deployments"). Checks read
 // a copy with them spelled out; documents are unchanged (D98).
-const NUMBER_NAMES = [[/\bFortune (500|100|1000)\b/g, 'Fortune-list'], [/\bS&P 500\b/g, 'S&P-index'], [/\bInc\. 5000\b/g, 'Inc-list']];
+// A role's opening time frame ("the first 90 days", "a 30-60-90 plan") is a common phrase, not a claim (D118).
+const DAYS = { 30: 'thirty', 60: 'sixty', 90: 'ninety', 100: 'hundred' };
+const NUMBER_NAMES = [[/\bFortune (500|100|1000)\b/g, 'Fortune-list'], [/\bS&P 500\b/g, 'S&P-index'], [/\bInc\. 5000\b/g, 'Inc-list'],
+  [/\b(first|next|initial) (30|60|90|100)(?=[- ]days?\b)/gi, (_, w, n) => `${w} ${DAYS[n]}`],
+  [/\b30[-/]60[-/]90\b/g, 'thirty-sixty-ninety']];
 export const spellNumberNames = (text) => NUMBER_NAMES.reduce((t, [re, name]) => t.replace(re, name), String(text));
 
 /** Every number in a text: { key: "200K", hedged: bool, plus: bool, raw }. */
