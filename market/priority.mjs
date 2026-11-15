@@ -4,6 +4,13 @@
 // `perCompany` roles from one company per run, so one big board can't take the whole day.
 import { companyKey } from './classify.mjs';
 
+/**
+ * A role the latest scan of its board didn't see (D114): it's probably just been taken down, so its
+ * page would answer "not found" and fail grading. It waits: graded if it's back on the next scan,
+ * closed if it's missed again (CLOSE_AFTER_MISSES).
+ */
+export const missedLastScan = (p) => Number(p.miss_count ?? 0) > 0;
+
 export const FAMILY_PRIORITY = ['deployment_ai_strategist', 'forward_deployed_pm', 'chief_of_staff', 'bizops_so', 'borderline'];
 
 /** Pick up to `limit` roles in priority order, at most `perCompany` per company. */

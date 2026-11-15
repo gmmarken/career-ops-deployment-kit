@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS funding_news (
 );
 `;
 
-// v6 (Phase 7, D82): job boards that no longer exist ("not found" RETIRE_AFTER runs in a row).
+// v6 (Phase 7, D82): job boards that no longer exist ("not found" RETIRE_AFTER days in a row, D115).
 const SCHEMA_V6 = `
 CREATE TABLE IF NOT EXISTS retired_boards (
   board TEXT PRIMARY KEY, retired_at TEXT NOT NULL, reason TEXT NOT NULL, closed INTEGER NOT NULL
@@ -164,7 +164,12 @@ CREATE TABLE IF NOT EXISTS prep_packs (
 /** Statuses that used a build slot (they count toward the daily and weekly caps, D85). */
 export const PACK_BUILT = ['ready', 'blocked'];
 
-/** A board that answers "not found" this many runs in a row is retired (D82). */
+/** A news story dropped only because its date couldn't be read (D77); it's read again later (D116). */
+export const NO_DATE = 'no publish date; not counted';
+/** A raise in a story that doesn't place the company in NYC, waiting for its NYC check (D117). */
+export const NYC_PENDING = 'NYC check pending';
+
+/** A board that answers "not found" this many days in a row is retired (D82; days since D115). */
 export const RETIRE_AFTER = 3;
 
 function migrate(db, from) {
@@ -537,22 +542,18 @@ class Store {
   boards() { return this.db.prepare('SELECT * FROM boards ORDER BY board').all(); }
 
   // --- Boards that no longer exist (D82) -------------------------------------------
-  /** How many of this board's latest finished scans in a row said "not found" (HTTP 404). */
-  notFoundStreak(board) {
-    let n = 0;
-    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
-      if (s.status === 'error' && /HTTP 404\b/.test(s.error ?? '')) n++; else break;
+  /** Days (on this Mac's calendar) covered by the latest finished scans in a row that match `failed` (D115). */
+  failingDays(board, failed) {
+    const days = new Set();
+    for (const s of this.db.prepare("SELECT status, error, started_at FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
+      if (s.status === 'error' && failed(s.error ?? '')) days.add(new Date(s.started_at).toLocaleDateString('en-CA')); else break;
     }
-    return n;
+    return days.size;
   }
-  /** Runs in a row (latest first) where this board couldn't be reached at all (D108). */
-  unreachableStreak(board, isNetworkError) {
-    let n = 0;
-    for (const s of this.db.prepare("SELECT status, error FROM scans WHERE source = ? AND finished_at IS NOT NULL ORDER BY started_at DESC, id DESC").all(board)) {
-      if (s.status === 'error' && isNetworkError(s.error)) n++; else break;
-    }
-    return n;
-  }
+  /** Days in a row this board's scans said "not found" (HTTP 404), counting the latest finished scan. */
+  notFoundDays(board) { return this.failingDays(board, (e) => /HTTP 404\b/.test(e)); }
+  /** Days in a row this board couldn't be reached at all (D108, D115). */
+  unreachableDays(board, isNetworkError) { return this.failingDays(board, isNetworkError); }
   /** Stop scanning a board; its open postings close on the day they were last seen. Returns how many closed. */
   retireBoard(board, reason, at = new Date()) {
     const open = this.db.prepare('SELECT id FROM postings WHERE board = ? AND closed_at IS NULL').all(board);
@@ -665,11 +666,21 @@ class Store {
   }
 
   /** URLs of funding news items already looked at. */
-  newsSeen() { return new Set(this.db.prepare('SELECT url FROM funding_news').all().map((r) => r.url)); }
+  /** Stories already looked at. One dropped only for having no date is read again (D116: the date reader missed some forms). */
+  newsSeen() { return new Set(this.db.prepare(`SELECT url FROM funding_news WHERE outcome != '${NO_DATE}'`).all().map((r) => r.url)); }
+
+  /** Stories waiting for an NYC check (D117), newest first. */
+  newsPending() { return this.db.prepare(`SELECT * FROM funding_news WHERE outcome = '${NYC_PENDING}' ORDER BY COALESCE(published, '') DESC, seen_at DESC`).all(); }
+  /** Settle a story's outcome after its NYC check (D117). */
+  setNewsOutcome(url, outcome, companyId = null) {
+    this.db.prepare('UPDATE funding_news SET outcome = ?, company_id = COALESCE(?, company_id) WHERE url = ?').run(outcome, companyId, url);
+  }
 
   recordNews(n, at = new Date()) {
-    this.db.prepare(`INSERT OR IGNORE INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
+    this.db.prepare(`INSERT INTO funding_news (url, source, title, published, company, nyc, outcome, company_id, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET published = excluded.published, company = excluded.company, nyc = excluded.nyc, outcome = excluded.outcome,
+        company_id = excluded.company_id, seen_at = excluded.seen_at WHERE funding_news.outcome = '${NO_DATE}'`).run(n.url, n.source, n.title, n.published ?? null, n.company ?? null, Number(Boolean(n.nyc)), n.outcome, n.company_id ?? null, new Date(at).toISOString());
   }
 
   /** Record a funding round seen in a Form D or the news. Returns true if it is new (not already recorded). */
