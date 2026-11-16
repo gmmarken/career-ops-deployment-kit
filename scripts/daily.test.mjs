@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText } from './daily.mjs';
+import { sortProblems, runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText } from './daily.mjs';
 import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
@@ -484,4 +484,20 @@ test('a16z company pages get their own name in the ⚠️ line; a lost network a
   assert.match(sent[0], /⚠️ 1 VC company page failing 2\+ days in a row/);
   assert.ok(!isTemporary('ashby:b1: fetch failed (one of 11 boards unreachable after a retry; more than 10 usually means the Mac lost its network)'));
   assert.ok(!isTemporary('ashby:clasp: unreachable 5 days in a row (fetch failed)'));
+});
+
+test('a Notion sync with no answer is a temporary problem, and the step\'s other problems still show (D119)', () => {
+  const out = `Deployment fit: 9 companies changed.
+  ✗ Notion sync: Notion PATCH pages/abc: fetch failed (no answer, even on a retry 30 seconds later)
+market: 2 problem(s); the other sources still ran:
+  research Gnau: claude exited with code 143.
+  Notion sync: Notion PATCH pages/abc: fetch failed (no answer, even on a retry 30 seconds later); 9 companies wait for the next run
+`;
+  const r = sortProblems('radar', out, {}, '2026-11-16');
+  assert.deepEqual(r.real, []);
+  assert.deepEqual(r.temporary.map((t) => [t.key, t.days]), [['research Gnau', 1], ['Notion sync', 1]]);
+  // Day 2 in a row: a ⚠️ line; an error answer from Notion is real the first time.
+  assert.equal(sortProblems('radar', out, { 'radar|Notion sync': { days: 1, last: '2026-11-15' } }, '2026-11-16').temporary[1].days, 2);
+  const denied = 'market: 1 problem(s); the other sources still ran:\n  Notion sync: Notion PATCH pages/abc failed (403 restricted_resource): no access.; 9 companies wait for the next run\n';
+  assert.match(sortProblems('radar', denied, {}, '2026-11-16').real.join('\n'), /Notion sync: .*403 restricted_resource/);
 });

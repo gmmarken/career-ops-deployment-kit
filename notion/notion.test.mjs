@@ -5,7 +5,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient, readToken, notionId, readProp, text } from './client.mjs';
-import { flagLabel, whyText, postingProps, companyProps } from './sync.mjs';
+import { flagLabel, whyText, postingProps, companyProps, syncCarrying, CARRY_KEYS } from './sync.mjs';
+import { openStore } from '../market/store.mjs';
 import { OWNED_BY_YOU, jobsProperties, radarProperties } from './schema.mjs';
 
 test('notionId accepts URLs with slugs and bare ids', () => {
@@ -200,4 +201,43 @@ test('cleaning a duplicate relinks its roles, trashes it, and logs it; a stuck o
   assert.deepEqual(calls[2], ['pages/p2', 'PATCH', { in_trash: true }]);
   assert.match(logs[0], /moved duplicate page "squadai" to the Notion trash .*1 role\(s\) relinked to "Squad"/);
   await assert.rejects(cleanDuplicatePages(client, {}, [radarPage('p1', 'Squad'), radarPage('p2', 'squadai', { status: 'strong' })], dupWl, () => {}), /holds an edit of yours.*Squad: pages "Squad", "squadai"/s);
+});
+
+// --- D119: a Notion call with no answer is tried once more; what didn't sync waits for the next run
+test('Notion client: no answer is tried once more after 30 s; an error answer is not', async () => {
+  const waits = [];
+  const ok = { ok: true, json: async () => ({ id: 'p' }) };
+  let n = 0;
+  const flaky = async () => { if (n++ === 0) throw new TypeError('fetch failed'); return ok; };
+  const c = createClient('t', { fetchFn: flaky, sleep: async (ms) => { waits.push(ms); } });
+  assert.deepEqual(await c.api('pages/p'), { id: 'p' });
+  assert.ok(waits.includes(30_000));
+  const down = createClient('t', { fetchFn: async () => { throw new TypeError('fetch failed'); }, sleep: async () => {} });
+  await assert.rejects(down.api('pages/p', 'PATCH', {}), /Notion PATCH pages\/p: fetch failed \(no answer, even on a retry 30 seconds later\)/);
+  let calls = 0;
+  const bad = createClient('t', { fetchFn: async () => { calls++; return { ok: false, status: 400, json: async () => ({ code: 'validation_error', message: 'bad' }) }; }, sleep: async () => {} });
+  await assert.rejects(bad.api('pages/p', 'PATCH', {}), /failed \(400 validation_error\)/);
+  assert.equal(calls, 1);
+  const other = createClient('t', { fetchFn: async () => { calls++; throw new Error('boom'); }, sleep: async () => {} });
+  await assert.rejects(other.api('pages/p'), /^Error: boom$/);
+  assert.equal(calls, 2);
+});
+
+test('syncCarrying: a failed sync keeps its companies for the next run, which syncs them too (D119)', async () => {
+  const store = openStore(':memory:');
+  const open = () => ({ getMeta: (k) => store.getMeta(k), setMeta: (k, v) => store.setMeta(k, v), close() {} });
+  const asked = [];
+  const down = async (_d, o) => { asked.push(o.companyNames); throw new Error('Notion PATCH pages/x: fetch failed (no answer, even on a retry 30 seconds later)\nmore'); };
+  const r1 = await syncCarrying('/d', 'companyNames', ['Gnau', 'Esger'], { sync: down, open, log: () => {} });
+  assert.deepEqual(r1, { error: 'Notion PATCH pages/x: fetch failed (no answer, even on a retry 30 seconds later)', count: 2, carried: 0 });
+  assert.deepEqual(JSON.parse(store.getMeta(CARRY_KEYS.companyNames)), ['Gnau', 'Esger']);
+  const up = async (_d, o) => { asked.push(o.companyNames); };
+  const r2 = await syncCarrying('/d', 'companyNames', ['Esger', 'Atari'], { sync: up, open, log: () => {} });
+  assert.deepEqual(r2, { error: null, count: 3, carried: 1 });
+  assert.deepEqual(asked[1], ['Gnau', 'Esger', 'Atari']);
+  assert.deepEqual(JSON.parse(store.getMeta(CARRY_KEYS.companyNames)), []);
+  // Nothing new and nothing waiting: no sync at all.
+  assert.deepEqual(await syncCarrying('/d', 'postingIds', [], { sync: up, open, log: () => {} }), { error: null, count: 0, carried: 0 });
+  assert.equal(asked.length, 2);
+  store.close();
 });

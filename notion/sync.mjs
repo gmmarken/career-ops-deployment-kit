@@ -315,3 +315,30 @@ export async function ensureRadarColumns(client, cfg) {
   for (const name of ['Live roles', 'All roles']) if (ds.properties[name]) patch[name] = null;
   if (Object.keys(patch).length) await client.api(`data_sources/${cfg.radar_data_source_id}`, 'PATCH', { properties: patch });
 }
+
+/** Where companies or graded roles wait when their Notion sync failed (D119). */
+export const CARRY_KEYS = { companyNames: 'notion_unsynced_companies', postingIds: 'notion_unsynced_postings' };
+
+/**
+ * Sync these companies (kind 'companyNames') or graded roles ('postingIds'), plus any a failed sync
+ * left for this run (D119). On failure all of them wait for the next run and the error is returned,
+ * not thrown, so the step can report its other problems. Returns { error, count, carried }.
+ */
+export async function syncCarrying(dataDir, kind, ids, { log = console.log, sync = syncAll, open = openStore } = {}) {
+  const key = CARRY_KEYS[kind];
+  if (!key) throw new Error(`syncCarrying: unknown kind ${kind}`);
+  const withStore = (fn) => { const st = open(); try { return fn(st); } finally { st.close(); } };
+  const prev = withStore((st) => JSON.parse(st.getMeta(key) ?? '[]'));
+  const all = [...new Set([...prev, ...ids])];
+  const carried = all.length - new Set(ids).size;
+  if (!all.length) return { error: null, count: 0, carried: 0 };
+  if (carried) log(`Notion: ${carried} left from a run whose sync failed go too.`);
+  try {
+    await sync(dataDir, { log, [kind]: all });
+    if (prev.length) withStore((st) => st.setMeta(key, '[]'));
+    return { error: null, count: all.length, carried };
+  } catch (err) {
+    withStore((st) => st.setMeta(key, JSON.stringify(all)));
+    return { error: err.message.split('\n')[0], count: all.length, carried };
+  }
+}

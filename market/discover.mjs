@@ -37,12 +37,24 @@ export function planQueries(cfg, next = 0) {
   return [...core, ...rot.slice(start), ...rot.slice(0, start)];
 }
 
-/** Is a discovery run due? Returns { due, nextInDays }. Only a run that finished OK counts. */
-export function discoveryDue(lastOkAt, everyDays, now = new Date()) {
-  if (!lastOkAt) return { due: true, nextInDays: 0 };
-  const left = everyDays - (new Date(now) - new Date(lastOkAt)) / DAY_MS;
-  return left <= 0 ? { due: true, nextInDays: 0 } : { due: false, nextInDays: Math.ceil(left) };
+/**
+ * Calendar days between two moments on the Mac's own calendar (D119): yesterday 7:40 AM to today
+ * 7:35 AM is 1 day, though it's under 24 hours.
+ */
+export function calendarDaysSince(lastAt, now = new Date()) {
+  const day = (d) => { const x = new Date(d); return Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / DAY_MS; };
+  return day(now) - day(lastAt);
 }
+
+/** Is a run due once every `everyDays` calendar days? Only a run that finished OK counts. */
+export function dueEvery(lastOkAt, everyDays, now = new Date()) {
+  if (!lastOkAt) return { due: true, nextInDays: 0 };
+  const left = everyDays - calendarDaysSince(lastOkAt, now);
+  return left <= 0 ? { due: true, nextInDays: 0 } : { due: false, nextInDays: left };
+}
+
+/** Is a discovery run due? Returns { due, nextInDays }. */
+export const discoveryDue = dueEvery;
 
 /**
  * One discovery run. `search(q, page)` returns result links. A full first page (10 results)
