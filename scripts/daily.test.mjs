@@ -501,3 +501,11 @@ market: 2 problem(s); the other sources still ran:
   const denied = 'market: 1 problem(s); the other sources still ran:\n  Notion sync: Notion PATCH pages/abc failed (403 restricted_resource): no access.; 9 companies wait for the next run\n';
   assert.match(sortProblems('radar', denied, {}, '2026-11-16').real.join('\n'), /Notion sync: .*403 restricted_resource/);
 });
+
+test('successSummary (D120): new untitled roles get a ⚠️ line with their links', () => {
+  const scan = `${SCAN_OUT}New roles with no title, left out until they get one: OpenAI https://jobs.ashbyhq.com/openai/abc · Acme https://jobs.ashbyhq.com/acme/9\n`;
+  assert.deepEqual(runFacts({ scan }).untitled, ['OpenAI https://jobs.ashbyhq.com/openai/abc', 'Acme https://jobs.ashbyhq.com/acme/9']);
+  const s = successSummary('2026-11-03', { scan, 'tier-new': TIER_OUT });
+  assert.match(s, /⚠️ 2 new roles with no title on the job board, left out until they get one: OpenAI https:\/\/jobs\.ashbyhq\.com\/openai\/abc, Acme/);
+  assert.doesNotMatch(successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': TIER_OUT }), /no title/);
+});

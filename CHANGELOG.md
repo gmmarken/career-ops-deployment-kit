@@ -11,6 +11,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
 ### Fixed
+- A job board role with a blank title no longer fails the whole board. A role we already track keeps its saved title; a new role with no title is left out and listed with its link as a ⚠️ line in the morning text (D120). The 2026-11-16 midday run skipped OpenAI's 834 roles this way.
 - A Notion call that gets no answer is tried once more after 30 seconds. If the sync still fails, the companies or graded roles it couldn't send go with the next run's sync, the step's other problems are still listed, and it's a temporary problem (quiet on day 1, ⚠️ from day 2) instead of a 🚨 (D119). The 2026-11-16 morning run failed this way.
 - The daily news search no longer skips every other day: "due" now counts calendar days, not 24-hour periods (D119). Board discovery too.
 - A prep pack is no longer held back for "the first 90 days" or a "30-60-90" plan in a draft: these are read as phrases, not number claims (D118). Blocked the Trunk Tools pack on 2026-11-13.

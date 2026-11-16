@@ -549,6 +549,7 @@ async function scan() {
     const list = wanted.length ? wanted.map((b) => [b, boards.get(b) ?? null]) : [...boards].filter(([b]) => !retired.has(b));
     const gone = [];
     const counting = []; // "not found" but not yet retired: a summary line, not a failure (D93)
+    const untitled = []; // new postings with no title, left out until they get one (D120)
     if (!list.length) throw new Error('No known job boards yet. Tier a role from an Ashby, Greenhouse or Lever link first, or pass a board like lever:palantir.');
     console.log(`Scanning ${list.length} board(s)…`);
     const retry = []; // couldn't connect: tried once more at the end (D108)
@@ -558,8 +559,12 @@ async function scan() {
         const name = company ?? board.split(':')[1];
         let added = 0;
         for (const p of postings) {
+          // A blank title (D120): keep the saved one, or leave a new posting out and flag it.
+          const t = store.scanTitle(p.url, p.title);
+          if (!t) { untitled.push(`${name} ${p.url}`); console.log(`  ⚠ ${board}: a new role has no title on the board, so it was left out: ${p.url}`); continue; }
+          if (t.kept) console.log(`  · ${board}: blank title on the board; kept the saved title "${t.title}": ${p.url}`);
           const { isNew } = store.seePosting({
-            url: p.url, board, company: name, title: p.title, locations: p.locations,
+            url: p.url, board, company: name, title: t.title, locations: p.locations,
             in_home_metro: p.locations.length ? inHomeMetro(p.locations, rules.candidate) : null,
             workplace: p.workplace, pay: p.pay, posted_at: p.posted_at,
           });
@@ -625,6 +630,7 @@ async function scan() {
       if (out.summary.length) console.log(`Unreachable after a retry (postings kept open; checked again next run): ${out.summary.join(' · ')}`);
     }
     if (gone.length) console.log(`Retired ${gone.length} job board(s) that no longer exist: ${gone.join(', ')}`);
+    if (untitled.length) console.log(`New roles with no title, left out until they get one: ${untitled.join(' · ')}`);
     if (counting.length) console.log(`Not found (retired after ${RETIRE_AFTER} days in a row): ${counting.join(' · ')}`);
     if (unreadable.size) console.log(`Not scanned (no board reader yet): ${[...unreadable].map(([c, b]) => `${c} (${b})`).join(', ')}`);
 
