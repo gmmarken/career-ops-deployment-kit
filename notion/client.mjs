@@ -1,11 +1,13 @@
 // Minimal Notion API client (API version 2025-09-03, data sources). Paced under
-// Notion's ~3 requests/second limit. No retries: any error stops the run with
-// Notion's own message (fail loudly; a retry policy would need its own decision).
+// Notion's ~3 requests/second limit. A call that gets no answer at all (no network, a timeout) is
+// tried once more after 30 seconds (D119); any answer that is an error stops with Notion's own message.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { isNetworkError } from '../market/boards.mjs';
 
 export const NOTION_VERSION = '2025-09-03';
 const MIN_GAP_MS = 350;
+export const RETRY_WAIT_MS = 30_000;
 
 /** Read NOTION_ACCESS_TOKEN from <data dir>/.env without printing it. */
 export function readToken(dataDir = process.env.CAREER_OPS_DATA_DIR) {
@@ -34,11 +36,20 @@ export function createClient(token, { fetchFn = fetch, sleep = (ms) => new Promi
     if (wait > 0) await sleep(wait);
     last = Date.now();
     calls++;
-    const res = await fetchFn(`https://api.notion.com/v1/${path}`, {
+    const send = () => fetchFn(`https://api.notion.com/v1/${path}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, 'Notion-Version': NOTION_VERSION, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
+    let res;
+    try { res = await send(); } catch (err) {
+      if (!isNetworkError(err.message)) throw err;
+      await sleep(RETRY_WAIT_MS);
+      calls++;
+      try { res = await send(); } catch (again) {
+        throw new Error(`Notion ${method} ${path}: ${again.message} (no answer, even on a retry ${RETRY_WAIT_MS / 1000} seconds later)`);
+      }
+    }
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const hint = res.status === 401 ? ' Check NOTION_ACCESS_TOKEN.' : res.status === 404 ? ' Is the page shared with the integration (••• → Connections)?' : res.status === 429 ? ' Rate limited; run again in a minute.' : '';

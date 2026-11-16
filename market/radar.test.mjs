@@ -160,6 +160,10 @@ test('news search: a bad key or no credits stops the remaining searches', async 
   assert.ok(r.stopped);
   assert.equal(r.errors.length, 1);
   assert.deepEqual(newsSearchDue(null, 7), { due: true, nextInDays: 0 });
+  // D119: counted in calendar days, so a run a few minutes earlier than yesterday's is still due.
+  assert.equal(newsSearchDue(new Date(2026, 10, 15, 7, 40), 1, new Date(2026, 10, 16, 7, 35)).due, true);
+  assert.deepEqual(newsSearchDue(new Date(2026, 10, 16, 7, 0), 1, new Date(2026, 10, 16, 13, 0)), { due: false, nextInDays: 1 });
+  assert.deepEqual(newsSearchDue(new Date(2026, 10, 11, 23, 0), 5, new Date(2026, 10, 14, 1, 0)), { due: false, nextInDays: 2 });
   assert.equal(newsSearchDue('2026-11-01T00:00:00Z', 7, new Date('2026-11-04T00:00:00Z')).due, false);
   store.close();
 });

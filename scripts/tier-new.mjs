@@ -15,7 +15,7 @@ import { recordTiered } from '../market/record.mjs';
 import { TARGET_FAMILIES } from '../market/classify.mjs';
 import { pickBatch, missedLastScan } from '../market/priority.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
-import { pullCompanyEdits, syncAll } from '../notion/sync.mjs';
+import { pullCompanyEdits, syncCarrying } from '../notion/sync.mjs';
 import { payText } from '../delivery/format.mjs';
 
 const arg = (n) => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -82,7 +82,9 @@ async function main() {
       console.log(`  [${i + 1}/${batch.length}] FAILED   ${p.company} — ${p.title}: ${err.message.split('\n')[0]}`);
     }
   }
-  if (done.length) await syncAll(dataDir, { postingIds: done.map((d) => d.id) });
+  // A failed sync is reported with the other problems; its roles go with the next run's sync (D119).
+  const synced = await syncCarrying(dataDir, 'postingIds', done.map((d) => d.id));
+  if (synced.error) failed.push(`Notion sync: ${synced.error}; ${synced.count} graded role(s) wait for the next run`);
   const byTier = done.reduce((m, d) => ({ ...m, [d.tier]: (m[d.tier] ?? 0) + 1 }), {});
   console.log(`\nTiered ${done.length}: ${Object.entries(byTier).map(([t, n]) => `${t} ${n}`).join(' · ')}`);
   console.log(`AI calls: ${calls.length}, ~$${calls.reduce((s, c) => s + (c.cost_usd_equivalent ?? 0), 0).toFixed(2)} API-equivalent`);
@@ -90,7 +92,9 @@ async function main() {
     const left = batch.length - done.length - failed.length;
     console.log(`Paused: Claude usage limit reached after ${done.length} of ${batch.length} graded; ${left} left for the next run.`);
   }
-  if (failed.length) throw new Error(`${failed.length} role(s) failed and were skipped:\n  ${failed.join('\n  ')}`);
+  const roles = failed.filter((f) => !f.startsWith('Notion sync: ')).length;
+  const head = [roles && `${roles} role(s) failed and were skipped`, synced.error && 'the Notion sync failed'].filter(Boolean).join('; ');
+  if (failed.length) throw new Error(`${head}:\n  ${failed.join('\n  ')}`);
 }
 
 main().catch((err) => { console.error(`tier-new: ${err.message}`); process.exit(1); });

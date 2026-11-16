@@ -28,7 +28,7 @@ import { checkRadarConfig, companyIndex, runFormD, runTechCrunch, runNewsSearch,
 import { describeCalls } from '../scripts/pipeline.mjs';
 import { openStore, RETIRE_AFTER } from './store.mjs';
 import { recordTiered, rulesHash } from './record.mjs';
-import { syncAll, pullCompanyEdits } from '../notion/sync.mjs';
+import { syncAll, syncCarrying, pullCompanyEdits } from '../notion/sync.mjs';
 import { listBoard, boardFromUrl, fetchPosting } from '../extractor/ats.mjs';
 import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.mjs';
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
@@ -342,7 +342,11 @@ async function radar() {
   for (const name of refitAll()) touched.add(name);
 
   if (noNotion) console.log(`Notion: skipped (--no-notion); ${touched.size} compan${touched.size === 1 ? 'y' : 'ies'} not synced.`);
-  else if (touched.size) await syncAll(dataDir, { companyNames: [...touched] });
+  else {
+    // A failed sync doesn't hide the other problems; its companies go with the next run's sync (D119).
+    const s = await syncCarrying(dataDir, 'companyNames', [...touched]);
+    if (s.error) { failures.push(`Notion sync: ${s.error}; ${s.count} compan${s.count === 1 ? 'y waits' : 'ies wait'} for the next run`); console.log(`  ✗ Notion sync: ${s.error}`); }
+  }
   if (failures.length) throw new Error(`${failures.length} problem(s); the other sources still ran:\n  ${failures.join('\n  ')}`);
 }
 

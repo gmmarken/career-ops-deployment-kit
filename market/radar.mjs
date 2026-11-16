@@ -14,6 +14,7 @@ import { deploymentFit } from '../engine/fit.mjs';
 import { NO_DATE, NYC_PENDING } from './store.mjs';
 import { isUsageLimit } from '../extractor/claude.mjs';
 import { nycVerdict } from '../extractor/nyc-check.mjs';
+import { dueEvery } from './discover.mjs';
 
 export const FORM_D_SOURCE = 'form_d';
 export const TECHCRUNCH_SOURCE = 'news:techcrunch';
@@ -293,12 +294,8 @@ export async function runNycChecks(store, idx, { check, limit, maxAgeDays, now =
   return out;
 }
 
-/** Is the news search due? Only a run that finished OK counts. */
-export function newsSearchDue(lastOkAt, everyDays, now = new Date()) {
-  if (!lastOkAt) return { due: true, nextInDays: 0 };
-  const left = everyDays - (new Date(now) - new Date(lastOkAt)) / DAY_MS;
-  return left <= 0 ? { due: true, nextInDays: 0 } : { due: false, nextInDays: Math.ceil(left) };
-}
+/** Is the news search due? Counted in calendar days (D119); only a run that finished OK counts. */
+export const newsSearchDue = dueEvery;
 
 /**
  * Serper news search (daily, D113). search(q) → [{ title, link, snippet, date, source }].

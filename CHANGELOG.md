@@ -11,6 +11,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
 ### Fixed
+- A Notion call that gets no answer is tried once more after 30 seconds. If the sync still fails, the companies or graded roles it couldn't send go with the next run's sync, the step's other problems are still listed, and it's a temporary problem (quiet on day 1, ⚠️ from day 2) instead of a 🚨 (D119). The 2026-11-16 morning run failed this way.
+- The daily news search no longer skips every other day: "due" now counts calendar days, not 24-hour periods (D119). Board discovery too.
 - A prep pack is no longer held back for "the first 90 days" or a "30-60-90" plan in a draft: these are read as phrases, not number claims (D118). Blocked the Trunk Tools pack on 2026-11-13.
 - Funding news dated "1 week ago", "2 weeks ago", "1 month ago" or with a written date is no longer dropped as undated. The 2026-11-12 search had dropped 22 of 67 headlines this way, including NYC raises such as Qualitate's $25M. Stories dropped only for a missing date are read again. `market.sh radar --news-window month` runs a one-time catch-up (D116).
 - Grading no longer opens a role its board's latest scan didn't list. Such a role was usually just taken down, and its "not found" page sent a false 🚨 (2026-11-12, a DoorDash role). It waits: graded if it's back on the next scan, closed if not (D114).
