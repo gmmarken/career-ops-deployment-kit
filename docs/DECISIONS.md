@@ -719,3 +719,12 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - A new untitled role is left out of the scan and listed in the morning text from day 1: "⚠️ N new role(s) with no title on the job board, left out until they get one: <company> <link>". It's added normally once the board gives it a title.
 - Recording a posting with no title still throws, so any other path that tries is still loud.
 **Trade-off:** while a tracked role's title is blank, we keep showing its old title, which may be out of date if the company is renaming it. A new untitled role's first-seen date is the day it gets a title, not the day it first appeared.
+
+## D121 — The meaning check reads your whole CV, not just its bullets (2026-11-17)
+**Context:** The meaning check (D106) had held 4 prep packs. Three were true statements: "I'm based in Brooklyn" (Rillet, Clarion) and "three years at Slalom" (Traversal, Jun 2022 – Sep 2025). Both facts are in cv.md, in the Location line and the job's date line, but the check was only shown the summary, bullets, skills and approved facts. The fourth (Method: an agent "for 10+ director-level stakeholders' analytics team") was a real stretch, correctly held. Clarion is an S-tier role.
+**Options:** (A) show the check the CV's Location line and each job's title, company, place and dates; (B) A plus a "second look": a stronger AI pass on flagged lines that must quote supporting words (checked by code) and can clear the block with a ⚠️ note.
+**Decision:** Gabriel's call: option A.
+- Every line checked against "all sources" (summary, cover letter, outreach) also gets `Location:` and one `Job:` line per job. A tailored CV bullet's source also gets its own job's `Job:` line.
+- Email, phone and LinkedIn are never shown to the check.
+- The prompt says a length of time worked out from a job's dates is `same` unless it rounds up, which is `stronger`.
+**Trade-off:** a different kind of false block can still happen; B stays an easy add if one does. B was not chosen because a second pass could clear a real stretch like Method's: the quoted words exist in the CV but don't support the claim, and a quote check can't catch that.

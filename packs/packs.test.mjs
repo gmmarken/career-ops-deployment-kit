@@ -11,7 +11,7 @@ import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mj
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
-import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, readme, meaningPairs, meaningVerdicts, meaningMarkdown } from './build.mjs';
+import { checkDocs, prepClaims, companyMarkdown, slug, fitReportMarkdown, readme, meaningPairs, meaningVerdicts, meaningMarkdown, cvFactLines } from './build.mjs';
 import { spellNumberNames } from './check.mjs';
 import { openStore } from '../market/store.mjs';
 import { refreshQueue } from '../scripts/packs.mjs';
@@ -432,7 +432,7 @@ test('meaning check: every line you would send is paired with its source; a skip
   const pairs = meaningPairs({ cv, lines, tailored: t, docs });
   assert.deepEqual(pairs.map((p) => p.where), ['CV, Acme description', 'CV, Acme', 'CV, Acme', 'CV, Beta Co', 'CV summary', 'cover letter', 'outreach to the hiring manager']);
   assert.equal(pairs[0].source, 'Analytics partner to 10+ leaders.');
-  assert.match(pairs[1].source, /^Built an AI agent that maps files/);
+  assert.match(pairs[1].source, /^Job: .*Acme.*\nBuilt an AI agent that maps files/);
   const v = meaningVerdicts(pairs, { lines: [{ id: 'L1', verdict: 'same', what_changed: null }, { id: 'L2', verdict: 'new_claim', what_changed: '"used by 50 analysts": the source has no user count' }] });
   assert.equal(v[1].verdict, 'new_claim');
   assert.equal(v[2].verdict, 'stronger'); // no verdict returned → flagged, not passed
@@ -445,4 +445,16 @@ test('a number glued to a letter is a name, not a claim: B2B, S3 (D107)', () => 
   assert.deepEqual(numberProblems("I haven't worked in B2B SaaS, but I built an S3-fed job.", 'Built an automated, S3-fed Python job.'), []);
   assert.deepEqual(numbers('B2B and Q4').map((n) => n.key), []);
   assert.match(numberProblems('Grew revenue 2B.', 'none')[0] ?? '', /"2B" is not in the source/);
+});
+
+test('meaning check sources include your Location and each job\'s title, place and dates, never contact details (D121)', () => {
+  const f = cvFactLines(cv);
+  if (cv.candidate.location) assert.equal(f[0], `- Location: ${cv.candidate.location}`);
+  assert.equal(f.filter((l) => l.startsWith('- Job: ')).length, cv.experience.length);
+  for (const j of cv.experience) assert.ok(f.some((l) => l.includes(j.company) && (!j.period || l.includes(j.period))));
+  const docs = { cover_letter: 'Dear Hiring Team,\n\nI am based nearby and spent three years consulting at Acme before this role.\n\nSincerely, Pat', outreach: { leader_note: null, hiring_manager_note: null } };
+  const pairs = meaningPairs({ cv, lines, tailored: structuredClone(good), docs });
+  const letter = pairs.find((p) => p.where === 'cover letter');
+  for (const l of f) assert.ok(letter.source.includes(l));
+  for (const k of ['email', 'phone', 'linkedin']) if (cv.candidate[k]) assert.ok(!pairs.some((p) => p.source.includes(cv.candidate[k])), `${k} must not be a source`);
 });

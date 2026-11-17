@@ -310,16 +310,28 @@ async function coJson(args, what, run) {
 }
 
 /** The lines the meaning check reads (D106): every line you'd send, with its source text. */
+/** One line for a job's own details: title, company, place and dates (D121). */
+export const jobLine = (j) => `Job: ${[j.role, j.company, j.location].filter(Boolean).join(', ')}${j.period ? ` (${j.period})` : ''}`;
+
+/** The CV's header facts the meaning check may use (D121): Location and each job's details. Contact details stay out. */
+export function cvFactLines(cv) {
+  return [...(cv.candidate?.location ? [`- Location: ${cv.candidate.location}`] : []), ...cv.experience.map((j) => `- ${jobLine(j)}`)];
+}
+
 export function meaningPairs({ cv, lines, tailored, docs, approved = '' }) {
   // "All" sources: every cv.md line, the skills list, and your other approved facts (profile stories, allow_facts).
-  const all = [...[...lines.values()].map((l) => `- ${l.text}`), ...cv.skills.map((s) => `- Skills, ${s.category}: ${s.items.join(', ')}`), approved].filter(Boolean).join('\n');
+  // D121: also the CV's Location line and each job's title, company, place and dates (never email, phone or LinkedIn).
+  const all = [...cvFactLines(cv), ...[...lines.values()].map((l) => `- ${l.text}`), ...cv.skills.map((s) => `- Skills, ${s.category}: ${s.items.join(', ')}`), approved].filter(Boolean).join('\n');
   const out = [];
   let n = 0;
   for (const e of tailored.experience) {
     const job = cv.experience.find((j) => j.id === e.entry_id);
     if (!job) continue;
     if (e.context && job.context && e.context !== job.context) out.push({ id: `L${++n}`, where: `CV, ${job.company} description`, text: e.context, source: job.context });
-    for (const b of e.bullets) out.push({ id: `L${++n}`, where: `CV, ${job.company}`, text: b.text, source: b.source_ids.map((id) => lines.get(id)?.text).filter(Boolean).join('\n') || all });
+    for (const b of e.bullets) {
+      const cited = b.source_ids.map((id) => lines.get(id)?.text).filter(Boolean);
+      out.push({ id: `L${++n}`, where: `CV, ${job.company}`, text: b.text, source: cited.length ? [jobLine(job), ...cited].join('\n') : all });
+    }
   }
   out.push({ id: `L${++n}`, where: 'CV summary', text: tailored.summary, source: all });
   for (const para of String(docs.cover_letter).split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x.length > 40)) out.push({ id: `L${++n}`, where: 'cover letter', text: para, source: all });
