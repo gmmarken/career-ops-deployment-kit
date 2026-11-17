@@ -286,13 +286,13 @@ export function creditText(c) {
 const TIER_ORDER = ['S', 'A', 'B', 'C', 'Walk-away', 'Excluded'];
 const MAX_LISTED = 6;
 
-/** The success text (D63): a calm morning summary and a nudge to go apply. */
-export function successSummary(date, outputs, quiet = {}) {
+/** The success text (D63): a calm summary and a nudge to go apply. The midday run sends a shorter one too (D122). */
+export function successSummary(date, outputs, quiet = {}, { midday = false } = {}) {
   const f = runFacts(outputs);
   // Paused on the Claude usage limit (D68): nothing is broken, so no 🚨 (D112).
   const lines = f.paused
     ? [`⏳ Job search: grading PAUSED (${shortDate(date)})`, `Claude usage limit hit after ${f.paused.graded} of ${f.paused.of} roles. Nothing is broken; the rest are graded on the next run.`]
-    : [`✅ Job search: morning run done (${shortDate(date)})`];
+    : [`✅ Job search: ${midday ? 'midday' : 'morning'} run done (${shortDate(date)})`];
   lines.push(f.boards == null ? 'Boards: couldn\'t read the count (see log)' : `${f.boards} boards checked · ${f.newPostings} new postings`);
   if (f.queued == null) lines.push('New roles: couldn\'t read the count (see log)');
   else if (!f.graded.length) lines.push('No new NYC roles to grade today.');
@@ -320,7 +320,8 @@ export function successSummary(date, outputs, quiet = {}) {
   lines.push(...quietProblemLines(quiet));
   if (f.creditsLow) lines.push(creditText(f.creditsLow));
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 days in a row): ${f.retired.names}`);
-  if (f.packsReady.length) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
+  // Midday texts each ready pack on its own (D89), so its summary doesn't repeat them.
+  if (f.packsReady.length && !midday) lines.push(`📦 ${f.packsReady.length} prep pack${f.packsReady.length === 1 ? '' : 's'} ready: ${f.packsReady.join('; ')} (Notion → Prep pack)`);
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
   if (f.packsQueued) lines.push(`🗂 ${f.packsQueued} more prep pack${f.packsQueued === 1 ? '' : 's'} queued`);
   if (f.weekly) lines.push('📧 Weekly email sent to you');
@@ -477,7 +478,7 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
   if (streaks) { try { streaks.write(nextStreaks(prev, seen, Object.keys(outputs), date)); } catch (err) { problems.push({ step: 'alert counts', detail: err.message }); } }
   for (const t of temporary) log(`Temporary problem (tried again next run): ${t.step}: ${t.key}: ${t.error}\n`);
   for (const h of held) log(`Prep pack held back by the fact check: ${h.key}\n`);
-  // The morning run sends one summary text (D63); the midday run texts only on a new S role, a held pack or a real problem (D79, D112).
+  // Each run sends one summary text: the morning (D63) and, since D122, the midday run too. A held pack still gets its own text (D112).
   if (problems.length) {
     const notice = summarize(date, problems, logPath, outputs, { midday, temporary, held });
     await notify(notice);
@@ -488,7 +489,8 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
     log('\nMorning summary sent.\n');
   } else {
     for (const h of held) { await notify(heldText(h)); log(`Held-pack text sent: ${h.key}\n`); }
-    log('\nMidday run: no real problem; no summary text (S-tier and held-pack texts only).\n');
+    await notify(successSummary(date, outputs, { temporary, held }, { midday: true }));
+    log('\nMidday summary sent.\n');
   }
   const notified = true;
   const note = temporary.length ? ` (${temporary.length} temporary problem(s), tried again next run)` : '';

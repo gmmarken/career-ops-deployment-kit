@@ -248,7 +248,7 @@ test('a failed run still lists the S and A roles it graded; an unsendable S text
   assert.match(sent[0], /JOB SEARCH RUN FAILED[\s\S]*❌ S-tier text: Pace — Deployment Strategist: iMessage send failed/);
 });
 
-test('midday run: scan and grade only roles first seen today; texts only for a new S role or a failure (D79)', async () => {
+test('midday run: scan and grade only roles first seen today; a short summary text, or the failure text (D79, D122)', async () => {
   const calls = [];
   const run = async (cmd, args) => { calls.push([cmd.split('/').pop(), ...args]); return { code: 0, out: 'ok' }; };
   const steps = defaultSteps({ dataDir: '/x', date: '2026-11-05', cfg: CFG, run, midday: true });
@@ -258,7 +258,9 @@ test('midday run: scan and grade only roles first seen today; texts only for a n
   assert.deepEqual(calls[2], ['packs.sh', 'build']);
   const quiet = [];
   await runDaily({ date: '2026-11-05', steps: [{ name: 'tier-new', go: async () => ({ ok: true, out: TIER_OUT.replace(/S {9}/, 'B         ') }) }], log: () => {}, notify: async (t) => { quiet.push(t); }, logPath: 'L', midday: true });
-  assert.deepEqual(quiet, []);
+  assert.equal(quiet.length, 1);
+  assert.match(quiet[0], /^✅ Job search: midday run done \(Thu, Nov 5\)\n/);
+  assert.match(quiet[0], /new NYC roles? graded: .*B/);
   const loud = [];
   await runDaily({ date: '2026-11-05', steps: [{ name: 'scan', go: async () => ({ ok: false, out: 'market: 1 problem(s)' }) }], log: () => {}, notify: async (t) => { loud.push(t); }, logPath: 'L', midday: true });
   assert.match(loud[0], /JOB SEARCH RUN FAILED 🚨🚨\nMidday run, Thu, Nov 5/);
@@ -316,7 +318,10 @@ test('packs: the morning summary lists ready packs and the queue; the midday run
   assert.doesNotMatch(successSummary('2026-11-05', {}), /prep pack/);
   const sent = [];
   await runDaily({ date: '2026-11-05', steps: [{ name: 'packs', go: async () => ({ ok: true, out: PACKS_OUT }) }], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L', midday: true });
-  assert.deepEqual(sent, [packText('Pace — Deployment Strategist')]);
+  assert.equal(sent[0], packText('Pace — Deployment Strategist'));
+  assert.match(sent[1], /^✅ Job search: midday run done/);
+  assert.doesNotMatch(sent[1], /prep pack ready/); // already texted on its own
+  assert.equal(sent.length, 2);
 });
 
 test('packs: a blocked pack is a 🚫 line, not a failure; a pack that failed to build is real (D112)', async () => {

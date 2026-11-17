@@ -728,3 +728,12 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - Email, phone and LinkedIn are never shown to the check.
 - The prompt says a length of time worked out from a job's dates is `same` unless it rounds up, which is `stronger`.
 **Trade-off:** a different kind of false block can still happen; B stays an easy add if one does. B was not chosen because a second pass could clear a real stretch like Method's: the quoted words exist in the CV but don't support the claim, and a quote check can't catch that.
+
+## D122 — The midday run sends a summary text every day (2026-11-17)
+**Context:** The midday run (D79) texted only for a new S-tier role, a held pack or a real problem. On 2026-11-17 it ran cleanly (440 boards, 5 roles graded, best a B) and sent nothing, so Gabriel couldn't tell it had run.
+**Options:** (A) a short summary text every midday run; (B) keep it quiet unless something needs attention.
+**Decision:** Gabriel's call: option A.
+- Same format as the morning summary, headed "✅ Job search: midday run done": boards checked, new postings, roles graded by tier with S and A listed, ⚠️ lines from day 2 (D115), and roles still waiting.
+- Packs built at midday still get their own text (D89), so the summary doesn't list them again. A held pack still gets its own text (D112), then the summary.
+- A run with a real problem still sends only the 🚨 failure text.
+**Trade-off:** one more text a day, even when nothing changed.
