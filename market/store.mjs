@@ -287,6 +287,17 @@ class Store {
   }
 
   /**
+   * The title to record for a posting a board lists (D120). A blank title on a posting we
+   * already know keeps its saved title ({ title, kept: true }); a blank title on a new posting
+   * gives null, so the scan leaves that one posting out and flags it. Never a made-up title.
+   */
+  scanTitle(url, title) {
+    if (title?.trim()) return { title, kept: false };
+    const saved = url ? this.db.prepare('SELECT title FROM postings WHERE url_key = ?').get(urlKey(url))?.title : null;
+    return saved ? { title: saved, kept: true } : null;
+  }
+
+  /**
    * Record that a posting was seen live on `at`. New postings get first_seen; known ones
    * get last_seen bumped and, if they had been closed, reopen. Returns { id, isNew }.
    */

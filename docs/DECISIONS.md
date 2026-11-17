@@ -710,3 +710,12 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - **Alerts:** a sync with no answer is a temporary problem (D115): only logged on day 1, ⚠️ from day 2, 🚨 from day 5. An error answer from Notion is real (🚨) the first time.
 - **Due dates in calendar days:** the news search (every day) and board discovery (every 5 days) now count days on the Mac's calendar, not 24-hour periods.
 **Trade-off:** a page-create call that reached Notion but whose answer was lost could make a duplicate page on the retry. D110 already trashes a duplicate Radar page that holds no edits of yours. While a sync is failing, Notion runs behind: graded roles catch up at the next run (midday or morning), Radar companies at the next morning run.
+
+## D120 — A role with a blank title keeps its saved title, or is left out and flagged (2026-11-16)
+**Context:** The 2026-11-16 midday run failed: OpenAI's public Ashby board listed one role ("Growth Marketing, Creative and Ad Operations", tracked since 11-03) with an empty title, likely an edit in progress at OpenAI. Recording a posting needs a title, so that one role failed the whole board and OpenAI's other 833 roles went unscanned (none were closed, by design). The error wasn't temporary, so it sent 🚨.
+**Options:** (A) a role we already track (same link) keeps its saved title and counts as still open; a new role with no title is left out and flagged ⚠️ with its link; the rest of the board scans normally; (B) no change: the board fails every run until the company fixes the title; (C) count a blank title as temporary (D115): quieter alerts, but the board still goes unscanned.
+**Decision:** Gabriel's call: option A.
+- The saved title is the one we recorded from the board earlier; no title is ever made up. Keeping it is written to the log.
+- A new untitled role is left out of the scan and listed in the morning text from day 1: "⚠️ N new role(s) with no title on the job board, left out until they get one: <company> <link>". It's added normally once the board gives it a title.
+- Recording a posting with no title still throws, so any other path that tries is still loud.
+**Trade-off:** while a tracked role's title is blank, we keep showing its old title, which may be out of date if the company is renaming it. A new untitled role's first-seen date is the day it gets a title, not the day it first appeared.

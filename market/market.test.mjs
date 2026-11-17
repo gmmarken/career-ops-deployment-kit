@@ -403,3 +403,14 @@ test('unreachable days count network errors in a row by day; anything else break
   assert.equal(s.unreachableDays('ashby:clasp', isNetworkError), 0);
   s.close();
 });
+
+test('scanTitle (D120): a blank title keeps the saved one; a new untitled posting is left out', () => {
+  const s = openStore(':memory:');
+  s.seePosting(P(), '2026-01-05');
+  assert.deepEqual(s.scanTitle(P().url, 'Renamed Role'), { title: 'Renamed Role', kept: false });
+  assert.deepEqual(s.scanTitle(P().url, ''), { title: 'AI Deployment Strategist', kept: true });
+  assert.deepEqual(s.scanTitle('https://jobs.ashbyhq.com/ACME/1/application', '  '), { title: 'AI Deployment Strategist', kept: true });
+  assert.equal(s.scanTitle('https://jobs.ashbyhq.com/acme/2', ''), null);
+  assert.equal(s.scanTitle(undefined, ''), null);
+  assert.throws(() => s.seePosting(P({ title: '' })), /Posting title is required/);
+});

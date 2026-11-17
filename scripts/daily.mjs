@@ -247,6 +247,7 @@ export function runFacts(outputs) {
   const retired = scan.match(/^Retired (\d+) job board\(s\) that no longer exist: (.+)$/m);
   const notFound = scan.match(/^Not found \(retired after \d+ (?:runs|days) in a row\): (.+)$/m);
   const unreachable = scan.match(/^Unreachable after a retry \(.*?\): (.+)$/m);
+  const untitled = scan.match(/^New roles with no title, left out until they get one: (.+)$/m);
   const vcUnreachable = scan.match(/^VC job lists unreachable after a retry \(.*?\): (.+)$/m);
   const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
   const packs = String(outputs.packs ?? '');
@@ -268,6 +269,7 @@ export function runFacts(outputs) {
     notFound: notFound ? notFound[1].split(' · ').map((x) => { const m = x.match(/^(.+) (\d+)\/(\d+)$/); return m ? { name: m[1], days: Number(m[2]), of: Number(m[3]) } : { name: x, days: 1, of: null }; }) : [],
     unreachable: unreachable ? unreachable[1].split(' · ').map(dayItem) : [],
     vcUnreachable: vcUnreachable ? vcUnreachable[1].split(' · ').map(dayItem) : [],
+    untitled: untitled ? untitled[1].split(' · ') : [],
     weekly,
     packsReady,
     packsQueued: packsQueued ? Number(packsQueued[1]) : null,
@@ -313,6 +315,8 @@ export function successSummary(date, outputs, quiet = {}) {
   if (un.length) lines.push(`⚠️ ${un.length} job board${un.length === 1 ? '' : 's'} couldn't connect ${WARN_AFTER_DAYS}+ days in a row, even on a retry; checked again next run: ${un.map((b) => `${b.name} (${daysInARow(b.days)})`).join(', ')}`);
   const vc = f.vcUnreachable.filter((b) => b.days >= WARN_AFTER_DAYS);
   if (vc.length) lines.push(`⚠️ ${vc.length} VC job list${vc.length === 1 ? '' : 's'} couldn't connect ${WARN_AFTER_DAYS}+ days in a row, even on a retry; checked again next run: ${vc.map((b) => `${b.name} (${daysInARow(b.days)})`).join(', ')}`);
+  // D120: shown from day 1, as Gabriel asked.
+  if (f.untitled.length) lines.push(`⚠️ ${f.untitled.length} new role${f.untitled.length === 1 ? '' : 's'} with no title on the job board, left out until ${f.untitled.length === 1 ? 'it gets' : 'they get'} one: ${f.untitled.join(', ')}`);
   lines.push(...quietProblemLines(quiet));
   if (f.creditsLow) lines.push(creditText(f.creditsLow));
   if (f.retired) lines.push(`🗑 Retired ${f.retired.count} job board${f.retired.count === 1 ? '' : 's'} that no longer exist${f.retired.count === 1 ? 's' : ''} (not found 3 days in a row): ${f.retired.names}`);
