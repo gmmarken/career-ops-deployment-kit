@@ -737,3 +737,11 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - Packs built at midday still get their own text (D89), so the summary doesn't list them again. A held pack still gets its own text (D112), then the summary.
 - A run with a real problem still sends only the 🚨 failure text.
 **Trade-off:** one more text a day, even when nothing changed.
+
+## D123 — The text check skips a role its board no longer lists (2026-11-19)
+**Context:** The 2026-11-19 midday run sent 🚨. A CrossCountry Consulting role first seen that morning (borderline title, so it needed a text check, D49) couldn't be fetched at 7 AM (a connection error, temporary). By midday the company had taken it down: the midday scan didn't see it on the board, but a role only closes after 2 missed scans, so it was still open. The text check opened it, got HTTP 404, and counted that as a real problem.
+**Options:** (A) don't text-check a role the latest scan didn't see on its board; (B) check it anyway, and count a 404 on such a role as temporary (D115).
+**Decision:** Gabriel's call: option A.
+- The text-check queue leaves out open roles with a missed scan (`miss_count > 0`). Seeing the role again resets the count, so it's checked then; if it stays gone it closes as before (D16).
+- A "not found" on a role the board still lists is still a real problem (🚨).
+**Trade-off:** a role that drops off its board for one scan and comes back gets its text check one run later. Nothing is excused or retried: the run simply doesn't open a page the scan already knows is missing.

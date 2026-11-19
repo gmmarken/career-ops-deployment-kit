@@ -532,9 +532,11 @@ class Store {
   }
 
   /** Open home-metro borderline postings with no text check yet (or one from an older check version). */
+  // D123: a posting the latest scan didn't see on its board (miss_count > 0) waits: it's checked if it comes
+  // back, and closes on the next miss if not. Opening it would only give "not found".
   needsTextCheck(version) {
     return this.db.prepare(`SELECT p.id, p.url, p.title, c.name AS company FROM postings p JOIN companies c ON c.id = p.company_id
-      WHERE p.closed_at IS NULL AND p.in_home_metro = 1 AND p.title_family = 'borderline' AND p.url IS NOT NULL
+      WHERE p.closed_at IS NULL AND p.miss_count = 0 AND p.in_home_metro = 1 AND p.title_family = 'borderline' AND p.url IS NOT NULL
       AND (p.text_check IS NULL OR p.text_check_version IS NOT ?) ORDER BY p.id`).all(version);
   }
   recordTextCheck(postingId, { hit, found }, version, at = new Date()) {
