@@ -4,6 +4,11 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Docs
+- `docs/ARCHITECTURE.md` rewritten to describe the kit as built: the three folders, what comes from career-ops (profile formats, CV rendering, the fact gate, ATS checks) and what the kit adds, the daily run step by step, the extract-then-decide rule, how prep packs are checked, and a code map. The old version was the October plan (generated `portals.yml`, career-ops plugins, career-ops' scanner), none of which was built that way.
+- README: the career-ops comparison now says what the kit actually uses from career-ops; the diagram, status line and credits match what exists. The empty `plugins/` folder is gone.
+- SECURITY and extractor README brought up to date.
+
 ### Added
 - The repo is public (2026-11-20), after a final scan of every commit on every branch plus all PR and issue text found no keys or contact details (D125).
 - `install.sh`: one command sets up a new user. It downloads career-ops at the exact commit the kit is tested on, creates the private folder from templates (never overwriting a file), installs the secret-scan hook and runs the setup check (D128).

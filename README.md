@@ -2,7 +2,7 @@
 
 **A deployment layer for [career-ops](https://github.com/santifer/career-ops): the open-source AI job search agent, configured and extended for one demanding user.**
 
-> Status: shipped 2026-11-20, and running every day since 2026-11-03 (7 AM and 1 PM). All nine phases are done; the Form D upstream contribution is open with career-ops. See the [roadmap](docs/ROADMAP.md).
+> Status: shipped 2026-11-20, and running every day since 2026-11-03 (7 AM and 1 PM). All nine phases are done except offering the Form D reader back to career-ops, which is drafted but not yet sent. See the [roadmap](docs/ROADMAP.md).
 
 ![Demo: install, then the tier engine grading two example roles](docs/img/demo.gif)
 
@@ -13,21 +13,24 @@ I'm searching for customer- and strategy-facing AI deployment roles (Deployment 
 - **Recall.** There's no standard title. The right role might be called "Deployment Strategist," "AI Transformation," or "Forward Deployed PM," and many live only on a company's own job board or at a company that raised money last week.
 - **Precision.** Titles mislead. A "Forward Deployed" role can be a software engineering job; a "Deployment" PM can be internal inference infrastructure; a BizOps role can be back-office or quota-carrying.
 
-Rather than build a job search tool from scratch, I built on career-ops, which already handles ATS scanning, liveness checks, evaluation, and tracking well. This repo is everything I added on top: my judgment encoded as testable rules, sources it doesn't have, and delivery that fits how I actually work.
+Rather than build a job search tool from scratch, I built on career-ops. I started from its formats for describing a candidate and their rules, and I use its CV-to-PDF rendering, its fact gate (every number and claim in a document is checked against the CV) and its ATS keyword checks. Everything else here is my own layer: sources it doesn't read, a market database, my judgment encoded as tested rules, and delivery that fits how I actually work.
 
 It's also the deployment job in miniature: take a general platform, configure it for one customer's workflow, extend it where it falls short, measure whether it works, and iterate.
 
-## What this kit adds to career-ops
+## What the kit adds
 
-| Area | career-ops provides | This kit adds |
-|---|---|---|
-| Scoring | A–H evaluation, 1–5 score | Structured extraction + a **deterministic tier engine** (S/A/B/C) with caps, red-flag penalties, and a "why this tier" explanation |
-| Precision | Archetype detection | Trap detection: engineer-in-disguise roles, internal-infra "deployment" roles, quota-carrying sales |
-| Sources | Public ATS APIs, funding RSS | **SEC Form D** funding filings, search-based discovery, NYC tech funding sites |
-| Companies | Static portal list | **Company Radar**: auto-enriched list of AI companies with an NYC presence |
-| Delivery | Markdown tracker, Notion mirror | Notion databases mapped to my workflow, **instant iMessage alerts** for top roles, weekly funded-companies email |
-| Prep | CV tailoring, cover letters, interview prep | Paced, automatic prep packs for top-tier roles, every CV line fact-checked |
-| Quality | Upstream test suite | An **eval set** of real roles with my expected tiers, run on every rule change |
+| Area | What the kit does |
+|---|---|
+| **Sources** | Reads company job boards directly (Ashby, Greenhouse, Lever, Rippling), finds new boards through investor portfolio boards and a weekly search, and spots newly funded NYC companies from SEC Form D filings and funding news |
+| **Market database** | Every posting seen, with open and close dates, so hiring can be counted month by month |
+| **Grading** | The AI fills in a fixed form about each role, with quotes; a **deterministic tier engine** (plain tested code) decides S / A / B / C and explains why, step by step |
+| **Precision** | Catches misleading titles: engineering jobs with strategy titles, internal-infrastructure "deployment" roles, quota-carrying sales, back-office roles |
+| **Company Radar** | Researches newly funded NYC companies and scores how likely they are to need deployment roles |
+| **Delivery** | Notion databases for triage, a text for every new top role, a daily summary text, a Sunday email of newly funded companies |
+| **Prep packs** | A tailored CV, cover letter, interview prep and outreach drafts for top roles, paced, with every line checked against the CV; nothing is ever sent |
+| **Quality** | 364 tests, a setup check, and an accuracy check against real roles I've labeled, re-run after rule changes |
+
+How the pieces fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Results so far
 
@@ -46,22 +49,22 @@ From the first daily run on 2026-11-03 to 2026-11-20:
 
 ```mermaid
 flowchart LR
-  A[Sources<br/>ATS boards · startup boards<br/>Form D · funding news · search] --> B[career-ops scan<br/>+ liveness check]
-  B --> C[Extract<br/>LLM → structured facts]
-  C --> D[Tier engine<br/>deterministic S/A/B/C]
+  A[Sources<br/>company job boards · investor boards<br/>search · Form D · funding news] --> B[(Market database<br/>every posting seen)]
+  B --> C[Extract<br/>AI fills in a fixed form, with quotes]
+  C --> D[Tier engine<br/>tested code: S/A/B/C]
   D --> E[Notion<br/>Job Postings + Company Radar]
-  D --> F[iMessage alert<br/>new S-tier role]
+  D --> F[Text<br/>new S-tier role]
   D --> G[Prep pack<br/>CV · cover · prep · outreach draft]
-  E --> H[Weekly email<br/>newly funded companies]
+  B --> H[Weekly email<br/>newly funded companies]
 ```
 
-**Design principle: the model extracts, code decides.** The LLM reads each job description and returns structured facts (role shape, pay range, years asked, red flags with quotes). A small, unit-tested rules engine turns those facts into a tier. When a role is mis-tiered, the eval set shows whether extraction or a rule was wrong.
+**Design principle: the model extracts, code decides.** The AI reads each job description and returns structured facts (role shape, years asked, traps and red flags, each with a quote); the pay, location and dates come straight from the job board. A small, unit-tested rules engine turns those facts into a tier. When a role is mis-tiered, the accuracy check shows whether the AI's reading or a rule was wrong.
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · design decisions: [docs/DECISIONS.md](docs/DECISIONS.md)
 
 ## Principles
 
-- **Built on career-ops, not a fork.** career-ops stays unmodified, so upstream updates keep flowing. Everything here plugs into its documented extension points.
+- **Built on career-ops, not a fork.** career-ops stays unmodified, pinned to the exact version the kit is tested on; updating it is a deliberate step with a full test run. The kit uses it through its scripts and file formats, with its data folder pointed at `private/`.
 - **Human in the loop.** Nothing is ever submitted or sent on my behalf. Outreach is drafts only. No LinkedIn scraping or automated sign-in.
 - **Private by construction.** Personal data and keys live outside this repo entirely (see [docs/SECURITY.md](docs/SECURITY.md)).
 - **Honest outputs.** Tailored CV lines are checked against the source CV; no invented facts or numbers.
@@ -103,7 +106,6 @@ career-ops-deployment-kit/install.sh
 ## Credits
 
 - [career-ops](https://github.com/santifer/career-ops) by santifer (MIT): the platform this kit is built on.
-- [Everything Claude Code](https://github.com/affaan-m/ECC) (MIT): selected skills used during development (credited where used).
 - Built with [Claude Code](https://claude.com/claude-code).
 
 ## License
