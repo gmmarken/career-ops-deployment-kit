@@ -71,4 +71,4 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [x] `install.sh` + `/onboard` + setup check; career-ops pinned to the tested commit (D128)
 - [x] README results, demo GIF, eval numbers (accuracy re-run 2026-11-20)
 - [ ] Form D upstream: issue drafted for Gabriel to post (career-ops asks for an issue before a feature PR); PR after the maintainers answer (D126)
-- [ ] Full-history secret scan + sanitizer; flip repo public
+- [x] Full-history secret scan (code history, every branch, PRs, issues and comments); repo public 2026-11-20 (D125)

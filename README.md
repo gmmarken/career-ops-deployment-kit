@@ -2,7 +2,7 @@
 
 **A deployment layer for [career-ops](https://github.com/santifer/career-ops): the open-source AI job search agent, configured and extended for one demanding user.**
 
-> Status: running every day since 2026-11-03 (7 AM and 1 PM). Phases 0–8 done; Phase 9 (ship) in progress. See the [roadmap](docs/ROADMAP.md).
+> Status: shipped 2026-11-20, and running every day since 2026-11-03 (7 AM and 1 PM). All nine phases are done; the Form D upstream contribution is open with career-ops. See the [roadmap](docs/ROADMAP.md).
 
 ![Demo: install, then the tier engine grading two example roles](docs/img/demo.gif)
 

@@ -5,6 +5,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- The repo is public (2026-11-20), after a final scan of every commit on every branch plus all PR and issue text found no keys or contact details (D125).
 - `install.sh`: one command sets up a new user. It downloads career-ops at the exact commit the kit is tested on, creates the private folder from templates (never overwriting a file), installs the secret-scan hook and runs the setup check (D128).
 - `scripts/check-setup.mjs`: checks every private file through the same checks the runs use and lists every problem at once, with how to fix it. It flags example values and template placeholders left in, and missing keys, without printing any value.
 - `/onboard`: a Claude Code command that interviews a new user and fills in their private files, never inventing a fact.
