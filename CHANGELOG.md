@@ -4,7 +4,16 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+- `install.sh`: one command sets up a new user. It downloads career-ops at the exact commit the kit is tested on, creates the private folder from templates (never overwriting a file), installs the secret-scan hook and runs the setup check (D128).
+- `scripts/check-setup.mjs`: checks every private file through the same checks the runs use and lists every problem at once, with how to fix it. It flags example values and template placeholders left in, and missing keys, without printing any value.
+- `/onboard`: a Claude Code command that interviews a new user and fills in their private files, never inventing a fact.
+- Templates for the files that had none: `cv.md`, `daily.json`, `cv-facts.json`, tailoring rules, eval cases.
+
 ### Changed
+- `.env.example` lists only the two keys the kit uses (Notion, Serper); the old Resend and SEC entries are gone.
+- `docs/DECISIONS.md` records the Phase 9 ship decisions (D124–D128).
+
 - The midday run now sends a short summary text every day, like the morning one: boards checked, new postings, roles graded by tier, and any ⚠️ lines. Before, a quiet midday run sent nothing, which looked like it hadn't run. Ready packs still get their own text and aren't repeated in the summary (D122).
 - Funding news is also searched nationwide (5 more searches a day). A raise whose story doesn't place the company in NYC gets one short AI check of where it's based, and only a sourced NYC answer counts. Raises at companies already tracked count wherever the story is. `market.sh radar --form-d-since` adds a one-time Form D look-back (D117).
 - Alerts count problems in days (D115). A role, board, VC list, company page or source that fails once is only logged. The same one failing 2 days in a row is a ⚠️ line in the morning text, and 5 days in a row sends 🚨. A morning and a midday failure count as one day. Not-found boards retire on the 3rd day (was the 3rd run). A prep pack that fails on a connection error is queued again once by itself. More than 10 boards unreachable after the retry now sends 🚨 right away.

@@ -1,0 +1,8 @@
+{
+  "_about": "EXAMPLE. install.sh copies this to <data dir>/config/cv-facts.json: the approved facts and figures. career-ops' fact gate (verify-cv-facts.mjs) reads allow_metrics, allow_facts, forbidden_phrases and warn_phrases; the meaning check reads allow_facts as an approved source; forbidden_phrases are told to the model up front.",
+  "_pending": [],
+  "allow_metrics": ["10+ stakeholders"],
+  "allow_facts": ["Example Corp, Senior Analyst, 2021 to present"],
+  "forbidden_phrases": ["Fortune 500", "C-suite"],
+  "warn_phrases": ["spearheaded"]
+}

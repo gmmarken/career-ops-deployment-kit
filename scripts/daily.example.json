@@ -1,0 +1,10 @@
+{
+  "_about": "EXAMPLE. install.sh copies this to <data dir>/config/daily.json. imessage_to: the phone or Apple ID email that gets the alert texts. tier_per_day / tier_per_company: how many new roles each run grades, in all and per company (D67). research_per_day: companies researched for Company Radar each day (D76). weekly_email: who gets the Sunday roundup through Apple Mail (D80-D81). packs: prep-pack pace (D85). reminders_list: the Reminders list that makes alerts pop up on your phone (D95).",
+  "imessage_to": "+15555550100",
+  "tier_per_day": 30,
+  "tier_per_company": 5,
+  "research_per_day": 10,
+  "weekly_email": { "to": "you@example.com", "day": "Sunday" },
+  "packs": { "per_day": 1, "max_per_day": 3, "max_per_week": 5 },
+  "reminders_list": "Job Search Alerts"
+}

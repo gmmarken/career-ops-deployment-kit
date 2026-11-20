@@ -68,7 +68,7 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 - [ ] Refresh the job-search-agent project line in cv.md (wording waits on the candidate)
 
 ## Phase 9 — Ship
-- [ ] `install.sh` + `/onboard`
+- [x] `install.sh` + `/onboard` + setup check; career-ops pinned to the tested commit (D128)
 - [ ] README results, demo GIF, eval numbers
 - [ ] Form D upstream PR to career-ops
 - [ ] Full-history secret scan + sanitizer; flip repo public

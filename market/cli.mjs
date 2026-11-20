@@ -34,7 +34,7 @@ import { listGetroJobs, fetchJobPage, PAGE_DELAY_MS } from '../extractor/getro.m
 import { listCompanyPages, fetchCompanyPage } from '../extractor/a16z.mjs';
 import { checkNyc } from '../extractor/nyc-check.mjs';
 import { readSerperKey, search as serperSearch, serperBalance } from '../extractor/serper.mjs';
-import { checkSerperConfig, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
+import { loadSourcesFile, discoveryDue, runDiscovery, SOURCE as SERPER_SOURCE, ROTATE_KEY as SERPER_ROTATE_KEY, planQueries } from './discover.mjs';
 import { inHomeMetro } from './classify.mjs';
 import { knownBoards, watchedWithoutBoard, isNetworkError, unreachableOutcome, daysInARow, RETRY_WAIT_MS } from './boards.mjs';
 import { monthlyByCompany, ranking, toCsv, monthRange, freezable, postingStart, trackingStartMonth } from './metrics.mjs';
@@ -354,18 +354,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NEWS_WINDOWS = { day: { tbs: 'qdr:d', label: 'past day' }, week: { tbs: 'qdr:w', label: 'past week' }, month: { tbs: 'qdr:m', label: 'past month' } };
 
 /** Investor job boards to read, from private/config/sources.json. Missing file = clear error. */
-function loadSources() {
-  const path = join(dataDir, 'config', 'sources.json');
-  if (!existsSync(path)) throw new Error(`${path} not found. Copy market/sources.example.json there and list the investor job boards to read.`);
-  let cfg;
-  try { cfg = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
-  for (const key of ['getro_boards', 'a16z_boards']) {
-    if (!Array.isArray(cfg[key])) throw new Error(`${path}: "${key}" must be a list (it can be empty). See market/sources.example.json.`);
-    for (const b of cfg[key]) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each ${key} entry needs a "name" and an https "url".`);
-  }
-  checkSerperConfig(cfg, path);
-  return cfg;
-}
+const loadSources = () => loadSourcesFile(join(dataDir, 'config', 'sources.json'));
 
 /**
  * One investor board: record its job links, and for each company with a target or

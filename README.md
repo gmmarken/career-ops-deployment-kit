@@ -65,7 +65,15 @@ docs/        architecture, decisions, roadmap, security
 
 ## Setup
 
-Coming in Phase 9: an `install.sh` that pins career-ops, wires in this kit, and seeds a private data folder from templates.
+Needs macOS (the daily run uses Messages, Mail, Reminders and launchd), Node 22.13+, git, the [Claude Code](https://claude.com/claude-code) CLI, a [Notion](https://www.notion.so/my-integrations) integration and a [Serper](https://serper.dev) key.
+
+```bash
+mkdir job-search && cd job-search
+git clone https://github.com/gmmarken/career-ops-deployment-kit.git
+career-ops-deployment-kit/install.sh
+```
+
+`install.sh` downloads career-ops at the pinned commit next to the kit, creates a `private/` folder beside it from the templates (it never overwrites a file there), installs the secret-scan hook, and runs the setup check. Then open Claude Code in the kit folder and run `/onboard`: it interviews you and fills in `private/` (CV, target roles, tier rules, sources, daily run) until `node scripts/check-setup.mjs` passes. Last, `scripts/install-daily.sh --load` schedules the 7 AM and 1 PM runs.
 
 ## Credits
 
