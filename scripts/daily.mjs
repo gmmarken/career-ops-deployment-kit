@@ -15,6 +15,7 @@ import { spawn, execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runAsScript } from './run-as-script.mjs';
 import { backupDb, prune, iCloudRoot, KEEP } from '../market/backup.mjs';
 import { openStore } from '../market/store.mjs';
 import { weeklyData, weeklyEmail } from '../delivery/weekly.mjs';
@@ -573,7 +574,7 @@ async function main() {
   } finally { release(); }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (runAsScript(import.meta.url)) {
   main().then((code) => process.exit(code)).catch((err) => {
     // Couldn't run or couldn't report: leave it in the log (if possible) and on stderr for launchd's log.
     let msg = `daily: ${err.message}\n`;

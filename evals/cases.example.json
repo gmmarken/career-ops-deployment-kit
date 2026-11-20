@@ -1,0 +1,13 @@
+{
+  "_about": "EXAMPLE. Copy to <data dir>/evals/cases.json: real postings you've labeled with the tier you'd give them. scripts/evals.sh grades each one and compares (D23). key_facts are what you confirmed from the posting; they let a miss be blamed on extraction or on a rule.",
+  "dropped": [],
+  "cases": [
+    {
+      "id": "example-deployment-strategist",
+      "label": { "tier": "A", "why": "Strong fit; pay top under the S bar.", "source": "candidate" },
+      "source": { "url": "https://jobs.example.com/deployment-strategist" },
+      "key_facts": { "family": "deployment_ai_strategist", "shape": "Strategic", "fit": "Strong", "company_status": "AI-native", "pay_top": 160000, "traps": [], "red_flags": [], "years_min": 4, "work_model": "Hybrid", "back_office": false },
+      "key_facts_confirmed": true
+    }
+  ]
+}

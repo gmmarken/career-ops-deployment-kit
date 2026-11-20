@@ -10,6 +10,7 @@
 # --- Personal data: lives in ../private, never here ---
 private/
 cv*.md
+!packs/cv.example.md
 *.pdf
 *.docx
 data/

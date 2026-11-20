@@ -4,6 +4,7 @@
 // `core_titles` are searched first, every run. `rotating_titles` share what's left of the cap,
 // each run continuing where the last one stopped, so every title gets its turn.
 
+import { existsSync, readFileSync } from 'node:fs';
 import { buildQueries, boardsFromLinks } from '../extractor/serper.mjs';
 
 export const SOURCE = 'serper';
@@ -110,4 +111,17 @@ export async function runDiscovery(store, cfg, search, { pause = () => Promise.r
     if (out.capped) break;
   }
   return finish();
+}
+
+/** Read and check <data dir>/config/sources.json: investor boards and the Serper block. Missing file = clear error. */
+export function loadSourcesFile(path) {
+  if (!existsSync(path)) throw new Error(`${path} not found. Copy market/sources.example.json there and list the investor job boards to read.`);
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) { throw new Error(`${path} is not valid JSON: ${e.message}`); }
+  for (const key of ['getro_boards', 'a16z_boards']) {
+    if (!Array.isArray(cfg[key])) throw new Error(`${path}: "${key}" must be a list (it can be empty). See market/sources.example.json.`);
+    for (const b of cfg[key]) if (!b?.name || !/^https:\/\//.test(b?.url ?? '')) throw new Error(`${path}: each ${key} entry needs a "name" and an https "url".`);
+  }
+  checkSerperConfig(cfg, path);
+  return cfg;
 }

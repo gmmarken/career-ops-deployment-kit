@@ -745,3 +745,42 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - The text-check queue leaves out open roles with a missed scan (`miss_count > 0`). Seeing the role again resets the count, so it's checked then; if it stays gone it closes as before (D16).
 - A "not found" on a role the board still lists is still a real problem (🚨).
 **Trade-off:** a role that drops off its board for one scan and comes back gets its text check one run later. Nothing is excused or retried: the run simply doesn't open a page the scan already knows is missing.
+
+## D124 — "Finished" means a full public ship (2026-11-20)
+**Context:** Phases 0–8 are done and the daily runs have been reliable. Phase 9 (Ship) was the last open phase: installer and guided setup, README results, the Form D upstream PR, and going public.
+**Options:** (A) full ship: all four Phase 9 items; (B) finish for Gabriel only: clean docs, repo stays private, no installer.
+**Decision:** Gabriel's call: option A.
+**Why:** a public project that a stranger can clone and run is a stronger portfolio piece than a private one, and it was the original goal.
+**Trade-off:** a few more sessions of work, and the job-search tooling is visible under his name while he is still searching.
+
+## D125 — Go public with the full history, after a full-history scan and Gabriel's review (2026-11-20)
+**Context:** Making the repo public can't really be undone: public code can be copied and cached.
+**Options:** (A) keep the history: scan every past version of every file for keys and personal data, Gabriel reviews the result, then flip it public; (B) publish a fresh copy with no history.
+**Decision:** Gabriel's call: option A.
+- First scan (2026-11-20, 137 commits): gitleaks found no keys. A personal-data pass (email addresses, phone numbers, employer details, private file names) found only made-up test addresses, H&R Block named without any figures, and his name in the license and the tool's identifier sent to websites. No private file was ever committed.
+- The scan runs again on the final branch before the flip, and Gabriel says go.
+**Why:** the commit history shows how the project was built, which is part of the story.
+**Trade-off:** anything a scan misses in an old version stays public. B is the fallback if a later scan finds something messy.
+
+## D126 — The Form D reader goes upstream as a PR that Gabriel sends (2026-11-20)
+**Context:** The SEC Form D reader (D70–D71) is useful to career-ops users beyond this kit.
+**Options:** (A) draft the upstream PR; Gabriel reviews and submits it himself; (B) skip it.
+**Decision:** Gabriel's call: option A. The kit never sends anything on his behalf, so the draft stops at his review.
+- career-ops' CONTRIBUTING.md asks for an issue before any new-feature PR, so the first step is an issue, not a PR. It proposes Form D as an opt-in `--sources formd` in `company-funded.mjs` (never in the defaults) and asks the maintainers whether they want it there or as a plugin. The draft is in the private folder (`upstream/form-d-issue.md`); the PR follows their answer.
+**Trade-off:** the PR is public under his name and the upstream maintainer may ask for changes.
+
+## D127 — Loose ends at ship time (2026-11-20)
+**Decision:** Gabriel's call, as recommended.
+- Work Radar CV swap: done when Gabriel sends the facts; it doesn't block the ship.
+- San Francisco Series A–C AI companies for the Radar (D73 "later"): out of scope, listed in the README under possible next steps.
+
+## D128 — Installer and setup check: required services stay required (2026-11-20)
+**Context:** For a stranger to run the kit, setup has to say exactly what's missing. The daily run needs macOS (Messages, Mail, Reminders, launchd), a Notion integration, a Serper key, and the Claude Code CLI.
+**Options:** (A) keep these required: the installer and a setup check list each missing piece with how to fix it; (B) add switches to turn Notion or Serper off.
+**Decision:** small call inside the approved ship (D124), easy to change later: option A.
+- `install.sh` checks the tools, clones career-ops at the pinned version next to the kit, copies every template into a new private folder without ever overwriting a file, and installs the secret-scan hook. It loads no schedule.
+- `scripts/check-setup.mjs` reads every private file through the same checks the runs use and lists every problem at once.
+- `/onboard` (a Claude Code command) walks a new user through filling the private files from their own CV, without inventing facts.
+- career-ops is pinned to the exact commit the kit has run on since Phase 0 (`a068b71`, 2026-10-30). Its VERSION file says 1.38.0, but it is 270 commits after the `career-ops-v1.38.0` tag, so cloning the tag would give a stranger different code. career-ops ships no lockfile, so its packages install with `npm install` inside its own version ranges.
+**Why:** switches that quietly turn off parts of the run would go against "fail loudly", and this run has only one real user so far.
+**Trade-off:** someone without Notion or Serper can't run the daily job as is; they can still use the tier engine, extraction and prep packs by hand.

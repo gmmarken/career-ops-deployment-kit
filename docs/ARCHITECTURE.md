@@ -1,6 +1,6 @@
 # Architecture (v0.2, 2026-10-29)
 
-Built on [career-ops](https://github.com/santifer/career-ops) (MIT, pinned at v1.38.0). This kit adds a personal deployment layer on top; it does not modify career-ops. Personal targets and thresholds live in private config, not in this repo.
+Built on [career-ops](https://github.com/santifer/career-ops) (MIT, pinned at commit `a068b71` from 2026-10-30; its VERSION file says 1.38.0, D128). This kit adds a personal deployment layer on top; it does not modify career-ops. Personal targets and thresholds live in private config, not in this repo.
 
 ## 1. Layers
 
