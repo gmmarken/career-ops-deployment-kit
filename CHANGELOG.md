@@ -12,6 +12,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
 ### Fixed
+- The text check for borderline NYC titles skips a role the latest scan didn't see on its board. It's checked if the role comes back, and it closes on the next missed scan if not. On 2026-11-19 a CrossCountry Consulting role taken down between the morning and midday runs answered "not found" and sent a 🚨 (D123).
 - The meaning check (D106) now also reads your CV's Location line and each job's title, company, place and dates (never email, phone or LinkedIn). Three of the four packs it had ever held were true statements backed only by those lines: "based in Brooklyn" (Rillet, Clarion) and "three years at Slalom" (Traversal) (D121).
 - A job board role with a blank title no longer fails the whole board. A role we already track keeps its saved title; a new role with no title is left out and listed with its link as a ⚠️ line in the morning text (D120). The 2026-11-16 midday run skipped OpenAI's 834 roles this way.
 - A Notion call that gets no answer is tried once more after 30 seconds. If the sync still fails, the companies or graded roles it couldn't send go with the next run's sync, the step's other problems are still listed, and it's a temporary problem (quiet on day 1, ⚠️ from day 2) instead of a 🚨 (D119). The 2026-11-16 morning run failed this way.

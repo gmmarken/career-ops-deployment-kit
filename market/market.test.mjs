@@ -414,3 +414,13 @@ test('scanTitle (D120): a blank title keeps the saved one; a new untitled postin
   assert.equal(s.scanTitle(undefined, ''), null);
   assert.throws(() => s.seePosting(P({ title: '' })), /Posting title is required/);
 });
+
+test('text check queue skips a posting the latest scan didn\'t see, until it comes back (D123)', () => {
+  const s = openStore(':memory:');
+  const { id } = s.seePosting(P({ title: 'AI Engagement Manager' }), '2026-11-19');
+  s.closeMissing('ashby:acme', [], '2026-11-19'); // gone from the board: one miss, still open
+  assert.equal(s.postings().find((p) => p.id === id).closed_at, null);
+  assert.equal(s.needsTextCheck(TEXT_CHECK_VERSION).length, 0);
+  s.seePosting(P({ title: 'AI Engagement Manager' }), '2026-11-20'); // back on the board
+  assert.deepEqual(s.needsTextCheck(TEXT_CHECK_VERSION).map((r) => r.id), [id]);
+});
