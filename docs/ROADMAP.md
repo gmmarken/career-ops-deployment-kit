@@ -69,6 +69,6 @@ One GitHub issue, branch and PR per phase. Check items off as they merge.
 
 ## Phase 9 — Ship
 - [x] `install.sh` + `/onboard` + setup check; career-ops pinned to the tested commit (D128)
-- [ ] README results, demo GIF, eval numbers
+- [x] README results, demo GIF, eval numbers (accuracy re-run 2026-11-20)
 - [ ] Form D upstream PR to career-ops
 - [ ] Full-history secret scan + sanitizer; flip repo public

@@ -9,6 +9,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - `scripts/check-setup.mjs`: checks every private file through the same checks the runs use and lists every problem at once, with how to fix it. It flags example values and template placeholders left in, and missing keys, without printing any value.
 - `/onboard`: a Claude Code command that interviews a new user and fills in their private files, never inventing a fact.
 - Templates for the files that had none: `cv.md`, `daily.json`, `cv-facts.json`, tailoring rules, eval cases.
+- `scripts/tier-facts.mjs` grades a saved facts file with the tier engine alone (no AI, no network), with two made-up examples in `examples/`.
+- README: results so far (postings, roles graded by tier, prep packs, accuracy re-run 2026-11-20: 21/24, 10/12 on unseen roles) and a demo GIF recorded from `docs/img/demo.tape` with example data only.
 
 ### Changed
 - `.env.example` lists only the two keys the kit uses (Notion, Serper); the old Resend and SEC entries are gone.
@@ -21,6 +23,7 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - Each morning the Company Radar checks the Serper credit balance (free) and prints the pace. With about a week left, the morning text gets a 💳 warning and a phone pop-up so you can buy more (D113).
 
 ### Fixed
+- The daily run, the setup check and the rules-drift check now run when started from a folder reached through a symlink (macOS `/tmp` is one). Before, they did nothing and exited as if all was well; found while recording the demo.
 - The text check for borderline NYC titles skips a role the latest scan didn't see on its board. It's checked if the role comes back, and it closes on the next missed scan if not. On 2026-11-19 a CrossCountry Consulting role taken down between the morning and midday runs answered "not found" and sent a 🚨 (D123).
 - The meaning check (D106) now also reads your CV's Location line and each job's title, company, place and dates (never email, phone or LinkedIn). Three of the four packs it had ever held were true statements backed only by those lines: "based in Brooklyn" (Rillet, Clarion) and "three years at Slalom" (Traversal) (D121).
 - A job board role with a blank title no longer fails the whole board. A role we already track keeps its saved title; a new role with no title is left out and listed with its link as a ⚠️ line in the morning text (D120). The 2026-11-16 midday run skipped OpenAI's 834 roles this way.

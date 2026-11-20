@@ -1,0 +1,129 @@
+{
+  "_about": "MADE-UP example: a 'Forward Deployed' title that is really a software engineering job. Grade it with scripts/tier-facts.mjs.",
+  "posting": {
+    "url": "https://jobs.example.com/exampleco/forward-deployed-engineer",
+    "source": "ashby",
+    "title": "Forward Deployed Engineer",
+    "company": "exampleco",
+    "locations": [
+      "Example City"
+    ],
+    "workplace": "hybrid",
+    "posted_at": "2026-11-14T00:00:00Z",
+    "pay": {
+      "min": 165000,
+      "max": 205000,
+      "currency": "USD",
+      "interval": "year",
+      "kind": "base",
+      "source": "ats"
+    },
+    "equity_offered": true,
+    "pay_conflict": null
+  },
+  "judgment": {
+    "company_name": {
+      "value": "ExampleCo",
+      "quote": "About ExampleCo"
+    },
+    "role_family": {
+      "value": "forward_deployed_pm",
+      "quote": "Forward Deployed team"
+    },
+    "role_shape": {
+      "value": "strategic",
+      "quote": "set the rollout plan with customer executives"
+    },
+    "traps": [
+      {
+        "trap": "engineer_in_disguise",
+        "quote": "you will write production Python and ship code to customer environments daily"
+      }
+    ],
+    "red_flags": [
+      {
+        "flag": "travel_50_plus",
+        "quote": "travel to customer sites up to 60% of the time"
+      }
+    ],
+    "quota_path": {
+      "present": false,
+      "quote": null
+    },
+    "years_required": {
+      "min": 4,
+      "hard_gate": false,
+      "hard_gate_met": null,
+      "quote": "4+ years in consulting or operations"
+    },
+    "work_model": {
+      "value": "hybrid",
+      "office_days": 3,
+      "quote": "3 days a week in our office"
+    },
+    "back_office": {
+      "value": false,
+      "quote": null
+    },
+    "fit": {
+      "value": "strong",
+      "reason": "consulting background plus hands-on AI rollout work"
+    },
+    "tags": {
+      "gm_path": false,
+      "product_path": true
+    },
+    "equity_substantial": {
+      "value": false,
+      "quote": null
+    },
+    "pay_in_text": null,
+    "injection_suspected": {
+      "value": false,
+      "quote": null
+    },
+    "languages_required": [],
+    "clearance": {
+      "value": "none",
+      "quote": null
+    },
+    "travel_vague_heavy": {
+      "value": false,
+      "quote": null
+    },
+    "employment_type": {
+      "value": "full_time",
+      "quote": null
+    },
+    "industry_flags": [],
+    "people_management": {
+      "required": false,
+      "team_size": null,
+      "quote": null
+    },
+    "degree_required": {
+      "value": false,
+      "met": null,
+      "quote": null
+    },
+    "off_hours": {
+      "value": false,
+      "quote": null
+    },
+    "staffing_agency": {
+      "value": false,
+      "quote": null
+    }
+  },
+  "company": {
+    "name": "ExampleCo",
+    "status": "strong",
+    "stage": "series_c",
+    "owner_categories": [],
+    "parent": null,
+    "is_mbb": false,
+    "origin": "watchlist",
+    "verified": true,
+    "reason": "AI-native, enterprise customers"
+  }
+}

@@ -4,8 +4,8 @@
 // Exit 1 on any mismatch so it can't be missed. Usage (data dir from scripts/co.sh or env):
 //   CAREER_OPS_DATA_DIR=../private node engine/check-rules-drift.mjs
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { runAsScript } from '../scripts/run-as-script.mjs';
 import { loadRules } from './rules.mjs';
 
 const usdK = (n) => `$${Math.round(n / 1000)}K`;
@@ -25,7 +25,7 @@ export function findDrift(rules, prose) {
   return expectedMentions(rules).filter(([text]) => !prose.includes(text)).map(([text, field]) => `${field} = ${text} is not in _custom.md`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (runAsScript(import.meta.url)) {
   const dataDir = process.env.CAREER_OPS_DATA_DIR;
   if (!dataDir) { console.error('CAREER_OPS_DATA_DIR is not set.'); process.exit(1); }
   const drift = findDrift(loadRules(), readFileSync(join(dataDir, 'modes', '_custom.md'), 'utf-8'));

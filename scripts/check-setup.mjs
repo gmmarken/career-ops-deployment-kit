@@ -5,7 +5,7 @@
 // Exit 0 = ready for the daily run; 1 = something to fix.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parseCv, sourceLines } from '../packs/cvsource.mjs';
 import { loadRules } from '../engine/rules.mjs';
@@ -15,6 +15,7 @@ import { checkRadarConfig } from '../market/radar.mjs';
 import { loadConfig } from './daily.mjs';
 import { loadCvRules, lockedIds } from '../packs/check.mjs';
 import { markdownSection } from '../extractor/extract.mjs';
+import { runAsScript } from './run-as-script.mjs';
 
 // Keep in step with CAREER_OPS_COMMIT in install.sh (a test checks).
 export const PINNED_CAREER_OPS = 'a068b716f9f351d3656a015e591ff969f39bc236';
@@ -124,7 +125,7 @@ export function checkSetup(dataDir, { kitDir = KIT_DIR, which = (cmd) => spawnSy
   return results;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (runAsScript(import.meta.url)) {
   const i = process.argv.indexOf('--data-dir');
   const dataDir = resolve(i > 0 ? process.argv[i + 1] : join(KIT_DIR, '..', 'private'));
   if (!existsSync(dataDir)) { console.error(`check-setup: ${dataDir} not found. Run ./install.sh first.`); process.exit(1); }

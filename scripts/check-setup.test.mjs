@@ -86,3 +86,16 @@ test('a missing tool is named', () => {
     assert.match(tools.problem, /Not found on PATH: claude/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the setup check still runs when started through a symlinked folder (macOS /tmp is one)', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const dir = freshInstall();
+  const link = mkdtempSync(join(tmpdir(), 'kit-link-'));
+  try {
+    symlinkSync(KIT, join(link, 'kit'));
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [join(link, 'kit', 'scripts', 'check-setup.mjs'), '--data-dir', dir], { encoding: 'utf8' });
+    assert.match(r.stdout, /Checking setup in/);
+    assert.equal(r.status, 1, 'a fresh install has things to fix');
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(link, { recursive: true, force: true }); }
+});

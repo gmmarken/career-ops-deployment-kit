@@ -2,7 +2,9 @@
 
 **A deployment layer for [career-ops](https://github.com/santifer/career-ops): the open-source AI job search agent, configured and extended for one demanding user.**
 
-> Status: 🚧 early development (Phase 0 of 9). See the [roadmap](docs/ROADMAP.md).
+> Status: running every day since 2026-11-03 (7 AM and 1 PM). Phases 0–8 done; Phase 9 (ship) in progress. See the [roadmap](docs/ROADMAP.md).
+
+![Demo: install, then the tier engine grading two example roles](docs/img/demo.gif)
 
 ## Why this exists
 
@@ -26,6 +28,19 @@ It's also the deployment job in miniature: take a general platform, configure it
 | Delivery | Markdown tracker, Notion mirror | Notion databases mapped to my workflow, **instant iMessage alerts** for top roles, weekly funded-companies email |
 | Prep | CV tailoring, cover letters, interview prep | Paced, automatic prep packs for top-tier roles, every CV line fact-checked |
 | Quality | Upstream test suite | An **eval set** of real roles with my expected tiers, run on every rule change |
+
+## Results so far
+
+From the first daily run on 2026-11-03 to 2026-11-20:
+
+| | |
+|---|---|
+| Job postings tracked | **55,082** from **496** company job boards plus investor portfolio boards (7,912 in New York) |
+| Roles graded by the tier engine | **580**: 63 S · 107 A · 76 B · 242 C · 92 excluded or below the walk-away pay |
+| Funding signals | **3,015** SEC Form D filings screened and **236** funding rounds recorded; **686** companies tracked |
+| Prep packs | **24** built for top roles. **4** held for a human look by the meaning check: 1 real stretch, 3 true lines the check couldn't yet see (fixed in D121) |
+
+**Accuracy** (2026-11-20, rules as of today): **21 of 24** real postings get the tier I'd give them (88%); on the **12 roles the rules never saw** while being written, **10 of 12** (83%). Of the 3 misses, 2 are the AI misreading a role's shape and 1 is a rule; the report says which, so each miss points at its fix. The labeled roles themselves stay private.
 
 ## How it works
 
@@ -54,14 +69,24 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · design decisions: [
 ## Repo layout
 
 ```
+install.sh   one-command setup (career-ops at the pinned commit + private folder from templates)
 rules/       target-role definition and house rules (templates; real values stay private)
-extractor/   prompt + JSON schema for structured extraction
+extractor/   AI extraction (no tools), job-board readers, SEC Form D, funding news, company research
 engine/      deterministic tier engine + tests
-plugins/     career-ops plugins: Form D, discovery, Notion, iMessage, weekly email
-scripts/     daily runner, company enrichment, prep-pack queue
-evals/       labeled roles + eval runner
-docs/        architecture, decisions, roadmap, security
+market/      the market database: every posting seen, scans, Company Radar
+packs/       prep packs: tailored CV, cover letter, interview prep, outreach draft, fact checks
+notion/      Notion sync (Job Postings + Company Radar)
+delivery/    weekly email through Apple Mail
+scripts/     daily runner, setup check, launchd install
+evals/       eval runner (labeled roles live in the private folder)
+examples/    made-up facts files for trying the tier engine
+docs/        architecture, decisions (D1–D128), roadmap, security
 ```
+
+## Possible next steps
+
+- Company Radar for San Francisco Series A–C AI companies (D73).
+- Switches to run without Notion or Serper (D128 keeps them required for now).
 
 ## Setup
 
