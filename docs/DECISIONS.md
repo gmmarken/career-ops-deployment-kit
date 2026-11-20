@@ -766,6 +766,7 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 **Context:** The SEC Form D reader (D70–D71) is useful to career-ops users beyond this kit.
 **Options:** (A) draft the upstream PR; Gabriel reviews and submits it himself; (B) skip it.
 **Decision:** Gabriel's call: option A. The kit never sends anything on his behalf, so the draft stops at his review.
+- career-ops' CONTRIBUTING.md asks for an issue before any new-feature PR, so the first step is an issue, not a PR. It proposes Form D as an opt-in `--sources formd` in `company-funded.mjs` (never in the defaults) and asks the maintainers whether they want it there or as a plugin. The draft is in the private folder (`upstream/form-d-issue.md`); the PR follows their answer.
 **Trade-off:** the PR is public under his name and the upstream maintainer may ask for changes.
 
 ## D127 — Loose ends at ship time (2026-11-20)
