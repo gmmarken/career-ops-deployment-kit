@@ -101,7 +101,7 @@ git clone https://github.com/gmmarken/career-ops-deployment-kit.git
 career-ops-deployment-kit/install.sh
 ```
 
-`install.sh` downloads career-ops at the pinned commit next to the kit, creates a `private/` folder beside it from the templates (it never overwrites a file there), installs the secret-scan hook, and runs the setup check. Then open Claude Code in the kit folder and run `/onboard`: it interviews you and fills in `private/` (CV, target roles, tier rules, sources, daily run) until `node scripts/check-setup.mjs` passes. Last, `scripts/install-daily.sh --load` schedules the 7 AM and 1 PM runs.
+`install.sh` downloads career-ops at the pinned commit next to the kit, creates a `private/` folder beside it from the templates (it never overwrites a file there), installs the secret-scan hook, and runs the setup check. Then open Claude Code in the kit folder and run `/onboard`: it interviews you and fills in `private/` (CV, target roles, tier rules, sources, daily run) until `node scripts/check-setup.mjs` passes. Last, `scripts/install-daily.sh --load` schedules the 7 AM and 1 PM runs. Later, when something changes at work, run `/update-cv`: it checks the new facts with you, updates the CV files and rebuilds `private/documents/cv.pdf` (`scripts/packs.sh cv-pdf`).
 
 ## Credits
 

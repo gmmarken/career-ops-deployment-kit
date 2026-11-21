@@ -784,3 +784,13 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - career-ops is pinned to the exact commit the kit has run on since Phase 0 (`a068b71`, 2026-10-30). Its VERSION file says 1.38.0, but it is 270 commits after the `career-ops-v1.38.0` tag, so cloning the tag would give a stranger different code. career-ops ships no lockfile, so its packages install with `npm install` inside its own version ranges.
 **Why:** switches that quietly turn off parts of the run would go against "fail loudly", and this run has only one real user so far.
 **Trade-off:** someone without Notion or Serper can't run the daily job as is; they can still use the tier engine, extraction and prep packs by hand.
+
+## D129 — A flow for keeping the CV current (2026-11-21)
+**Context:** When Gabriel tells Claude something new about his job, the CV, the project notes and the approved-facts list all need the same change, and the kit had no standalone resume PDF: only one tailored PDF per pack. The H&R Block agent update (2026-11-21) was done by hand this way and worked.
+**Options:** (A) a written checklist Claude follows (`/update-cv`) plus a command that rebuilds a base PDF; (B) a script that edits cv.md automatically from a chat message.
+**Decision:** Gabriel asked for a flow where Claude double-checks before updating; option A is that flow written down.
+- `/update-cv` steps: read the files, ask gap questions in one batch, check for conflicts and forbidden phrases, read back every changed line, write only after a yes (with a backup), then run the setup check, `packs.sh notes` and `packs.sh cv-pdf`.
+- `packs.sh cv-pdf` uses cv.md as is (no model), runs career-ops' fact gate, renders with career-ops, and writes `private/documents/cv.pdf`. Two pages are allowed for the base resume; packs stay at one page preferred.
+- Packs already built are not rebuilt automatically; the flow lists them and offers a rebuild for roles being applied to.
+**Why:** facts about a job need the person's judgment ("we" vs "I", what's approved, what's confidential), so a model-written edit without a read-back would break "never invent facts".
+**Trade-off:** each update takes a short back-and-forth instead of being instant.

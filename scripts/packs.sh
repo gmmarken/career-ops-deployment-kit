@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prep packs for S-tier roles (Phase 8).
-# Usage: scripts/packs.sh build [--dry-run] | status | requeue <job link> | notes
+# Usage: scripts/packs.sh build [--dry-run] | status | requeue <job link> | notes | cv-pdf
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="$(cd "$KIT_DIR/.." && pwd)/private"

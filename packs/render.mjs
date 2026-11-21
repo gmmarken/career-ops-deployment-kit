@@ -47,6 +47,16 @@ export function cvPayload(cv, tailored, headline) {
   };
 }
 
+/** cv.md itself as the "tailored" parts, word for word: the base resume (no posting, no model). */
+export function baseTailored(cv) {
+  if (!cv.summary) throw new Error('cv.md: the Professional Summary is empty.');
+  return {
+    summary: cv.summary,
+    experience: cv.experience.map((j) => ({ entry_id: j.id, bullets: j.bullets.map((b) => ({ text: b.text })) })),
+    skills: cv.skills,
+  };
+}
+
 /** The same CV as plain markdown, for the pack folder and the fact check. */
 export function cvMarkdown(cv, payload) {
   const c = payload.candidate;
@@ -73,14 +83,14 @@ export function runCo(args, { co = join(KIT_DIR, 'scripts', 'co.sh'), timeout = 
 }
 
 /** payload.json → cv.html → cv.pdf. Throws with career-ops' own message on any failure. */
-export async function renderCv(payloadPath, htmlPath, pdfPath, { run = runCo } = {}) {
+export async function renderCv(payloadPath, htmlPath, pdfPath, { run = runCo, maxPages = 1 } = {}) {
   const h = await run(['build-cv-html.mjs', payloadPath, htmlPath]);
   if (h.code !== 0) throw new Error(`CV HTML build failed (career-ops build-cv-html.mjs):\n${h.out.trim().slice(0, 800)}`);
   // career-ops' template keeps an empty consent box hidden by CSS, which ATS checkers read as hidden text (D98).
   const html = readFileSync(htmlPath, 'utf8');
   writeFileSync(htmlPath, html.replace(/\s*<div class="cv-consent"><\/div>/, '').replace(/\s*\.cv-consent:empty \{ display: none; \}/, ''));
   // One page preferred, two allowed (D98): the page count goes in the fit report.
-  const p = await run(['generate-pdf.mjs', htmlPath, pdfPath, '--format=letter', '--kind=cv', '--max-pages=1']);
+  const p = await run(['generate-pdf.mjs', htmlPath, pdfPath, '--format=letter', '--kind=cv', `--max-pages=${maxPages}`]);
   if (p.code !== 0) throw new Error(`CV PDF failed (career-ops generate-pdf.mjs):\n${p.out.trim().slice(0, 800)}`);
   return p.out;
 }
