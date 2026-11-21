@@ -10,6 +10,8 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 - SECURITY and extractor README brought up to date.
 
 ### Added
+- `/update-cv`: a Claude Code command for news about your job. It reads the CV files, asks the gap questions, checks the new facts against the approved list, shows a read-back, and only after your yes backs up and updates `cv.md`, the project notes and the fact files, then rebuilds the base resume (D129).
+- `scripts/packs.sh cv-pdf`: builds the base resume from `cv.md` word for word (no posting, no AI) through the fact gate and career-ops' renderer, to `private/documents/cv.pdf`. Up to two pages.
 - The repo is public (2026-11-20), after a final scan of every commit on every branch plus all PR and issue text found no keys or contact details (D125).
 - `install.sh`: one command sets up a new user. It downloads career-ops at the exact commit the kit is tested on, creates the private folder from templates (never overwriting a file), installs the secret-scan hook and runs the setup check (D128).
 - `scripts/check-setup.mjs`: checks every private file through the same checks the runs use and lists every problem at once, with how to fix it. It flags example values and template placeholders left in, and missing keys, without printing any value.

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCv, sourceLines } from './cvsource.mjs';
 import { numbers, numberProblems, countedNounWarnings, bankEntries, placementProblems, checkTailored, bankTerms, postingBankTerms, cvRuleProblems, draftRuleProblems, headlineFromTitle, lockedIds, loadCvRules } from './check.mjs';
-import { cvPayload, cvMarkdown, projectEntry, educationEntry } from './render.mjs';
+import { cvPayload, cvMarkdown, projectEntry, educationEntry, baseTailored } from './render.mjs';
 import { rankQueue, allowance, checkPackConfig } from './queue.mjs';
 import { parseProjectNotes, notesFor, mapMarkdown, addMissingSections, linesWithoutNotes, loadProjectNotes } from './projects.mjs';
 import { markdownBlocks, rich, packBlocks } from './notion.mjs';
@@ -133,6 +133,16 @@ test('checkTailored: dropped jobs, wrong sources, new numbers and new skills blo
   assert.match(p, /"Cloud" is not a cv\.md skills category/);
   const missing = { ...good, experience: [good.experience[0]] };
   assert.match(checkTailored(cv, lines, missing).problems[0], /jobs must be e1, e2 in that order/);
+});
+
+test('render: the base resume is cv.md word for word, every bullet and skill', () => {
+  const t = baseTailored(cv);
+  const p = cvPayload(cv, t, undefined);
+  assert.equal(p.candidate.title, undefined);
+  assert.equal(p.summary, cv.summary);
+  assert.deepEqual(p.experience.map((j) => j.bullets), cv.experience.map((j) => j.bullets.map((b) => b.text)));
+  assert.deepEqual(p.skills.map((s) => s.category), cv.skills.map((s) => s.category));
+  assert.throws(() => baseTailored({ ...cv, summary: null }), /Professional Summary is empty/);
 });
 
 test('render: career-ops payload keeps job headers, projects, education and interests word for word', () => {

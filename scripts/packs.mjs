@@ -6,10 +6,12 @@
 //   requeue <link or key>   put a blocked or failed pack back in the queue
 //   notes                   add a section to private/cv-projects.md for every cv.md line without one,
 //                           and list the lines whose project notes are still empty (D90)
+//   cv-pdf                  build the base resume from cv.md word for word (no posting, no model):
+//                           fact gate, then career-ops HTML and PDF → private/documents/cv.pdf (D129)
 // Output lines the daily run reads: "📦 Prep pack ready: …", "🚫 Prep pack BLOCKED: …",
 // "Prep packs: …", "Paused: Claude usage limit reached after …".
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { parseCv, sourceLines } from '../packs/cvsource.mjs';
 import { loadProjectNotes, addMissingSections, linesWithoutNotes } from '../packs/projects.mjs';
 import { openStore, urlKey } from '../market/store.mjs';
@@ -23,7 +25,8 @@ import { createClient, readToken } from '../notion/client.mjs';
 import { loadNotionConfig } from '../notion/setup.mjs';
 import { loadConfig, localDate } from './daily.mjs';
 import { rankQueue, allowance, checkPackConfig } from '../packs/queue.mjs';
-import { buildPack, PACK_MODEL } from '../packs/build.mjs';
+import { buildPack, PACK_MODEL, factGate } from '../packs/build.mjs';
+import { cvPayload, cvMarkdown, baseTailored, renderCv } from '../packs/render.mjs';
 import { ensureJobsColumns, tickedRoles, jobPageId, setPackStatus, packBlocks, appendBlocks } from '../packs/notion.mjs';
 
 const role = (r) => `${r.company} — ${r.title}`;
@@ -157,6 +160,26 @@ function notes(dataDir) {
   return 0;
 }
 
+async function cvPdf(dataDir) {
+  const cvPath = join(dataDir, 'cv.md');
+  const cv = parseCv(readFileSync(cvPath, 'utf8'));
+  const work = join(dataDir, 'output', 'base-cv');
+  mkdirSync(work, { recursive: true });
+  const payload = cvPayload(cv, baseTailored(cv), undefined);
+  writeFileSync(join(work, 'payload.json'), JSON.stringify(payload, null, 2));
+  writeFileSync(join(work, 'cv.md'), cvMarkdown(cv, payload));
+  const gate = await factGate(join(work, 'cv.md'), [cvPath]);
+  if (gate.verdict === 'block') throw new Error(`fact check blocked the base resume: ${gate.problems.join('; ')}`);
+  // A base resume may run to two pages; career-ops says so in its output.
+  const out = await renderCv(join(work, 'payload.json'), join(work, 'cv.html'), join(work, 'cv.pdf'), { maxPages: 2 });
+  mkdirSync(join(dataDir, 'documents'), { recursive: true });
+  copyFileSync(join(work, 'cv.pdf'), join(dataDir, 'documents', 'cv.pdf'));
+  for (const w of gate.warnings) console.log(`  review: ${w}`);
+  const notes = out.split('\n').filter((l) => /page/i.test(l)).map((l) => `  ${l.trim()}`);
+  console.log([`Base resume built: ${join(dataDir, 'documents', 'cv.pdf')}. Work files in ${work}.`, ...notes].join('\n'));
+  return 0;
+}
+
 async function main() {
   const dataDir = process.env.CAREER_OPS_DATA_DIR;
   if (!dataDir) throw new Error('CAREER_OPS_DATA_DIR is not set. Run through scripts/packs.sh.');
@@ -165,7 +188,8 @@ async function main() {
   if (cmd === 'status') return status();
   if (cmd === 'requeue') return requeue(arg);
   if (cmd === 'notes') return notes(dataDir);
-  throw new Error('Usage: scripts/packs.sh build [--dry-run] | status | requeue <job link> | notes');
+  if (cmd === 'cv-pdf') return cvPdf(dataDir);
+  throw new Error('Usage: scripts/packs.sh build [--dry-run] | status | requeue <job link> | notes | cv-pdf');
 }
 
 if (process.argv[1] && join(process.argv[1]).endsWith(join('scripts', 'packs.mjs'))) {
