@@ -794,3 +794,14 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - Packs already built are not rebuilt automatically; the flow lists them and offers a rebuild for roles being applied to.
 **Why:** facts about a job need the person's judgment ("we" vs "I", what's approved, what's confidential), so a model-written edit without a read-back would break "never invent facts".
 **Trade-off:** each update takes a short back-and-forth instead of being instant.
+
+## D130 — A sleeping Mac is a temporary problem, and the lid stays open (2026-11-22)
+**Context:** The 2026-11-22 morning run failed: Company Radar hit its 2-hour step limit. The power log showed the laptop lid closed. The 6:55 scheduled wake worked, but macOS went back to sleep within a minute ("Clamshell Sleep"), so the run started at the next short maintenance wake and only moved during later ones (7:13 to 9:53). The Nov 19 and 20 runs took about 2 hours for the same reason. `caffeinate -i` (already in `daily.sh`) can't keep a closed laptop awake. Node's timers keep counting while the Mac sleeps, so the time limits ran out on sleep, not work. The step was stopped in the middle of the Notion sync, and the companies waiting for it were lost (they were only saved when a sync reported an error).
+**Options:** (A) leave the lid open overnight, plugged in; (B) move the morning run to a time the Mac is usually in use; (C) make the run sleep-aware: time limits count awake time, and a timeout caused by sleep is temporary with a clear line; (D) force the Mac to stay awake with the lid closed (a system setting; rejected: security setting and a hot laptop in a bag).
+**Decision:** Gabriel's call: A and C.
+- `scripts/awake-timer.mjs`: a timeout that ticks every 30 s and counts a tick that arrives more than 2 minutes late as sleep. Used for the 2-hour step limit and the 5-minute AI call limit.
+- A step that times out after 5+ minutes of sleep is a temporary problem ("Mac asleep"), on the same day counts as other temporary problems: logged on day 1, ⚠️ from day 2 only via the 💤 line, 🚨 on day 5. Any other error in that step is sorted as before.
+- The summary (success or failure) gets a 💤 line when the Mac slept 5+ minutes during the run.
+- `syncCarrying` saves the waiting companies before the sync and clears them after it succeeds.
+**Why:** the alert should say what happened (the Mac slept) and what to do (lid open), not look like a broken program; the work itself continues next run.
+**Trade-off:** a run with the lid closed still finishes late; this fixes the alert and the time limits, not the sleep. A real hang that happens while the Mac also sleeps is reported a day later than before.

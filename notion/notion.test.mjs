@@ -223,6 +223,18 @@ test('Notion client: no answer is tried once more after 30 s; an error answer is
   assert.equal(calls, 2);
 });
 
+test('syncCarrying: a run stopped in the middle of the sync still leaves its companies for the next run (D130)', async () => {
+  const store = openStore(':memory:');
+  const open = () => ({ getMeta: (k) => store.getMeta(k), setMeta: (k, v) => store.setMeta(k, v), close() {} });
+  let during = null;
+  // The step is killed while the sync is running: look at what's saved at that moment.
+  const killed = async () => { during = JSON.parse(store.getMeta(CARRY_KEYS.companyNames)); return new Promise(() => {}); };
+  syncCarrying('/d', 'companyNames', ['Codex', 'Bluefish'], { sync: killed, open, log: () => {} });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(during, ['Codex', 'Bluefish']);
+  store.close();
+});
+
 test('syncCarrying: a failed sync keeps its companies for the next run, which syncs them too (D119)', async () => {
   const store = openStore(':memory:');
   const open = () => ({ getMeta: (k) => store.getMeta(k), setMeta: (k, v) => store.setMeta(k, v), close() {} });

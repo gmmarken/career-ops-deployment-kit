@@ -11,6 +11,7 @@
 // Exit code: 0 all good, 1 a real problem, 2 couldn't even report.
 //
 // Usage (through scripts/daily.sh): daily.sh [--midday | --test-message | --sample-messages | --sample-email]
+import { awakeTimeout } from './awake-timer.mjs';
 import { spawn, execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -55,17 +56,32 @@ export function loadConfig(dataDir) {
   return cfg;
 }
 
-/** Run a command, capturing its output. Resolves with {code, out}; never rejects. */
+/**
+ * Run a command, capturing its output. Resolves with {code, out, sleptMs}; never rejects.
+ * The time limit counts only time the Mac was awake (D130); sleptMs is how long it slept meanwhile.
+ */
 export function runCommand(cmd, args, { cwd = KIT_DIR, timeoutMs = STEP_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
     let out = '';
     const child = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const timer = setTimeout(() => { out += `\n[daily] step timed out after ${timeoutMs / 60000} min and was stopped\n`; child.kill('SIGTERM'); }, timeoutMs);
+    const timer = awakeTimeout(timeoutMs, () => { out += `\n[daily] step timed out after ${timeoutMs / 60000} min and was stopped\n`; child.kill('SIGTERM'); });
     child.stdout.on('data', (b) => { out += b; });
     child.stderr.on('data', (b) => { out += b; });
-    child.on('error', (err) => { clearTimeout(timer); resolve({ code: 127, out: `${out}\n[daily] could not start ${cmd}: ${err.message}\n` }); });
-    child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code: code ?? (signal ? 128 : 1), out }); });
+    child.on('error', (err) => { timer.clear(); resolve({ code: 127, out: `${out}\n[daily] could not start ${cmd}: ${err.message}\n`, sleptMs: timer.sleptMs() }); });
+    child.on('close', (code, signal) => { timer.clear(); resolve({ code: code ?? (signal ? 128 : 1), out, sleptMs: timer.sleptMs() }); });
   });
+}
+
+/** Sleep shorter than this during a step isn't worth a mention (dark wakes and short naps). */
+export const SLEEP_NOTE_MS = 5 * 60_000;
+export const ASLEEP_KEY = 'Mac asleep';
+const minutes = (ms) => Math.round(ms / 60000);
+
+/** The line for a run the Mac slept through part of (D130). `asleep` is [{step, ms}]. */
+export function asleepLine(asleep) {
+  const total = asleep.reduce((n, a) => n + a.ms, 0);
+  if (total < SLEEP_NOTE_MS) return null;
+  return `💤 The Mac was asleep for ${minutes(total)} min during this run (lid closed?), so it ran late. Leave the lid open overnight, plugged in, so the run finishes on time.`;
 }
 
 /** The lines worth showing in a notice: the error block a step printed, else its last lines. */
@@ -132,18 +148,24 @@ export function problemItems(out) {
  * error goes on a ⚠️ line (it waits for a requeue). Returns {real, temporary: [{step, key, error,
  * days}], held: [{key, error}], seen: [{k, days}]}.
  */
-export function sortProblems(step, out, streaks = {}, date = localDate()) {
+export function sortProblems(step, out, streaks = {}, date = localDate(), { sleptMs = 0 } = {}) {
   const real = [], temporary = [], held = [], seen = [];
   const { head, items } = problemItems(out);
+  // A step that ran out of time while the Mac slept (D130) didn't break: it's tried again next run,
+  // and only becomes a real problem if it keeps happening (same day counts as other temporary items).
+  if (sleptMs >= SLEEP_NOTE_MS) {
+    const t = items.find((it) => it.key === WHOLE_STEP && /^\[daily\] step timed out/.test(it.error));
+    if (t) { t.key = ASLEEP_KEY; t.error = `ran out of time because the Mac was asleep for ${minutes(sleptMs)} min (lid closed?); it continues next run`; t.sleep = true; }
+  }
   if (!items.length) return { real: [failureDetail(out)], temporary, held, seen };
   for (const it of items) {
     if (it.kind === 'BLOCKED') { held.push({ key: it.key, error: it.error }); continue; }
     const packTwice = it.kind === 'FAILED' && /\(failed twice on a connection error\)$/.test(it.error);
-    if (it.key !== WHOLE_STEP && (!it.kind || packTwice) && (packTwice || isTemporary(it.error))) {
+    if (it.sleep || (it.key !== WHOLE_STEP && (!it.kind || packTwice) && (packTwice || isTemporary(it.error)))) {
       const k = `${step}|${it.key}`;
       const days = packTwice ? Math.max(WARN_AFTER_DAYS, failDays(streaks[k], date)) : failDays(streaks[k], date);
       seen.push({ k, days });
-      if (days >= ALERT_AFTER_DAYS) real.push(`  ${it.key}: ${it.error} (failing ${daysInARow(days)})`);
+      if (days >= ALERT_AFTER_DAYS) real.push(`  ${it.key}: ${it.error} (${it.sleep ? 'happening' : 'failing'} ${daysInARow(days)})`);
       else temporary.push({ step, key: it.key, error: it.error, days, requeue: packTwice });
       continue;
     }
@@ -168,9 +190,11 @@ const listNames = (names, max = 3) => `${names.slice(0, max).join('; ')}${names.
  * Summary lines for problems worth a look (D115): an item failing WARN_AFTER_DAYS days in a row or
  * more (day 1 stays in the log), and packs held back by the fact check (D112).
  */
-export function quietProblemLines({ temporary = [], held = [] } = {}) {
+export function quietProblemLines({ temporary = [], held = [], asleep = [] } = {}) {
   const lines = [];
-  const due = temporary.filter((t) => t.days >= WARN_AFTER_DAYS);
+  const zz = asleepLine(asleep);
+  if (zz) lines.push(zz);
+  const due = temporary.filter((t) => t.days >= WARN_AFTER_DAYS && t.key !== ASLEEP_KEY);
   const groups = new Map();
   for (const t of due) { const g = `${t.step}|${nounOf(t.step, t.key)}|${t.requeue ? 1 : 0}`; groups.set(g, [...(groups.get(g) ?? []), t]); }
   for (const [g, ts] of groups) {
@@ -199,14 +223,14 @@ export function shortDate(date) {
  * The failure text (D63): loud on purpose, so it can't be mistaken for the morning summary.
  * Roles graded in this run are still listed (D78): a broken board shouldn't hide a good role.
  */
-export function summarize(date, problems, logPath, outputs = {}, { midday = false, temporary = [], held = [] } = {}) {
+export function summarize(date, problems, logPath, outputs = {}, { midday = false, temporary = [], held = [], asleep = [] } = {}) {
   const head = `🚨🚨 JOB SEARCH RUN FAILED 🚨🚨\n${midday ? 'Midday run, ' : ''}${shortDate(date)}: ${problems.length} problem${problems.length === 1 ? '' : 's'}. Action needed.`;
   const body = problems.map((p) => `❌ ${p.step}: ${p.detail}`).join('\n');
   const top = runFacts(outputs).graded.filter((g) => g.tier === 'S' || g.tier === 'A');
   const roles = top.length
     ? `\nGraded this run anyway (in Notion):\n${top.slice(0, MAX_LISTED).map((g) => `${g.tier === 'S' ? '⭐ S' : '• A'}: ${g.role}`).join('\n')}${top.length > MAX_LISTED ? `\n…and ${top.length - MAX_LISTED} more S&A in Notion` : ''}`
     : '';
-  const quiet = quietProblemLines({ temporary, held });
+  const quiet = quietProblemLines({ temporary, held, asleep });
   const low = runFacts(outputs).creditsLow;
   return `${head}\n${body}${low ? `\n${creditText(low)}` : ''}${quiet.length ? `\nNot problems (no action needed for these):\n${quiet.join('\n')}` : ''}${roles}\nFull log: ${logPath}`;
 }
@@ -399,16 +423,16 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
   if (!cfg) throw new Error('defaultSteps needs the daily settings (cfg).');
   const tierArgs = ['--limit', String(cfg.tier_per_day), '--per-company', String(cfg.tier_per_company), ...(midday ? ['--seen-since', date] : [])];
   const scanAndGrade = [
-    { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out }; } },
-    { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out }; } },
+    { name: 'scan', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['scan']); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } },
+    { name: 'tier-new', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'tier-new.sh'), tierArgs); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } },
   ];
   // Prep packs (D85, D89): after grading and research, in both runs, sharing one daily allowance.
-  const packs = { name: 'packs', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'packs.sh'), ['build']); return { ok: r.code === 0, out: r.out }; } };
+  const packs = { name: 'packs', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'packs.sh'), ['build']); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } };
   if (midday) return [...scanAndGrade, packs];
   return [
     ...scanAndGrade,
     // After grading, so grading keeps first claim on the Claude plan (D67, D76).
-    { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out }; } },
+    { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } },
     packs,
     ...(isWeeklyDay(date, cfg.weekly_email.day) ? [{ name: 'weekly-email', go: async () => ({ ok: true, out: await weekly({ dataDir, cfg }) }) }] : []),
     { name: 'backup', go: async () => {
@@ -435,6 +459,7 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
   const problems = [];
   const outputs = {};
   const failedSteps = [];
+  const asleep = [];
   const kind = midday ? 'midday run' : 'daily run';
   log(`\n===== ${kind} ${date} started ${new Date().toISOString()} =====\n`);
   for (const step of steps) {
@@ -443,7 +468,8 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
     try { res = await step.go(); } catch (err) { res = { ok: false, out: `${step.name}: ${err.message}\n` }; }
     outputs[step.name] = res.out;
     log(res.out.endsWith('\n') ? res.out : `${res.out}\n`);
-    if (!res.ok) failedSteps.push({ step: step.name, out: res.out });
+    if (res.sleptMs >= SLEEP_NOTE_MS) { asleep.push({ step: step.name, ms: res.sleptMs }); log(`💤 The Mac was asleep for ${minutes(res.sleptMs)} min during ${step.name}.\n`); }
+    if (!res.ok) failedSteps.push({ step: step.name, out: res.out, sleptMs: res.sleptMs ?? 0 });
     log(`--- ${step.name}: ${res.ok ? 'ok' : 'FAILED'} ---\n`);
     // Each new S-tier role gets its own text right away (D78). A text that can't be sent is a problem, reported below.
     if (step.name === 'tier-new') {
@@ -468,8 +494,8 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
   let prev = {};
   if (streaks) { try { prev = streaks.read(); } catch (err) { problems.push({ step: 'alert counts', detail: err.message }); } }
   const temporary = [], held = [], seen = [];
-  for (const { step, out } of failedSteps) {
-    const s = sortProblems(step, out, prev, date);
+  for (const { step, out, sleptMs } of failedSteps) {
+    const s = sortProblems(step, out, prev, date, { sleptMs });
     if (s.real.length) {
       const detail = s.real.join('\n');
       problems.push({ step, detail: detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL)}…` : detail });
@@ -481,16 +507,16 @@ export async function runDaily({ date, steps, log, notify, logPath, midday = fal
   for (const h of held) log(`Prep pack held back by the fact check: ${h.key}\n`);
   // Each run sends one summary text: the morning (D63) and, since D122, the midday run too. A held pack still gets its own text (D112).
   if (problems.length) {
-    const notice = summarize(date, problems, logPath, outputs, { midday, temporary, held });
+    const notice = summarize(date, problems, logPath, outputs, { midday, temporary, held, asleep });
     await notify(notice);
     log(`\nFailure notice sent (${problems.length} problem(s)).\n`);
     if (remind) { try { await remind(notice); log('Reminder added: failure notice\n'); } catch (err) { log(`Reminder FAILED: failure notice: ${err.message}\n`); } }
   } else if (!midday) {
-    await notify(successSummary(date, outputs, { temporary, held }));
+    await notify(successSummary(date, outputs, { temporary, held, asleep }));
     log('\nMorning summary sent.\n');
   } else {
     for (const h of held) { await notify(heldText(h)); log(`Held-pack text sent: ${h.key}\n`); }
-    await notify(successSummary(date, outputs, { temporary, held }, { midday: true }));
+    await notify(successSummary(date, outputs, { temporary, held, asleep }, { midday: true }));
     log('\nMidday summary sent.\n');
   }
   const notified = true;

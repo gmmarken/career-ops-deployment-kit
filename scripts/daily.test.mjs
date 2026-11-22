@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { sortProblems, runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText } from './daily.mjs';
+import { sortProblems, runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText, asleepLine, quietProblemLines, ASLEEP_KEY } from './daily.mjs';
+import { awakeTimeout } from './awake-timer.mjs';
 import { openStore } from '../market/store.mjs';
 
 const ok = (name, out = 'fine\n') => ({ name, go: async () => ({ ok: true, out }) });
@@ -513,4 +514,32 @@ test('successSummary (D120): new untitled roles get a ⚠️ line with their lin
   const s = successSummary('2026-11-03', { scan, 'tier-new': TIER_OUT });
   assert.match(s, /⚠️ 2 new roles with no title on the job board, left out until they get one: OpenAI https:\/\/jobs\.ashbyhq\.com\/openai\/abc, Acme/);
   assert.doesNotMatch(successSummary('2026-11-03', { scan: SCAN_OUT, 'tier-new': TIER_OUT }), /no title/);
+});
+
+test('awake time (D130): a long gap between ticks is sleep, not work; the limit fires on awake time only', () => {
+  let t = 0; let tick = null; let fired = 0;
+  const timer = awakeTimeout(120_000, () => { fired++; }, { tickMs: 30_000, now: () => t, every: (fn) => { tick = fn; return 1; }, stop: () => {} });
+  t += 30_000; tick(); t += 30_000; tick();                 // 1 min awake
+  t += 90 * 60_000; tick();                                  // the lid was closed for 90 minutes
+  assert.equal(fired, 0);
+  assert.equal(timer.sleptMs(), 90 * 60_000 - 30_000);
+  t += 30_000; tick(); t += 30_000; tick();                  // 2.5 min awake in all
+  assert.equal(fired, 1);
+  timer.clear();
+});
+
+test('a step that ran out of time while the Mac slept is temporary, with a 💤 line; awake timeouts stay real (D130)', () => {
+  const out = 'some work\n\n[daily] step timed out after 120 min and was stopped\n';
+  const asleep = sortProblems('radar', out, {}, '2026-11-22', { sleptMs: 100 * 60_000 });
+  assert.deepEqual(asleep.real, []);
+  assert.equal(asleep.temporary[0].key, ASLEEP_KEY);
+  assert.match(asleep.temporary[0].error, /asleep for 100 min/);
+  const awake = sortProblems('radar', out, {}, '2026-11-22', { sleptMs: 60_000 });
+  assert.match(awake.real.join('\n'), /timed out/);
+  // Five mornings in a row is a real problem.
+  const five = sortProblems('radar', out, { [`radar|${ASLEEP_KEY}`]: { days: 4, last: '2026-11-21' } }, '2026-11-22', { sleptMs: 100 * 60_000 });
+  assert.match(five.real.join('\n'), /happening 5 days in a row/);
+  assert.match(asleepLine([{ step: 'scan', ms: 20 * 60_000 }, { step: 'radar', ms: 100 * 60_000 }]), /asleep for 120 min/);
+  assert.equal(asleepLine([{ step: 'scan', ms: 60_000 }]), null);
+  assert.match(quietProblemLines({ asleep: [{ step: 'radar', ms: 100 * 60_000 }] })[0], /^💤/);
 });
