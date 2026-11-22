@@ -37,6 +37,8 @@ The Mac's scheduler (launchd) starts a small helper app (`CareerOps Daily.app`, 
 
 The midday run does steps 1, 2 and 4 for roles first seen that day. At the end of each run, one summary text goes out through Messages (and a Reminders pop-up for problems). A problem that keeps coming back is ⚠️ from its 2nd day and 🚨 from its 5th; a broken run sends 🚨 at once (D115).
 
+**The Mac has to be awake.** A daily power schedule wakes the Mac at 6:55 and `caffeinate` keeps it awake while the run lasts, but nothing keeps a laptop with its lid closed awake. Then the run only moves during the short wakes macOS does by itself and takes hours. Leave the lid open overnight, plugged in (the screen still turns off). Step time limits count only time the Mac was awake; a step that runs out of time while the Mac slept is a temporary problem with a 💤 line in the summary, and a real one if it happens 5 mornings in a row (D130).
+
 ```mermaid
 flowchart LR
   subgraph Find

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { awakeTimeout } from '../scripts/awake-timer.mjs';
 
 export const DEFAULT_MODEL = process.env.KIT_EXTRACT_MODEL || 'sonnet';
 const TIMEOUT_MS = 5 * 60_000;
@@ -80,17 +81,18 @@ export function runClaude({ systemPrompt, input, schema, tools = [], model = DEF
     const child = spawn(bin, claudeArgs({ systemPrompt, schema, tools, model }), { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => { child.kill('SIGTERM'); }, TIMEOUT_MS);
+    // Awake time only (D130): a Mac asleep mid-call shouldn't use up the call's 5 minutes.
+    const timer = awakeTimeout(TIMEOUT_MS, () => { child.kill('SIGTERM'); });
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err += d; });
     child.on('error', (e) => {
-      clearTimeout(timer); rmSync(cwd, { recursive: true, force: true });
+      timer.clear(); rmSync(cwd, { recursive: true, force: true });
       reject(new Error(e.code === 'ENOENT'
         ? 'The `claude` command was not found. Install it with `npm install -g @anthropic-ai/claude-code`, then run `claude` and /login.'
         : `Could not start claude: ${e.message}`));
     });
     child.on('close', (code, signal) => {
-      clearTimeout(timer); rmSync(cwd, { recursive: true, force: true });
+      timer.clear(); rmSync(cwd, { recursive: true, force: true });
       if (signal) return reject(new Error(`claude was stopped (${signal}) after ${TIMEOUT_MS / 1000}s`));
       if (code !== 0) {
         const hint = /log ?in|auth|credential/i.test(out + err) ? ' Run `claude` and /login first.' : '';

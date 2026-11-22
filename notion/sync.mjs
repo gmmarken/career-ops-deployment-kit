@@ -333,12 +333,13 @@ export async function syncCarrying(dataDir, kind, ids, { log = console.log, sync
   const carried = all.length - new Set(ids).size;
   if (!all.length) return { error: null, count: 0, carried: 0 };
   if (carried) log(`Notion: ${carried} left from a run whose sync failed go too.`);
+  // Saved before the sync, cleared after it: a run stopped mid-sync (a step time limit) keeps them too (D130).
+  withStore((st) => st.setMeta(key, JSON.stringify(all)));
   try {
     await sync(dataDir, { log, [kind]: all });
-    if (prev.length) withStore((st) => st.setMeta(key, '[]'));
-    return { error: null, count: all.length, carried };
   } catch (err) {
-    withStore((st) => st.setMeta(key, JSON.stringify(all)));
     return { error: err.message.split('\n')[0], count: all.length, carried };
   }
+  withStore((st) => st.setMeta(key, '[]'));
+  return { error: null, count: all.length, carried };
 }

@@ -4,6 +4,10 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+- A Mac asleep with its lid closed no longer makes the morning run fail (D130). Step time limits and the 5-minute AI call limit count only time the Mac was awake. A step that runs out of time while the Mac slept is a temporary problem; the summary gets a 💤 line saying how long the Mac slept and to leave the lid open overnight. It becomes a real problem if it happens 5 days in a row.
+- Companies waiting for a Notion sync are saved before the sync starts, so a run stopped in the middle of one (the 2026-11-22 morning run) no longer drops them; the next run syncs them.
+
 ### Docs
 - `docs/ARCHITECTURE.md` rewritten to describe the kit as built: the three folders, what comes from career-ops (profile formats, CV rendering, the fact gate, ATS checks) and what the kit adds, the daily run step by step, the extract-then-decide rule, how prep packs are checked, and a code map. The old version was the October plan (generated `portals.yml`, career-ops plugins, career-ops' scanner), none of which was built that way.
 - README: the career-ops comparison now says what the kit actually uses from career-ops; the diagram, status line and credits match what exists. The empty `plugins/` folder is gone.
