@@ -35,7 +35,7 @@ Nothing is overwritten without the old value being kept:
 `config/companies.json` is a **generated copy** of the company records; edit company calls in Notion.
 
 ## Monthly numbers freeze (D39)
-- `scripts/market.sh stats` refreshes the current and other open months (**provisional**).
+- `scripts/market.sh stats` refreshes the current and other open months (**provisional**). The morning run does this every day (D131); run it by hand only to see the month states.
 - A month **freezes 7 days after it ends**, but only once tracking has begun (from the month of the first completed scan). Earlier months are "before tracking" and never freeze.
 - Frozen numbers never change. A later correction is a separate row with a reason.
 - `metrics` exports the stored numbers.

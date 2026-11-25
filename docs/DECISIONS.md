@@ -805,3 +805,14 @@ Plain text (Mail's support for formatted email from scripts is unreliable). `dai
 - `syncCarrying` saves the waiting companies before the sync and clears them after it succeeds.
 **Why:** the alert should say what happened (the Mac slept) and what to do (lid open), not look like a broken program; the work itself continues next run.
 **Trade-off:** a run with the lid closed still finishes late; this fixes the alert and the time limits, not the sleep. A real hang that happens while the Mac also sleeps is reported a day later than before.
+
+## D131 — The morning run freezes the monthly numbers (2026-11-25)
+**Context:** Monthly market numbers are provisional while a month is open and freeze 7 days after it ends (D39), but only when `market.sh stats` runs, and nothing ran it on a schedule. On 2026-11-24 the stored November numbers dated from 2026-11-03 and no month had ever been frozen; November was due on 2026-12-07.
+**Options:** (A) a `stats` step in the morning run, after prep packs and before the backup; (B) run `market.sh stats` by hand on or after the 7th of each month.
+**Decision:** Gabriel's call: option A.
+- Morning run only; no AI, no network, about 15 s on the 2026-11 database.
+- A failed refresh is a step failure, reported like any other step.
+- The day a month freezes, the summary text gets "📊 <Month YYYY> market numbers frozen".
+- Run once by hand on 2026-11-25 to bring November's provisional numbers up to date.
+**Why:** a task that depends on remembering works until the month someone forgets, and the frozen numbers are the ones published.
+**Trade-off:** one more step in the morning run that can fail; its backup runs after it, so the backup holds the refreshed numbers.

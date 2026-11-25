@@ -32,8 +32,9 @@ The Mac's scheduler (launchd) starts a small helper app (`CareerOps Daily.app`, 
 | 2 | **Grade** (`tier-new.sh`) | Up to the daily limit (30 by default) of new NYC roles in target families (`config/daily.json`). For each: code reads the hard facts from the board (title, pay, location, dates); Claude, with no tools, reads the description and returns judgment facts, each with a quote; for a role that could reach S or A, a separate Claude call researches the company on the web. The **tier engine** (plain tested code) decides S / A / B / C. Each new S role gets its own text right away. | yes |
 | 3 | **Company Radar** (`market.sh radar`, morning only) | SEC Form D filings, TechCrunch funding feeds and a daily Serper news search find newly funded NYC companies. Up to 10 a day are researched (what they do, leaders, NYC presence, careers page) and scored for deployment fit by code. A news story that doesn't say where a company is gets a short AI check for NYC. | research, NYC check |
 | 4 | **Prep packs** (`packs.sh build`) | For S roles, at most about 1 a day (3 a day, 5 a week): see section 5. | yes |
-| 5 | **Weekly email** (Sundays) | Newly funded NYC companies and new roles, sent through Apple Mail. | no |
-| 6 | **Backup** (morning only) | A dated copy of the market database, kept in the iCloud-synced workspace. | no |
+| 5 | **Monthly numbers** (`market.sh stats`, morning only) | Refreshes this month's market numbers (postings by company and role family) and freezes a month 7 days after it ends, so published numbers never change (D39, D131). A month frozen today gets a 📊 line in the text. | no |
+| 6 | **Weekly email** (Sundays) | Newly funded NYC companies and new roles, sent through Apple Mail. | no |
+| 7 | **Backup** (morning only) | A dated copy of the market database, kept in the iCloud-synced workspace. | no |
 
 The midday run does steps 1, 2 and 4 for roles first seen that day. At the end of each run, one summary text goes out through Messages (and a Reminders pop-up for problems). A problem that keeps coming back is ⚠️ from its 2nd day and 🚨 from its 5th; a broken run sends 🚨 at once (D115).
 
