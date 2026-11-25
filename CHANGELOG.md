@@ -4,6 +4,9 @@ All notable changes to this kit. Format based on [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+- The morning run refreshes the monthly market numbers and freezes a month 7 days after it ends (D131). Before, nothing ran `market.sh stats` on a schedule: November's stored numbers dated from 2026-11-03 and would never have frozen. The day a month freezes, the morning text says so with a 📊 line. No AI, no network, about 15 seconds.
+
 ### Fixed
 - A Mac asleep with its lid closed no longer makes the morning run fail (D130). Step time limits and the 5-minute AI call limit count only time the Mac was awake. A step that runs out of time while the Mac slept is a temporary problem; the summary gets a 💤 line saying how long the Mac slept and to leave the lid open overnight. It becomes a real problem if it happens 5 days in a row.
 - Companies waiting for a Notion sync are saved before the sync starts, so a run stopped in the middle of one (the 2026-11-22 morning run) no longer drops them; the next run syncs them.

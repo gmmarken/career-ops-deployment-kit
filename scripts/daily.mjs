@@ -275,6 +275,7 @@ export function runFacts(outputs) {
   const untitled = scan.match(/^New roles with no title, left out until they get one: (.+)$/m);
   const vcUnreachable = scan.match(/^VC job lists unreachable after a retry \(.*?\): (.+)$/m);
   const weekly = /^weekly: sent /m.test(String(outputs['weekly-email'] ?? ''));
+  const frozen = String(outputs.stats ?? '').match(/ Frozen now: (.+)\.$/m);
   const packs = String(outputs.packs ?? '');
   const packsReady = [...packs.matchAll(/^📦 Prep pack ready: (.+?) · /gm)].map((m) => m[1]);
   const packsQueued = packs.match(/^Prep packs done: .* (\d+) queued$/m);
@@ -296,11 +297,18 @@ export function runFacts(outputs) {
     vcUnreachable: vcUnreachable ? vcUnreachable[1].split(' · ').map(dayItem) : [],
     untitled: untitled ? untitled[1].split(' · ') : [],
     weekly,
+    frozen: frozen ? frozen[1].split(', ') : [],
     packsReady,
     packsQueued: packsQueued ? Number(packsQueued[1]) : null,
     packsPaused,
     creditsLow: credits ? { left: credits[1], perDay: Number(credits[2]), days: Number(credits[3]) } : null,
   };
+}
+
+/** "2026-11" → "November 2026". */
+export function monthName(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })} ${y}`;
 }
 
 /** The warning a week before the Serper credits run out (D113): a summary line and a pop-up. */
@@ -350,6 +358,7 @@ export function successSummary(date, outputs, quiet = {}, { midday = false } = {
   if (f.packsPaused) lines.push('⏳ Prep packs paused at the Claude usage limit; they continue next run');
   if (f.packsQueued) lines.push(`🗂 ${f.packsQueued} more prep pack${f.packsQueued === 1 ? '' : 's'} queued`);
   if (f.weekly) lines.push('📧 Weekly email sent to you');
+  if (f.frozen.length) lines.push(`📊 ${f.frozen.map(monthName).join(', ')} market numbers frozen; they won't change now (D131)`);
   const wait = f.waiting + (f.paused?.left ?? 0);
   if (wait) lines.push(`⏳ ${wait} more NYC role${wait === 1 ? '' : 's'} waiting; graded over the next runs`);
   lines.push(f.graded.some((g) => g.tier === 'S' || g.tier === 'A') ? 'Time to review in Notion and apply.' : 'Check Notion when you have a minute.');
@@ -434,6 +443,8 @@ export function defaultSteps({ dataDir, date, cfg, run = runCommand, icloud = iC
     // After grading, so grading keeps first claim on the Claude plan (D67, D76).
     { name: 'radar', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['radar', '--research', String(cfg.research_per_day)]); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } },
     packs,
+    // D131: refresh this month's market numbers and freeze a month 7 days after it ends (D39). No AI, no network.
+    { name: 'stats', go: async () => { const r = await run(join(KIT_DIR, 'scripts', 'market.sh'), ['stats']); return { ok: r.code === 0, out: r.out, sleptMs: r.sleptMs ?? 0 }; } },
     ...(isWeeklyDay(date, cfg.weekly_email.day) ? [{ name: 'weekly-email', go: async () => ({ ok: true, out: await weekly({ dataDir, cfg }) }) }] : []),
     { name: 'backup', go: async () => {
       const dir = join(dataDir, 'backups');

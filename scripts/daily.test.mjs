@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { sortProblems, runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText, asleepLine, quietProblemLines, ASLEEP_KEY } from './daily.mjs';
+import { monthName, sortProblems, runDaily, failureDetail, summarize, successSummary, runFacts, shortDate, loadConfig, defaultSteps, runCommand, localDate, sAlerts, alertText, isWeeklyDay, takeLock, sendWeekly, packText, isTemporary, streakFile, creditText, asleepLine, quietProblemLines, ASLEEP_KEY } from './daily.mjs';
 import { awakeTimeout } from './awake-timer.mjs';
 import { openStore } from '../market/store.mjs';
 
@@ -171,18 +171,18 @@ test('default steps: non-zero exit from scan/tier-new is a failure; backup write
   const steps = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, run, icloud: () => '/Users/me/Documents' });
   const results = [];
   for (const s of steps) results.push(await s.go());
-  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10'], ['packs.sh', 'build']]);
-  assert.deepEqual(results.map((r) => r.ok), [false, true, true, true, true]);
+  assert.deepEqual(calls, [['market.sh', 'scan'], ['tier-new.sh', '--limit', '30', '--per-company', '5'], ['market.sh', 'radar', '--research', '10'], ['packs.sh', 'build'], ['market.sh', 'stats']]);
+  assert.deepEqual(results.map((r) => r.ok), [false, true, true, true, true, true]);
   assert.ok(existsSync(join(d, 'backups', 'market-2026-11-03.db')));
   assert.deepEqual(readdirSync(join(d, 'backups')), ['market-2026-11-03.db']);
-  assert.match(results[4].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
+  assert.match(results[5].out, /dated backups reach iCloud through the synced \/Users\/me\/Documents folder/);
 });
 
 test('backup step fails (and so is reported) when the folder is not iCloud-synced', async () => {
   const d = mkdtempSync(join(tmpdir(), 'daily-'));
   mkdirSync(join(d, 'data'));
   const db = new DatabaseSync(join(d, 'data', 'market.db')); db.exec('CREATE TABLE t (x)'); db.close();
-  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } })[4];
+  const step = defaultSteps({ dataDir: d, date: '2026-11-03', cfg: CFG, icloud: () => { throw new Error('backup: x is not in an iCloud-synced folder'); } }).at(-1);
   const sent = [];
   const r = await runDaily({ date: '2026-11-03', steps: [step], log: () => {}, notify: async (t) => { sent.push(t); }, logPath: 'L' });
   assert.equal(r.problems.length, 1);
@@ -283,8 +283,8 @@ test('weekly email: only on its day, sent with what the week found; a send failu
   assert.equal(isWeeklyDay('2026-11-08', 'Sunday'), true);
   assert.equal(isWeeklyDay('2026-11-09', 'Sunday'), false);
   const names = (date) => defaultSteps({ dataDir: '/x', date, cfg: CFG, run: async () => ({ code: 0, out: '' }), weekly: async () => 'weekly: sent "x"\n' }).map((s) => s.name);
-  assert.deepEqual(names('2026-11-08'), ['scan', 'tier-new', 'radar', 'packs', 'weekly-email', 'backup']);
-  assert.deepEqual(names('2026-11-09'), ['scan', 'tier-new', 'radar', 'packs', 'backup']);
+  assert.deepEqual(names('2026-11-08'), ['scan', 'tier-new', 'radar', 'packs', 'stats', 'weekly-email', 'backup']);
+  assert.deepEqual(names('2026-11-09'), ['scan', 'tier-new', 'radar', 'packs', 'stats', 'backup']);
 
   const d = mkdtempSync(join(tmpdir(), 'weekly-'));
   mkdirSync(join(d, 'data'));
@@ -543,3 +543,22 @@ test('a step that ran out of time while the Mac slept is temporary, with a 💤 
   assert.equal(asleepLine([{ step: 'scan', ms: 60_000 }]), null);
   assert.match(quietProblemLines({ asleep: [{ step: 'radar', ms: 100 * 60_000 }] })[0], /^💤/);
 });
+
+test('stats step (D131): a month frozen today gets one 📊 line; a quiet refresh adds nothing', () => {
+  const frozenOut = 'Monthly stats 2009-12..2026-12: provisional months refreshed. Frozen now: 2026-11.\nTracking began 2026-11 (first completed scan).\n';
+  const s = successSummary('2026-12-07', { scan: SCAN_OUT, 'tier-new': TIER_OUT, stats: frozenOut });
+  assert.match(s, /📊 November 2026 market numbers frozen; they won't change now/);
+  const quiet = successSummary('2026-11-25', { scan: SCAN_OUT, 'tier-new': TIER_OUT, stats: 'Monthly stats 2009-12..2026-11: provisional months refreshed.\n' });
+  assert.doesNotMatch(quiet, /📊/);
+  assert.deepEqual(runFacts({ stats: 'Monthly stats a..b: provisional months refreshed. Frozen now: 2026-11, 2026-12.\n' }).frozen, ['2026-11', '2026-12']);
+});
+
+test('stats step (D131): runs only in the morning, and a non-zero exit is a failure', async () => {
+  const run = async (cmd, args) => (args[0] === 'stats' ? { code: 1, out: 'market: database is locked' } : { code: 0, out: '' });
+  const morning = defaultSteps({ dataDir: '/x', date: '2026-11-25', cfg: CFG, run });
+  const stats = morning.find((s) => s.name === 'stats');
+  assert.equal((await stats.go()).ok, false);
+  assert.ok(!defaultSteps({ dataDir: '/x', date: '2026-11-25', cfg: CFG, run, midday: true }).some((s) => s.name === 'stats'));
+});
+
+test('monthName', () => { assert.equal(monthName('2026-11'), 'November 2026'); assert.equal(monthName('2027-01'), 'January 2027'); });
